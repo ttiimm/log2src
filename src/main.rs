@@ -1,7 +1,6 @@
 use std::{env, io, fs};
 
 
-
 fn main() {
     let input = env::args().nth(1);
     let mut reader: Box<dyn io::Read> = match input {
