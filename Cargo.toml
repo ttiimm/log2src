@@ -12,3 +12,6 @@ regex = "1.7"
 
 [[example]]
 name = "dining"
+
+[[example]]
+name = "basic"

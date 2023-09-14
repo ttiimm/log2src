@@ -10,15 +10,19 @@ struct Cli {
     #[arg(short, long, value_name = "FILE")]
     path: Option<PathBuf>,
 
-    thread_id: String,
+    #[arg(short, long, value_name = "THREADID")]
+    thread_id: Option<String>,
 }
-
 
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Cli::parse();
 
-    let thread_re: Regex = Regex::new(&args.thread_id)?;
+    let thread_re = if args.thread_id.is_some() {
+        Regex::new(&args.thread_id.unwrap()).expect("Regex failed")
+    } else {
+        Regex::new(&".").expect("Regex failed")
+    };
 
     let input = args.path;
     let mut reader: Box<dyn io::Read> = match input {
