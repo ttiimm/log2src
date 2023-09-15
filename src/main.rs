@@ -32,14 +32,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut buffer = String::new();
     reader.read_to_string(&mut buffer)?;
-    let results: Vec<(&str, &str)> = buffer.lines()
-        .filter_map(|line| {
-            match thread_re.captures(line) {
-                Some(capture) => Some((capture.get(0).unwrap().as_str(), line)),
-                _ => None
-            }
-        })
-        .collect();
+    let results = logdbg::filter_log(&buffer, thread_re);
+
     for r in results {
         println!("{} -> {}", r.0, r.1);
     }
