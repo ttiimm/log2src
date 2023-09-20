@@ -1,14 +1,48 @@
 use regex::Regex;
+use std::fmt;
 use tree_sitter::{Parser, Query, QueryCursor};
 
 
-pub fn filter_log(buffer: &String, thread_re: Regex) -> Vec<String> {
-    let results: Vec<String> = buffer.lines()
+#[derive(Debug)]
+pub struct LogRef<'a> {
+    id: &'a str,
+    text: &'a str
+}
+
+impl fmt::Display for LogRef<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "[{}] `{}`", self.id, self.text)
+    }
+}
+
+#[derive(Debug)]
+pub struct SourceRef<'a> {
+    line: usize,
+    col: usize,
+    text: &'a str,
+    matcher: Regex
+}
+
+impl fmt::Display for SourceRef<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "[Line: {}, Col: {}] source `{}`", self.line, self.col, self.text)
+    }
+}
+
+pub fn link<'a>(log_line: &LogRef, src_logs: &'a Vec<SourceRef>) -> Option<&'a SourceRef<'a>> {
+    src_logs.iter()
+            .find(|&e| e.matcher.is_match(log_line.text))
+}
+
+
+pub fn filter_log(buffer: &String, thread_re: Regex) -> Vec<LogRef> {
+    let results = buffer.lines()
         .filter_map(|line| {
             match thread_re.captures(line) {
                 Some(capture) => {
-                    let result = format!("{} -> {}", capture.get(0).unwrap().as_str(), line);
-                    Some(result)
+                    let id = capture.get(0).unwrap().as_str();
+                    let text = line;
+                    Some(LogRef { id, text })
                 },
                 _ => None
             }
@@ -17,18 +51,18 @@ pub fn filter_log(buffer: &String, thread_re: Regex) -> Vec<String> {
     results
 }
 
-pub fn filter_source(source: &str) -> Vec<String> {
+pub fn extract(source: &str) -> Vec<SourceRef> {
     let mut parser = Parser::new();
     parser.set_language(tree_sitter_rust::language()).expect("Error loading Rust grammar");
 
     let tree = parser.parse(&source, None).unwrap();
     let root_node = tree.root_node();
 
-    let log_strings = r#"(macro_invocation
-                                macro: (identifier) @macro-name
-                                (token_tree (string_literal) @log)
-                                (#eq? @macro-name "debug"))"#;
-    let query = Query::new(tree_sitter_rust::language(), log_strings)
+    let debug_macros = r#"(macro_invocation
+                                 macro: (identifier) @macro-name
+                                   (token_tree (string_literal) @log)
+                                   (#eq? @macro-name "debug"))"#;
+    let query = Query::new(tree_sitter_rust::language(), debug_macros)
         .unwrap();
     let mut query_cursor = QueryCursor::new();
     let matches = query_cursor.matches(
@@ -45,7 +79,9 @@ pub fn filter_source(source: &str) -> Vec<String> {
                 let text = &source[range.start_byte..range.end_byte];
                 let line = range.start_point.row + 1;
                 let col = range.start_point.column;
-                let result = format!("[Line: {}, Col: {}] source `{}`", line, col, text);
+                let unquoted = &source[range.start_byte + 1..range.end_byte - 1];
+                let matcher = Regex::new(unquoted).unwrap();
+                let result = SourceRef { line, col, text, matcher };
                 matched.push(result);
         }
     };
