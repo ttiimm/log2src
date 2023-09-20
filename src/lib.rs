@@ -1,5 +1,4 @@
 use regex::Regex;
-use std::fs;
 use tree_sitter::{Parser, Query, QueryCursor};
 
 
@@ -18,12 +17,10 @@ pub fn filter_log(buffer: &String, thread_re: Regex) -> Vec<String> {
     results
 }
 
-pub fn filter_source(source_path: &str) -> Vec<String> {
+pub fn filter_source(source: &str) -> Vec<String> {
     let mut parser = Parser::new();
     parser.set_language(tree_sitter_rust::language()).expect("Error loading Rust grammar");
 
-    let source = fs::read_to_string(source_path)
-        .expect("Can read the source file");
     let tree = parser.parse(&source, None).unwrap();
     let root_node = tree.root_node();
 

@@ -38,8 +38,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     let filtered = logdbg::filter_log(&buffer, thread_re);
     print_result(filtered);
 
-    let source_path = "examples/basic.rs";
-    let matched = filter_source(source_path);
+    let source = fs::read_to_string(&args.source)
+        .expect("Can read the source file");
+    let matched = filter_source(&source);
     print_result(matched);
     Ok(())
 }
