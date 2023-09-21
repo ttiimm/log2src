@@ -2,6 +2,7 @@ use clap::Parser as ClapParser;
 use logdbg::{extract, filter_log, link};
 use regex::Regex;
 use std::{io, fs, path::PathBuf, error::Error};
+mod ui;
 
 
 #[derive(ClapParser)]
@@ -46,6 +47,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         let result = link(&f, &src_logs);
         println!("{} -> {:?}", f, result);
     }
+
+    ui::start(&source);
 
     Ok(())
 }
