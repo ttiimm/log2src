@@ -6,7 +6,8 @@ use tree_sitter::{Parser, Query, QueryCursor};
 #[derive(Debug)]
 pub struct LogRef<'a> {
     id: &'a str,
-    text: &'a str
+    line_no: usize,
+    pub text: &'a str
 }
 
 impl fmt::Display for LogRef<'_> {
@@ -17,7 +18,7 @@ impl fmt::Display for LogRef<'_> {
 
 #[derive(Debug)]
 pub struct SourceRef<'a> {
-    line: usize,
+    pub line_no: usize,
     col: usize,
     text: &'a str,
     matcher: Regex
@@ -25,24 +26,24 @@ pub struct SourceRef<'a> {
 
 impl fmt::Display for SourceRef<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "[Line: {}, Col: {}] source `{}`", self.line, self.col, self.text)
+        write!(f, "[Line: {}, Col: {}] source `{}`", self.line_no, self.col, self.text)
     }
 }
 
-pub fn link<'a>(log_line: &LogRef, src_logs: &'a Vec<SourceRef>) -> Option<&'a SourceRef<'a>> {
+pub fn link_to_source<'a>(log_line: &LogRef, src_logs: &'a Vec<SourceRef>) -> Option<&'a SourceRef<'a>> {
     src_logs.iter()
             .find(|&e| e.matcher.is_match(log_line.text))
 }
 
 
 pub fn filter_log(buffer: &String, thread_re: Regex) -> Vec<LogRef> {
-    let results = buffer.lines()
-        .filter_map(|line| {
+    let results = buffer.lines().enumerate()
+        .filter_map(|(line_no, line)| {
             match thread_re.captures(line) {
                 Some(capture) => {
                     let id = capture.get(0).unwrap().as_str();
                     let text = line;
-                    Some(LogRef { id, text })
+                    Some(LogRef { id, line_no, text })
                 },
                 _ => None
             }
@@ -81,7 +82,7 @@ pub fn extract(source: &str) -> Vec<SourceRef> {
                 let col = range.start_point.column;
                 let unquoted = &source[range.start_byte + 1..range.end_byte - 1];
                 let matcher = Regex::new(unquoted).unwrap();
-                let result = SourceRef { line, col, text, matcher };
+                let result = SourceRef { line_no: line, col, text, matcher };
                 matched.push(result);
         }
     };

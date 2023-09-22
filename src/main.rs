@@ -1,5 +1,5 @@
 use clap::Parser as ClapParser;
-use logdbg::{extract, filter_log, link};
+use logdbg::{extract, filter_log, link_to_source, LogRef, SourceRef};
 use regex::Regex;
 use std::{io, fs, path::PathBuf, error::Error};
 mod ui;
@@ -43,12 +43,17 @@ fn main() -> Result<(), Box<dyn Error>> {
         .expect("Can read the source file");
     let src_logs = extract(&source);
 
-    for f in filtered {
-        let result = link(&f, &src_logs);
-        println!("{} -> {:?}", f, result);
-    }
-
-    ui::start(&source, &buffer);
+    let log_mappings = filtered.iter()
+        .map(|log_ref| {
+            let src_line_no = match link_to_source(log_ref, &src_logs) {
+                Some(source_ref) => source_ref.line_no,
+                None => 1
+            };
+            (log_ref, src_line_no)
+        })
+        .collect::<Vec<(&LogRef<'_>, usize)>>();
+    
+    ui::start(&source, &log_mappings);
 
     Ok(())
 }
