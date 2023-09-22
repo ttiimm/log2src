@@ -48,7 +48,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("{} -> {:?}", f, result);
     }
 
-    ui::start(&source);
+    ui::start(&source, &buffer);
 
     Ok(())
 }

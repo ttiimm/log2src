@@ -1,7 +1,7 @@
 # Every field in a theme file is optional.
 
 shadow = false
-borders = "none" # Alternatives are "none" and "simple"
+borders = "outset" # Alternatives are "none" and "simple"
 
 # Base colors are red, green, blue,
 # cyan, magenta, yellow, white and black.

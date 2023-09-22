@@ -6,7 +6,7 @@ use syntect::highlighting::{Theme, ThemeSet};
 use syntect::parsing::SyntaxSet;
 
 
-pub fn start(source: &str) {
+pub fn start(source: &str, logs: &str) {
     let mut siv = cursive::default();
     let themes = ThemeSet::load_defaults();
     let theme = &themes.themes["Solarized (light)"];
@@ -17,16 +17,24 @@ pub fn start(source: &str) {
     // Parse the content and highlight it
     let styled = cursive_syntect::parse(source, &mut highlighter, &syntax_set).unwrap();
 
-    siv.add_layer(
-        Dialog::around(
-            LinearLayout::vertical()
-                    .child(TextView::new("Source Code").h_align(HAlign::Center))
-                    .child(DummyView.fixed_height(1))
-                    .child(TextView::new(styled))
-                    .scrollable()
-                    .fixed_width(120),
-        ).button("Press 'enter' to quit", |s| s.quit())
-    );
+    let source_view = Dialog::around(
+        LinearLayout::vertical()
+                .child(DummyView.fixed_height(1))
+                .child(TextView::new(styled))
+                .fixed_width(120)
+                .scrollable()
+        ).title("Source Code");
+    let log_view = Dialog::around(
+        LinearLayout::vertical()
+            .child(DummyView.fixed_height(1))
+            .child(TextView::new(logs))
+            .fixed_width(120)
+            .scrollable()
+        ).title("Logs");
+    let top_pane = LinearLayout::horizontal()
+                .child(source_view)
+                .child(log_view);
+    siv.add_layer(top_pane);
 
     siv.run();
 }
