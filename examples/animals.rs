@@ -13,11 +13,11 @@ impl Animal {
     fn sound(&self) -> &str {
         match *self {
             Animal::Sheep => "baa",
-            Animal::Dog => "baa",
-            Animal::Cow => "baa",
-            Animal::Chicken => "baa",
-            Animal::Goat => "baa",
-            Animal::Horse => "baa",
+            Animal::Dog => "woof",
+            Animal::Cow => "moo",
+            Animal::Chicken => "cluck",
+            Animal::Goat => "bleaah",
+            Animal::Horse => "neigh",
         }
     }
 }
@@ -39,6 +39,6 @@ fn init() -> [Animal; 6] {
     [Animal::Sheep, Animal::Dog, Animal::Cow, Animal::Chicken, Animal::Goat, Animal::Horse]
 }
 
-fn make_noise(_: &Animal) {
-    debug!("Animal says something");
+fn make_noise(animal: &Animal) {
+    debug!("Animal {:?} says something", animal);
 }
