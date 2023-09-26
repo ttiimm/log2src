@@ -23,3 +23,6 @@ name = "dining"
 
 [[example]]
 name = "basic"
+
+[[example]]
+name = "animals"
