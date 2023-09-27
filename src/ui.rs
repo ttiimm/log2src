@@ -1,4 +1,5 @@
 use cursive::{Cursive, CursiveRunnable};
+use cursive::event::EventResult;
 use cursive::views::*;
 use cursive::theme::{BaseColor, Color};
 use cursive::traits::*;
@@ -48,11 +49,23 @@ fn make_log_view(num_lines: usize, log_mappings: &Vec<(&LogRef<'_>, Option<&Sour
                 Color::Dark(BaseColor::Red));
             view.set_content(styled);
         });
+
     for (i, lm) in log_mappings.iter().enumerate() {
         if lm.1.is_some() {
             select_view.add_item(format!("{}", i), format!("{}", lm.1.unwrap().line_no));
         }
     }
+
+    // set up 'j' and 'k' keys for navigation
+    let select_view = OnEventView::new(select_view)
+        .on_pre_event_inner('k', |s, _| {
+            let cb = s.select_up(1);
+            Some(EventResult::Consumed(Some(cb)))
+        })
+        .on_pre_event_inner('j', |s, _| {
+            let cb = s.select_down(1);
+            Some(EventResult::Consumed(Some(cb)))
+        });
 
     let selector = LinearLayout::vertical()
             .child(DummyView.fixed_height(1))
