@@ -1,56 +1,34 @@
-use cursive::Cursive;
+use cursive::{Cursive, CursiveRunnable};
 use cursive::views::*;
-use cursive::theme::BaseColor;
-use cursive::theme::Color;
+use cursive::theme::{BaseColor, Color};
 use cursive::traits::*;
 use cursive::utils::markup::StyledString;
 
 use syntect::highlighting::{Theme, ThemeSet};
 use syntect::parsing::SyntaxSet;
 
-use logdbg::{LogRef};
+use logdbg::{LogRef, SourceRef};
 
 
-pub fn start(source: &str, log_mappings: &Vec<(&LogRef<'_>, usize)>) {
+pub fn start(source: &str, log_mappings: &Vec<(&LogRef<'_>, Option<&SourceRef<'_>>)>) {
     let mut siv = cursive::default();
     siv.add_global_callback('q', |s| s.quit());
 
-    let themes = ThemeSet::load_defaults();
-    let theme = &themes.themes["Solarized (light)"];
-    set_theme(&mut siv, theme);
-    let syntax_set = SyntaxSet::load_defaults_newlines();
-    let syntax = syntax_set.find_syntax_by_token("rs").unwrap();
-    let mut highlighter = syntect::easy::HighlightLines::new(syntax, theme);
-    // Parse the content and highlight it
-    let styled = cursive_syntect::parse(source, &mut highlighter, &syntax_set).unwrap();
-
-    // Set up the source view
-    let mut gutter_view = LinearLayout::vertical();
     let num_lines = source.split("\n").collect::<Vec<_>>().len();
-    for i in 0..num_lines {
-        let value = if i != 0 {
-            format!("{:-<5}\n", i)
-        } else {
-            String::from("     ")
-        };
-        gutter_view.add_child(TextView::new(value)
-            .with_name(format!("line{}", i))
-        );
-    }
+    let source_view = make_source_view(&mut siv, source, num_lines);
+    let log_view = make_log_view(num_lines, log_mappings);
+        
+    let top_pane = LinearLayout::horizontal()
+                .child(source_view)
+                .child(log_view);
 
-    let gutter_view = gutter_view.with_name("gutter");
+    siv.add_layer(LinearLayout::vertical()
+    .child(top_pane));
 
-    let source_view = LinearLayout::horizontal()
-        .child(gutter_view)
-        .child(Dialog::around(
-            TextView::new(styled)
-                    .fixed_width(120)
-                    .full_height()
-                    .scrollable())
-                .title("Source Code"));
+    siv.run();
+}
 
-
-    // Set up the log view
+fn make_log_view(num_lines: usize, log_mappings: &Vec<(&LogRef<'_>, Option<&SourceRef<'_>>)>) -> LinearLayout {
     let mut select_view = SelectView::<String>::new()
         .autojump()
         .on_select(move |s: &mut Cursive, line_no: &String| {
@@ -71,9 +49,11 @@ pub fn start(source: &str, log_mappings: &Vec<(&LogRef<'_>, usize)>) {
             view.set_content(styled);
         });
     for (i, lm) in log_mappings.iter().enumerate() {
-        select_view.add_item(format!("{}", i), format!("{}", lm.1));
+        if lm.1.is_some() {
+            select_view.add_item(format!("{}", i), format!("{}", lm.1.unwrap().line_no));
+        }
     }
-    
+
     let selector = LinearLayout::vertical()
             .child(DummyView.fixed_height(1))
             .child(select_view);
@@ -82,7 +62,7 @@ pub fn start(source: &str, log_mappings: &Vec<(&LogRef<'_>, usize)>) {
         .map(|e| e.0.text)
         .collect::<Vec<&str>>()
         .join("\n");
-    let log_view = LinearLayout::horizontal()
+    LinearLayout::horizontal()
         .child(selector)
         .child(Dialog::around(
             TextView::new(logs)
@@ -90,16 +70,42 @@ pub fn start(source: &str, log_mappings: &Vec<(&LogRef<'_>, usize)>) {
                     .full_height()
                     .scrollable())
             .title("Logs")
-            .button("Press 'q' to quit", |s| s.quit()));
-        
-    let top_pane = LinearLayout::horizontal()
-                .child(source_view)
-                .child(log_view);
+            .button("Press 'q' to quit", |s| s.quit()))
+}
 
-    siv.add_layer(LinearLayout::vertical()
-        .child(top_pane));
 
-    siv.run();
+fn make_source_view(siv: &mut CursiveRunnable, source: &str, num_lines: usize) -> LinearLayout {
+    let themes = ThemeSet::load_defaults();
+    let theme = &themes.themes["Solarized (light)"];
+    set_theme(siv, theme);
+    let syntax_set = SyntaxSet::load_defaults_newlines();
+    let syntax = syntax_set.find_syntax_by_token("rs").unwrap();
+    let mut highlighter = syntect::easy::HighlightLines::new(syntax, theme);
+    // Parse the content and highlight it
+    let styled = cursive_syntect::parse(source, &mut highlighter, &syntax_set)
+        .unwrap();
+
+    let mut gutter_view = LinearLayout::vertical();
+    for i in 0..num_lines {
+        let value = if i != 0 {
+            format!("{:-<5}\n", i)
+        } else {
+            String::from("     ")
+        };
+        gutter_view.add_child(TextView::new(value)
+            .with_name(format!("line{}", i))
+        );
+    }
+    let gutter_view = gutter_view.with_name("gutter");
+
+    LinearLayout::horizontal()
+        .child(gutter_view)
+        .child(Dialog::around(
+            TextView::new(styled)
+                .fixed_width(120)
+                .full_height()
+                .scrollable())
+            .title("Source Code"))
 }
 
 fn set_theme(siv: &mut cursive::CursiveRunnable, theme: &Theme) {
