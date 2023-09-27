@@ -6,7 +6,7 @@ use tree_sitter::{Parser, Query, QueryCursor};
 #[derive(Debug)]
 pub struct LogRef<'a> {
     id: &'a str,
-    line_no: usize,
+    _line_no: usize,
     pub text: &'a str
 }
 
@@ -15,6 +15,7 @@ impl fmt::Display for LogRef<'_> {
         write!(f, "[{}] `{}`", self.id, self.text)
     }
 }
+
 
 #[derive(Debug)]
 pub struct SourceRef<'a> {
@@ -31,6 +32,7 @@ impl fmt::Display for SourceRef<'_> {
     }
 }
 
+
 pub fn link_to_source<'a>(log_line: &LogRef, src_logs: &'a Vec<SourceRef>) -> Option<&'a SourceRef<'a>> {
     src_logs.iter()
             .find(|&source_ref| {
@@ -44,12 +46,12 @@ pub fn link_to_source<'a>(log_line: &LogRef, src_logs: &'a Vec<SourceRef>) -> Op
 
 pub fn filter_log(buffer: &String, thread_re: Regex) -> Vec<LogRef> {
     let results = buffer.lines().enumerate()
-        .filter_map(|(line_no, line)| {
+        .filter_map(|(_line_no, line)| {
             match thread_re.captures(line) {
                 Some(capture) => {
                     let id = capture.get(0).unwrap().as_str();
                     let text = line;
-                    Some(LogRef { id, line_no, text })
+                    Some(LogRef { id, _line_no, text })
                 },
                 _ => None
             }
