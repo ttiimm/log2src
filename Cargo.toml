@@ -7,7 +7,7 @@ edition = "2021"
 clap = { version = "4.1", features = ["derive"] }
 cursive = { version = "0.20", features = ["toml"] }
 cursive-syntect = "0.1"
-syntect = "5.0"
+syntect = "5.1"
 log = "0.4"
 env_logger = "0.10"
 rand = "0.8"

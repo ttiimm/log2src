@@ -17,7 +17,7 @@ fn dine(i: i32, first: Arc<Mutex<i32>>, second: Arc<Mutex<i32>>) {
         let duration = Duration::from_secs(pause);
         debug!("philosopher-{} thinking for {} sec", i, pause);
         thread::sleep(duration);
-    
+
         debug!("philosopher-{} is hungry", i);
         {
             debug!("philosopher-{} getting first fork", i);
@@ -30,7 +30,10 @@ fn dine(i: i32, first: Arc<Mutex<i32>>, second: Arc<Mutex<i32>>) {
             debug!("philosopher-{} got fork-{}", i, m2);
             thread::sleep(duration);
 
-            debug!("philosopher-{} eats for {} sec with {} {}", i, pause, m1, m2);
+            debug!(
+                "philosopher-{} eats for {} sec with {} {}",
+                i, pause, m1, m2
+            );
             thread::sleep(duration);
             debug!("philosopher-{} ate for {} sec with {} {}", i, pause, m1, m2);
         }
@@ -40,10 +43,9 @@ fn dine(i: i32, first: Arc<Mutex<i32>>, second: Arc<Mutex<i32>>) {
 fn main() {
     env_logger::init();
 
-    let mutex: Vec<Arc<Mutex<i32>>> = (0..MAX).map(|i| {
-            Arc::new(Mutex::new(i))
-        }).collect::<Vec<_>>();
-
+    let mutex: Vec<Arc<Mutex<i32>>> = (0..MAX)
+        .map(|i| Arc::new(Mutex::new(i)))
+        .collect::<Vec<_>>();
 
     let mut threads = Vec::new();
 

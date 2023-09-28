@@ -2,12 +2,11 @@ use regex::Regex;
 use std::fmt;
 use tree_sitter::{Parser, Query, QueryCursor};
 
-
 #[derive(Debug)]
 pub struct LogRef<'a> {
     id: &'a str,
     _line_no: usize,
-    pub text: &'a str
+    pub text: &'a str,
 }
 
 impl fmt::Display for LogRef<'_> {
@@ -15,7 +14,6 @@ impl fmt::Display for LogRef<'_> {
         write!(f, "[{}] `{}`", self.id, self.text)
     }
 }
-
 
 #[derive(Debug)]
 pub struct SourceRef<'a> {
@@ -28,33 +26,38 @@ pub struct SourceRef<'a> {
 
 impl fmt::Display for SourceRef<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "[Line: {}, Col: {}] source `{}` vars={:?}", self.line_no, self.col, self.text, self.vars)
+        write!(
+            f,
+            "[Line: {}, Col: {}] source `{}` vars={:?}",
+            self.line_no, self.col, self.text, self.vars
+        )
     }
 }
 
-
-pub fn link_to_source<'a>(log_line: &LogRef, src_logs: &'a Vec<SourceRef>) -> Option<&'a SourceRef<'a>> {
-    src_logs.iter()
-            .find(|&source_ref| {
-                if let Some(capture) = source_ref.matcher.captures(log_line.text) {
-                    println!("{:?}", capture.get(1));
-                }
-                source_ref.matcher.is_match(log_line.text)
-            })
+pub fn link_to_source<'a>(
+    log_line: &LogRef,
+    src_logs: &'a Vec<SourceRef>,
+) -> Option<&'a SourceRef<'a>> {
+    src_logs.iter().find(|&source_ref| {
+        if let Some(capture) = source_ref.matcher.captures(log_line.text) {
+            println!("{:?}", capture.get(1));
+            return true;
+        }
+        false
+    })
 }
 
-
 pub fn filter_log(buffer: &String, thread_re: Regex) -> Vec<LogRef> {
-    let results = buffer.lines().enumerate()
-        .filter_map(|(_line_no, line)| {
-            match thread_re.captures(line) {
-                Some(capture) => {
-                    let id = capture.get(0).unwrap().as_str();
-                    let text = line;
-                    Some(LogRef { id, _line_no, text })
-                },
-                _ => None
+    let results = buffer
+        .lines()
+        .enumerate()
+        .filter_map(|(_line_no, line)| match thread_re.captures(line) {
+            Some(capture) => {
+                let id = capture.get(0).unwrap().as_str();
+                let text = line;
+                Some(LogRef { id, _line_no, text })
             }
+            _ => None,
         })
         .collect();
     results
@@ -62,7 +65,9 @@ pub fn filter_log(buffer: &String, thread_re: Regex) -> Vec<LogRef> {
 
 pub fn extract(source: &str) -> Vec<SourceRef> {
     let mut parser = Parser::new();
-    parser.set_language(tree_sitter_rust::language()).expect("Error loading Rust grammar");
+    parser
+        .set_language(tree_sitter_rust::language())
+        .expect("Error loading Rust grammar");
 
     let tree = parser.parse(&source, None).unwrap();
     let root_node = tree.root_node();
@@ -74,12 +79,9 @@ pub fn extract(source: &str) -> Vec<SourceRef> {
                                      (string_literal) @log (identifier)* @arguments
                                    ) (#eq? @macro-name "debug")
                                 )"#;
-    let query = Query::new(tree_sitter_rust::language(), debug_macros)
-        .unwrap();
+    let query = Query::new(tree_sitter_rust::language(), debug_macros).unwrap();
     let mut query_cursor = QueryCursor::new();
-    let matches = query_cursor.matches(
-        &query, root_node, source.as_bytes()
-    );
+    let matches = query_cursor.matches(&query, root_node, source.as_bytes());
 
     let mut matched = Vec::new();
     for m in matches {
@@ -94,9 +96,15 @@ pub fn extract(source: &str) -> Vec<SourceRef> {
                     let replaced = unquoted.replace("{}", "(\\w)+");
                     let matcher = Regex::new(&replaced).unwrap();
                     let vars = Vec::new();
-                    let result = SourceRef { line_no: line, col, text, matcher, vars };
+                    let result = SourceRef {
+                        line_no: line,
+                        col,
+                        text,
+                        matcher,
+                        vars,
+                    };
                     matched.push(result);
-                },
+                }
                 "identifier" => {
                     let range = capture.node.range();
                     let text = &source[range.start_byte..range.end_byte];
@@ -105,10 +113,12 @@ pub fn extract(source: &str) -> Vec<SourceRef> {
                         let prior_result: &mut SourceRef<'_> = matched.get_mut(length).unwrap();
                         prior_result.vars.push(&text);
                     }
-                },
-                _ => {println!("ignoring {}", capture.node.kind())}
+                }
+                _ => {
+                    println!("ignoring {}", capture.node.kind())
+                }
             }
         }
-    };
+    }
     matched
 }

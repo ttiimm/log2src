@@ -3,10 +3,14 @@ extern crate log;
 
 use rand::Rng;
 
-
 #[derive(Debug)]
 enum Animal {
-    Sheep, Dog, Cow, Chicken, Goat, Horse,
+    Sheep,
+    Dog,
+    Cow,
+    Chicken,
+    Goat,
+    Horse,
 }
 
 impl Animal {
@@ -36,7 +40,14 @@ fn main() {
 
 fn init() -> [Animal; 6] {
     debug!("Initializing animals");
-    [Animal::Sheep, Animal::Dog, Animal::Cow, Animal::Chicken, Animal::Goat, Animal::Horse]
+    [
+        Animal::Sheep,
+        Animal::Dog,
+        Animal::Cow,
+        Animal::Chicken,
+        Animal::Goat,
+        Animal::Horse,
+    ]
 }
 
 fn make_noise(animal: &Animal) {

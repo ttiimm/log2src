@@ -1,15 +1,15 @@
-use cursive::{Cursive, CursiveRunnable};
 use cursive::event::EventResult;
-use cursive::views::*;
 use cursive::theme::{BaseColor, Color};
 use cursive::traits::*;
-use cursive::utils::markup::StyledString;
+use cursive::utils::markup::{StyledIndexedSpan, StyledString};
+use cursive::utils::span::IndexedCow;
+use cursive::views::*;
+use cursive::{Cursive, CursiveRunnable};
 
 use syntect::highlighting::{Theme, ThemeSet};
 use syntect::parsing::SyntaxSet;
 
 use logdbg::{LogRef, SourceRef};
-
 
 pub fn start(source: &str, log_mappings: &Vec<(&LogRef<'_>, Option<&SourceRef<'_>>)>) {
     let mut siv = cursive::default();
@@ -18,21 +18,22 @@ pub fn start(source: &str, log_mappings: &Vec<(&LogRef<'_>, Option<&SourceRef<'_
     let num_lines = source.split("\n").collect::<Vec<_>>().len();
     let source_view = make_source_view(&mut siv, source, num_lines);
     let log_view = make_log_view(num_lines, log_mappings);
-        
-    let top_pane = LinearLayout::horizontal()
-                .child(source_view)
-                .child(log_view);
 
-    siv.add_layer(LinearLayout::vertical()
-    .child(top_pane));
+    let top_pane = LinearLayout::horizontal()
+        .child(source_view)
+        .child(log_view);
+
+    siv.add_layer(LinearLayout::vertical().child(top_pane));
 
     siv.run();
 }
 
-fn make_log_view(num_lines: usize, log_mappings: &Vec<(&LogRef<'_>, Option<&SourceRef<'_>>)>) -> LinearLayout {
-    let mut select_view = SelectView::<String>::new()
-        .autojump()
-        .on_select(move |s: &mut Cursive, line_no: &String| {
+fn make_log_view(
+    num_lines: usize,
+    log_mappings: &Vec<(&LogRef<'_>, Option<&SourceRef<'_>>)>,
+) -> LinearLayout {
+    let mut select_view = SelectView::<String>::new().autojump().on_select(
+        move |s: &mut Cursive, line_no: &String| {
             for i in 0..num_lines {
                 let value = if i != 0 {
                     StyledString::plain(format!("{:-<5}\n", i))
@@ -45,10 +46,11 @@ fn make_log_view(num_lines: usize, log_mappings: &Vec<(&LogRef<'_>, Option<&Sour
             }
 
             let mut view: ViewRef<TextView> = s.find_name(&format!("line{}", line_no)).unwrap();
-            let styled = StyledString::styled(format!("{:><5}\n", line_no), 
-                Color::Dark(BaseColor::Red));
+            let styled =
+                StyledString::styled(format!("{:><5}\n", line_no), Color::Dark(BaseColor::Red));
             view.set_content(styled);
-        });
+        },
+    );
 
     for (i, lm) in log_mappings.iter().enumerate() {
         if lm.1.is_some() {
@@ -68,24 +70,25 @@ fn make_log_view(num_lines: usize, log_mappings: &Vec<(&LogRef<'_>, Option<&Sour
         });
 
     let selector = LinearLayout::vertical()
-            .child(DummyView.fixed_height(1))
-            .child(select_view);
+        .child(DummyView.fixed_height(1))
+        .child(select_view);
 
-    let logs = log_mappings.iter()
+    let logs = log_mappings
+        .iter()
         .map(|e| e.0.text)
         .collect::<Vec<&str>>()
         .join("\n");
-    LinearLayout::horizontal()
-        .child(selector)
-        .child(Dialog::around(
+    LinearLayout::horizontal().child(selector).child(
+        Dialog::around(
             TextView::new(logs)
-                    .fixed_width(120)
-                    .full_height()
-                    .scrollable())
-            .title("Logs")
-            .button("Press 'q' to quit", |s| s.quit()))
+                .fixed_width(120)
+                .full_height()
+                .scrollable(),
+        )
+        .title("Logs")
+        .button("Press 'q' to quit", |s| s.quit()),
+    )
 }
-
 
 fn make_source_view(siv: &mut CursiveRunnable, source: &str, num_lines: usize) -> LinearLayout {
     let themes = ThemeSet::load_defaults();
@@ -95,8 +98,7 @@ fn make_source_view(siv: &mut CursiveRunnable, source: &str, num_lines: usize) -
     let syntax = syntax_set.find_syntax_by_token("rs").unwrap();
     let mut highlighter = syntect::easy::HighlightLines::new(syntax, theme);
     // Parse the content and highlight it
-    let styled = cursive_syntect::parse(source, &mut highlighter, &syntax_set)
-        .unwrap();
+    let styled = cursive_syntect::parse(source, &mut highlighter, &syntax_set).unwrap();
 
     let mut gutter_view = LinearLayout::vertical();
     for i in 0..num_lines {
@@ -105,20 +107,19 @@ fn make_source_view(siv: &mut CursiveRunnable, source: &str, num_lines: usize) -
         } else {
             String::from("     ")
         };
-        gutter_view.add_child(TextView::new(value)
-            .with_name(format!("line{}", i))
-        );
+        gutter_view.add_child(TextView::new(value).with_name(format!("line{}", i)));
     }
     let gutter_view = gutter_view.with_name("gutter");
 
-    LinearLayout::horizontal()
-        .child(gutter_view)
-        .child(Dialog::around(
+    LinearLayout::horizontal().child(gutter_view).child(
+        Dialog::around(
             TextView::new(styled)
                 .fixed_width(120)
                 .full_height()
-                .scrollable())
-            .title("Source Code"))
+                .scrollable(),
+        )
+        .title("Source Code"),
+    )
 }
 
 fn set_theme(siv: &mut cursive::CursiveRunnable, theme: &Theme) {
