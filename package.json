@@ -3,14 +3,27 @@
   "displayName": "logdbg",
   "description": "A debugger driven by logs",
   "version": "0.0.1",
+  "publisher": "Tim Likarish Ellis",
+  "author": {
+    "name": "Tim Likarish Ellis"
+  },
+  "license": "MIT",
   "engines": {
     "vscode": "^1.82.0"
   },
   "categories": [
     "Debuggers"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ttiimm/logdbg-ext.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ttiimm/logdbg-ext/issues"
+  },
   "activationEvents": [],
-  "main": "./out/extension.js",
+  "main": "./dist/extension.js",
+  "browser": "./dist/web-extension.js",
   "contributes": {
     "commands": [
       {
@@ -34,14 +47,12 @@
     "@typescript-eslint/eslint-plugin": "^6.7.3",
     "@typescript-eslint/parser": "^6.7.3",
     "@vscode/test-electron": "^2.3.4",
+    "@vscode/debugadapter": "^1.56.0",
+    "@vscode/debugadapter-testsupport": "^1.56.0",
     "eslint": "^8.50.0",
     "glob": "^10.3.3",
     "mocha": "^10.2.0",
     "typescript": "^5.2.2"
   },
-  "dependencies": {
-    "vscode-debugadapter": "^1.51.0",
-    "vscode-debugadapter-testsupport": "^1.51.0",
-    "vscode-debugprotocol": "^1.51.0"
-  }
+
 }
