@@ -20,6 +20,12 @@ devDependencies:
   '@typescript-eslint/parser':
     specifier: ^6.7.3
     version: 6.7.4(eslint@8.51.0)(typescript@5.2.2)
+  '@vscode/debugadapter':
+    specifier: ^1.56.0
+    version: 1.63.0
+  '@vscode/debugadapter-testsupport':
+    specifier: ^1.56.0
+    version: 1.63.0
   '@vscode/test-electron':
     specifier: ^2.3.4
     version: 2.3.5
@@ -294,6 +300,24 @@ packages:
     dependencies:
       '@typescript-eslint/types': 6.7.4
       eslint-visitor-keys: 3.4.3
+    dev: true
+
+  /@vscode/debugadapter-testsupport@1.63.0:
+    resolution: {integrity: sha512-K17THT/GoJJNezcIh3HaXDOvsntFkLxmjZ83ihXJHKAbcOnaNOrtzcnVT1bL3CVyRkgG7WzitBeScOi7sjaqZg==}
+    engines: {node: '>=14'}
+    dependencies:
+      '@vscode/debugprotocol': 1.63.0
+    dev: true
+
+  /@vscode/debugadapter@1.63.0:
+    resolution: {integrity: sha512-d2eAnYCZkKJ0C28gT93KPi5YXFav8VyagcxkJ94LZ8qqgJ27+2ct26MOHGYKB8L25ZdDs8A4YmyJO32J0afhNQ==}
+    engines: {node: '>=14'}
+    dependencies:
+      '@vscode/debugprotocol': 1.63.0
+    dev: true
+
+  /@vscode/debugprotocol@1.63.0:
+    resolution: {integrity: sha512-7gewwv69pA7gcJUhtJsru5YN7E1AwwnlBrF5mJY4R/NGInOUqOYOWHlqQwG+4AXn0nXWbcn26MHgaGI9Q26SqA==}
     dev: true
 
   /@vscode/test-electron@2.3.5:
