@@ -21,7 +21,9 @@
   "bugs": {
     "url": "https://github.com/ttiimm/logdbg-ext/issues"
   },
-  "activationEvents": [],
+  "activationEvents": [
+    "onDebugResolve:logdbg"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "breakpoints": [{ "language": "" }],
