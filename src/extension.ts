@@ -26,6 +26,7 @@ export function activate(context: vscode.ExtensionContext) {
 	switch (runMode) {
 
 		case 'inline':
+			// is there a way to do this in the package.json configuration instead?
 			let factory = new InlineDebugAdapterFactory();
 			context.subscriptions.push(vscode.debug.registerDebugAdapterDescriptorFactory('logdbg', factory));
 			break;

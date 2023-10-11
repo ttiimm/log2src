@@ -26,6 +26,9 @@ devDependencies:
   '@vscode/debugadapter-testsupport':
     specifier: ^1.56.0
     version: 1.63.0
+  '@vscode/debugprotocol':
+    specifier: ^1.56.0
+    version: 1.63.0
   '@vscode/test-electron':
     specifier: ^2.3.4
     version: 2.3.5
