@@ -19,7 +19,6 @@ import { DebugSession } from './debugAdapter';
 const runMode: 'external' | 'server' | 'namedPipeServer' | 'inline' = 'inline';
 
 export function activate(context: vscode.ExtensionContext) {
-	vscode.window.showInformationMessage("TimTim here!");
 	// The microsoft debug adapter extension had several ways of starting up, but the default inline method
 	// seems easiest and so will focus on that initially. If there is need for other ways of starting, then
 	// could look to the vscode-mock-debug for examples.
