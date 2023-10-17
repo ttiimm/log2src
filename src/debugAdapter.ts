@@ -54,6 +54,11 @@ export class DebugSession extends LoggingDebugSession {
         this.sendEvent(new InitializedEvent());
     }
 
+    protected setBreakPointsRequest(response: DebugProtocol.SetBreakpointsResponse, args: DebugProtocol.SetBreakpointsArguments) {
+        console.log(`setBreakPointsRequest ${JSON.stringify(args)}`);
+        return this.sendResponse(response);
+    }
+
     protected attachRequest(response: DebugProtocol.AttachResponse, args: IAttachRequestArguments) {
         console.log(`attachRequest`);
         console.log(' ');

@@ -26,7 +26,17 @@
   ],
   "main": "./out/extension.js",
   "contributes": {
-    "breakpoints": [{ "language": "" }],
+    "languages": [
+      {
+        "id": "log-telemetry",
+        "extensions": [
+          ".log"
+        ]
+      }
+    ],
+    "breakpoints": [
+      { "language": "log-telemetry" }
+    ],
     "debuggers": [
       {
         "type": "logdbg",
