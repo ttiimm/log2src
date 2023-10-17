@@ -1,8 +1,7 @@
 use cursive::event::EventResult;
 use cursive::theme::{BaseColor, Color};
 use cursive::traits::*;
-use cursive::utils::markup::{StyledIndexedSpan, StyledString};
-use cursive::utils::span::IndexedCow;
+use cursive::utils::markup::StyledString;
 use cursive::views::*;
 use cursive::{Cursive, CursiveRunnable};
 
