@@ -7,14 +7,17 @@ mod ui;
 #[derive(ClapParser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
+    #[arg(short, long, value_name = "SOURCE")]
+    source: String,
+
     #[arg(short, long, value_name = "LOG")]
     log: Option<PathBuf>,
 
+    #[arg(short, long, value_name = "UI", default_value = "false")]
+    ui: Option<bool>,
+
     #[arg(short, long, value_name = "THREADID")]
     thread_id: Option<String>,
-
-    #[arg(short, long, value_name = "SOURCE")]
-    source: String,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -47,7 +50,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         })
         .collect::<Vec<(&LogRef<'_>, Option<&SourceRef<'_>>)>>();
 
-    ui::start(&source, &log_mappings);
+    if args.ui.unwrap_or(false) {
+        ui::start(&source, &log_mappings);
+    }
 
     Ok(())
 }
