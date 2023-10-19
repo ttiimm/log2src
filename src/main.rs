@@ -7,11 +7,17 @@ mod ui;
 #[derive(ClapParser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
-    #[arg(short, long, value_name = "SOURCE")]
+    #[arg(long, value_name = "SOURCE")]
     source: String,
 
     #[arg(short, long, value_name = "LOG")]
     log: Option<PathBuf>,
+
+    #[arg(short, long, value_name = "START")]
+    start: Option<usize>,
+
+    #[arg(short, long, value_name = "END")]
+    end: Option<usize>,
 
     #[arg(short, long, value_name = "UI", default_value = "false")]
     ui: Option<bool>,
@@ -37,7 +43,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut buffer = String::new();
     reader.read_to_string(&mut buffer)?;
-    let filtered = filter_log(&buffer, thread_re);
+    let start = args.start.unwrap_or(0);
+    let end = args.end.unwrap_or(usize::MAX);
+    let filtered = filter_log(&buffer, thread_re, start, end);
 
     let source = fs::read_to_string(&args.source).expect("Can read the source file");
     let src_logs = extract(&source);
@@ -45,13 +53,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     let log_mappings = filtered
         .iter()
         .map(|log_ref| {
-            let src_ref = link_to_source(&log_ref, &src_logs);
+            let src_ref: Option<&SourceRef<'_>> = link_to_source(&log_ref, &src_logs);
             (log_ref, src_ref)
         })
         .collect::<Vec<(&LogRef<'_>, Option<&SourceRef<'_>>)>>();
 
     if args.ui.unwrap_or(false) {
         ui::start(&source, &log_mappings);
+    } else {
+        for mapping in log_mappings {
+            println!("{:?}", mapping);
+        }
     }
 
     Ok(())

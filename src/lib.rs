@@ -39,18 +39,19 @@ pub fn link_to_source<'a>(
     src_logs: &'a Vec<SourceRef>,
 ) -> Option<&'a SourceRef<'a>> {
     src_logs.iter().find(|&source_ref| {
-        if let Some(capture) = source_ref.matcher.captures(log_line.text) {
-            println!("{:?}", capture.get(1));
+        if let Some(_capture) = source_ref.matcher.captures(log_line.text) {
+            // println!("{:?}", capture.get(1));
             return true;
         }
         false
     })
 }
 
-pub fn filter_log(buffer: &String, thread_re: Regex) -> Vec<LogRef> {
+pub fn filter_log(buffer: &String, thread_re: Regex, start: usize, end: usize) -> Vec<LogRef> {
     let results = buffer
         .lines()
         .enumerate()
+        .filter(|(line_no, _line)|  start <= *line_no && *line_no < end)
         .filter_map(|(_line_no, line)| match thread_re.captures(line) {
             Some(capture) => {
                 let id = capture.get(0).unwrap().as_str();
