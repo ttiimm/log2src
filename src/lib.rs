@@ -1,5 +1,6 @@
 use regex::Regex;
 use std::fmt;
+use serde::Serialize;
 use tree_sitter::{Parser, Query, QueryCursor};
 
 #[derive(Debug)]
@@ -15,11 +16,12 @@ impl fmt::Display for LogRef<'_> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct SourceRef<'a> {
     pub line_no: usize,
     col: usize,
     text: &'a str,
+    #[serde(skip_serializing)]
     matcher: Regex,
     vars: Vec<&'a str>,
 }

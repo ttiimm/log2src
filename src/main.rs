@@ -1,6 +1,7 @@
 use clap::Parser as ClapParser;
 use logdbg::{extract, filter_log, link_to_source, LogRef, SourceRef};
 use regex::Regex;
+use serde_json;
 use std::{error::Error, fs, io, path::PathBuf};
 mod ui;
 
@@ -22,12 +23,16 @@ struct Cli {
     #[arg(short, long, value_name = "UI", default_value = "false")]
     ui: Option<bool>,
 
+    // output something usable by a Debug Adapter
+    #[arg(short, long, value_name = "DA", default_value = "true")]
+    da: Option<bool>,
+
     #[arg(short, long, value_name = "THREADID")]
     thread_id: Option<String>,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let args = Cli::parse();
+    let args= Cli::parse();
 
     let thread_re = if args.thread_id.is_some() {
         Regex::new(&args.thread_id.unwrap()).expect("Valid regex")
@@ -60,9 +65,10 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     if args.ui.unwrap_or(false) {
         ui::start(&source, &log_mappings);
-    } else {
+    } else if args.da.unwrap_or(true) {
         for mapping in log_mappings {
-            println!("{:?}", mapping);
+            let serialized = serde_json::to_string(&mapping.1).unwrap();
+            println!("{}", serialized);
         }
     }
 
