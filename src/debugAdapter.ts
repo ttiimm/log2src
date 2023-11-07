@@ -14,6 +14,10 @@ import {
 import { DebugProtocol } from '@vscode/debugprotocol';
 
 
+interface SourceRef {
+    line_no: number,
+}
+
 interface ILaunchRequestArguments extends DebugProtocol.LaunchRequestArguments {
     // the source to debug, currently a single file
     source: string;
@@ -104,8 +108,17 @@ export class DebugSession extends LoggingDebugSession {
         const maxLevels = typeof args.levels === 'number' ? args.levels : 1000;
         const endFrame = startFrame + maxLevels;
 
+        var path = require('path');
+        var binPath = path.resolve(__dirname, '../bin/logdbg');
+        var execFile = require('child_process').execFileSync;
+        
+        var stdout = execFile(binPath, ['--source', '/Users/tim/Projects/logdbg/examples/basic.rs',
+                                        '--log', '/tmp/basic.log',
+                                        '--start', '0',
+                                        '--end', '1']);
+        let srcRef: SourceRef = JSON.parse(stdout);
         response.body = {
-            stackFrames: [new StackFrame(0, "main", this.createSource(""), this.convertDebuggerLineToClient(6))],
+            stackFrames: [new StackFrame(0, "main", this.createSource(""), this.convertDebuggerLineToClient(srcRef.line_no))],
             totalFrames: 1
         };
         this.sendResponse(response);
