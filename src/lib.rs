@@ -18,8 +18,9 @@ impl fmt::Display for LogRef<'_> {
 
 #[derive(Debug, Serialize)]
 pub struct SourceRef<'a> {
+    #[serde(rename(serialize = "lineNumber"))]
     pub line_no: usize,
-    col: usize,
+    column: usize,
     text: &'a str,
     #[serde(skip_serializing)]
     matcher: Regex,
@@ -31,7 +32,7 @@ impl fmt::Display for SourceRef<'_> {
         write!(
             f,
             "[Line: {}, Col: {}] source `{}` vars={:?}",
-            self.line_no, self.col, self.text, self.vars
+            self.line_no, self.column, self.text, self.vars
         )
     }
 }
@@ -101,7 +102,7 @@ pub fn extract(source: &str) -> Vec<SourceRef> {
                     let vars = Vec::new();
                     let result = SourceRef {
                         line_no: line,
-                        col,
+                        column: col,
                         text,
                         matcher,
                         vars,
