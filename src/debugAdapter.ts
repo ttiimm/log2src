@@ -9,13 +9,17 @@
 import { 
     Logger, logger,
     LoggingDebugSession, Thread, StackFrame, Source,
-    InitializedEvent, StoppedEvent,
+    InitializedEvent,
+    StoppedEvent,
 } from '@vscode/debugadapter';
 import { DebugProtocol } from '@vscode/debugprotocol';
+import { Breakpoint } from 'vscode';
+import { threadId } from 'worker_threads';
 
 
 interface SourceRef {
-    line_no: number,
+    lineNumber: number,
+    column: number
 }
 
 interface ILaunchRequestArguments extends DebugProtocol.LaunchRequestArguments {
@@ -31,9 +35,12 @@ interface ILaunchRequestArguments extends DebugProtocol.LaunchRequestArguments {
 
 interface IAttachRequestArguments extends ILaunchRequestArguments { }
 
+
 export class DebugSession extends LoggingDebugSession {
 
     private static threadID = 1;
+    private breakPoints = new Map<string, DebugProtocol.Breakpoint[]>();
+    private launchArgs: ILaunchRequestArguments = {source: "", log: ""};
 
     /**
      * Create a new debug adapter to use with a debug session.
@@ -62,6 +69,30 @@ export class DebugSession extends LoggingDebugSession {
 
     protected setBreakPointsRequest(response: DebugProtocol.SetBreakpointsResponse, args: DebugProtocol.SetBreakpointsArguments) {
         console.log(`setBreakPointsRequest ${JSON.stringify(args)}`);
+        console.log(' ');
+
+        const path = args.source.path as string;
+		const clientLines = args.lines || [];
+
+        clientLines.forEach((line) => {
+            let bps = this.breakPoints.get(path);
+            if (!bps) {
+                bps = new Array<DebugProtocol.Breakpoint>();
+                this.breakPoints.set(path, bps);
+            }
+            bps.push({line: line, verified: false});
+        });
+        
+        const breakpoints = this.breakPoints.get(path) || [];
+        response.body = {
+            breakpoints: breakpoints
+        };
+
+        this.sendEvent(new StoppedEvent('entry', DebugSession.threadID));
+        if (breakpoints.length > 0) {
+            this.sendEvent(new StoppedEvent('breakpoint', threadId));
+        }
+
         return this.sendResponse(response);
     }
 
@@ -78,11 +109,11 @@ export class DebugSession extends LoggingDebugSession {
         // make sure to 'Stop' the buffered logging if 'trace' is not set
         logger.setup(args.trace ? Logger.LogLevel.Verbose : Logger.LogLevel.Stop, false);
 
+        this.launchArgs = args;
+
         // TODO do we need this?
         // wait 1 second until configuration has finished (and configurationDoneRequest has been called)
         // await this._configurationDone.wait(1000);
-
-        this.sendEvent(new StoppedEvent('entry', DebugSession.threadID));
 
         this.sendResponse(response);
     }
@@ -101,30 +132,31 @@ export class DebugSession extends LoggingDebugSession {
     }
 
     protected stackTraceRequest(response: DebugProtocol.StackTraceResponse, args: DebugProtocol.StackTraceArguments): void {
-        console.log(`stackTraceRequest`);
+        console.log(`stackTraceRequest ${JSON.stringify(args)}`);
         console.log(' ');
 
-        const startFrame = typeof args.startFrame === 'number' ? args.startFrame : 0;
-        const maxLevels = typeof args.levels === 'number' ? args.levels : 1000;
-        const endFrame = startFrame + maxLevels;
-
         var path = require('path');
-        var binPath = path.resolve(__dirname, '../bin/logdbg');
+        var logdbgPath = path.resolve(__dirname, '../bin/logdbg');
         var execFile = require('child_process').execFileSync;
         
-        var stdout = execFile(binPath, ['--source', '/Users/tim/Projects/logdbg/examples/basic.rs',
-                                        '--log', '/tmp/basic.log',
-                                        '--start', '0',
-                                        '--end', '1']);
+        let bps = this.breakPoints.get(this.launchArgs.log) || [];
+        let line = bps[0].line || 1;
+        let start = line - 1;
+        let end = line;
+        let stdout = execFile(logdbgPath, ['--source', this.launchArgs.source,
+                                           '--log', this.launchArgs.log,
+                                           '--start', start,
+                                           '--end', end]);
         let srcRef: SourceRef = JSON.parse(stdout);
         response.body = {
-            stackFrames: [new StackFrame(0, "main", this.createSource(""), this.convertDebuggerLineToClient(srcRef.line_no))],
+            stackFrames: [new StackFrame(0, "main", this.createSource(this.launchArgs.source), this.convertDebuggerLineToClient(srcRef.lineNumber))],
             totalFrames: 1
         };
+
         this.sendResponse(response);
     }
 
-    private createSource(_filePath: string): Source {
-		return new Source("basic.rs", "/Users/tim/Projects/logdbg/examples/basic.rs", undefined, undefined, 'mock-adapter-data');
+    private createSource(filePath: string): Source {
+		return new Source("basic.rs", filePath);
 	}
 }
