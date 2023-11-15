@@ -13,13 +13,13 @@ import {
     StoppedEvent,
 } from '@vscode/debugadapter';
 import { DebugProtocol } from '@vscode/debugprotocol';
-import { Breakpoint } from 'vscode';
 import { threadId } from 'worker_threads';
 
 
 interface SourceRef {
     lineNumber: number,
-    column: number
+    column: number,
+    name: string
 }
 
 interface ILaunchRequestArguments extends DebugProtocol.LaunchRequestArguments {
@@ -156,7 +156,7 @@ export class DebugSession extends LoggingDebugSession {
                                            '--end', end]);
         let srcRef: SourceRef = JSON.parse(stdout);
         response.body = {
-            stackFrames: [new StackFrame(0, "main", this.createSource(this.launchArgs.source), this.convertDebuggerLineToClient(srcRef.lineNumber))],
+            stackFrames: [new StackFrame(0, srcRef.name, this.createSource(this.launchArgs.source), this.convertDebuggerLineToClient(srcRef.lineNumber))],
             totalFrames: 1
         };
 
