@@ -52,6 +52,11 @@ export class DebugSession extends LoggingDebugSession {
         this.setDebuggerColumnsStartAt1(true);
     }
 
+    protected disconnectRequest(response: DebugProtocol.DisconnectResponse, args: DebugProtocol.DisconnectArguments, request?: DebugProtocol.Request): void {
+		console.log(`disconnectRequest suspend: ${args.suspendDebuggee}, terminate: ${args.terminateDebuggee}`);
+        this.sendResponse(response);
+	}
+
     /**
      * The 'initialize' request is the first request called by the frontend
      * to interrogate the features the debug adapter provides.
@@ -62,6 +67,8 @@ export class DebugSession extends LoggingDebugSession {
 
         response.body = response.body || {};
         response.body.supportsStepBack = true;
+        // response.body.supportsBreakpointLocationsRequest = true;
+        response.body.supportTerminateDebuggee = true;
         
         this.sendResponse(response);
         this.sendEvent(new InitializedEvent());
