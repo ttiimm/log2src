@@ -1,7 +1,7 @@
 use regex::Regex;
 use std::fmt;
 use serde::Serialize;
-use tree_sitter::{Parser, Query, QueryCursor};
+use tree_sitter::{Node, Parser, Query, QueryCursor};
 
 #[derive(Debug)]
 pub struct LogRef<'a> {
@@ -21,6 +21,7 @@ pub struct SourceRef<'a> {
     #[serde(rename(serialize = "lineNumber"))]
     pub line_no: usize,
     column: usize,
+    name: &'a str,
     text: &'a str,
     #[serde(skip_serializing)]
     matcher: Regex,
@@ -31,8 +32,8 @@ impl fmt::Display for SourceRef<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "[Line: {}, Col: {}] source `{}` vars={:?}",
-            self.line_no, self.column, self.text, self.vars
+            "[Line: {}, Col: {}] source `{}` name `{}` vars={:?}",
+            self.line_no, self.column, self.text, self.name, self.vars
         )
     }
 }
@@ -69,20 +70,20 @@ pub fn filter_log(buffer: &String, thread_re: Regex, start: usize, end: usize) -
 
 pub fn extract(source: &str) -> Vec<SourceRef> {
     let mut parser = Parser::new();
-    parser
-        .set_language(tree_sitter_rust::language())
-        .expect("Error loading Rust grammar");
+    parser.set_language(tree_sitter_rust::language())
+          .expect("Error loading Rust grammar");
 
     let tree = parser.parse(&source, None).unwrap();
     let root_node = tree.root_node();
     // println!("{:?}", root_node.to_sexp());
 
-    let debug_macros = r#"(macro_invocation
-                                 macro: (identifier) @macro-name
-                                   (token_tree
-                                     (string_literal) @log (identifier)* @arguments
-                                   ) (#eq? @macro-name "debug")
-                                )"#;
+    let debug_macros = r#"
+        (macro_invocation macro: (identifier) @macro-name
+            (token_tree
+                (string_literal) @log (identifier)* @arguments
+            ) (#eq? @macro-name "debug")
+        )
+    "#;
     let query = Query::new(tree_sitter_rust::language(), debug_macros).unwrap();
     let mut query_cursor = QueryCursor::new();
     let matches = query_cursor.matches(&query, root_node, source.as_bytes());
@@ -100,9 +101,11 @@ pub fn extract(source: &str) -> Vec<SourceRef> {
                     let replaced = unquoted.replace("{}", "(\\w)+");
                     let matcher = Regex::new(&replaced).unwrap();
                     let vars = Vec::new();
+                    let name = find_fn_name(&capture.node, source);
                     let result = SourceRef {
                         line_no: line,
                         column: col,
+                        name,
                         text,
                         matcher,
                         vars,
@@ -125,4 +128,16 @@ pub fn extract(source: &str) -> Vec<SourceRef> {
         }
     }
     matched
+}
+
+fn find_fn_name<'a>(node: &Node, source: &'a str) -> &'a str {
+    match node.kind() {
+        "function_item" => {
+            let range = node.child_by_field_name("name").unwrap().range();
+            &source[range.start_byte..range.end_byte]
+        },
+        _ => {
+            find_fn_name(&node.parent().unwrap(), source)
+        }
+    }
 }
