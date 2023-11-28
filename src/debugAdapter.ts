@@ -13,7 +13,6 @@ import {
     StoppedEvent,
 } from '@vscode/debugadapter';
 import { DebugProtocol } from '@vscode/debugprotocol';
-import { threadId } from 'worker_threads';
 
 
 interface SourceRef {
@@ -40,6 +39,7 @@ export class DebugSession extends LoggingDebugSession {
 
     private static threadID = 1;
     private breakPoints = new Map<string, DebugProtocol.Breakpoint[]>();
+    private line = 1;
     private launchArgs: ILaunchRequestArguments = {source: "", log: ""};
 
     /**
@@ -53,9 +53,9 @@ export class DebugSession extends LoggingDebugSession {
     }
 
     protected disconnectRequest(response: DebugProtocol.DisconnectResponse, args: DebugProtocol.DisconnectArguments, request?: DebugProtocol.Request): void {
-		console.log(`disconnectRequest suspend: ${args.suspendDebuggee}, terminate: ${args.terminateDebuggee}`);
+        console.log(`disconnectRequest suspend: ${args.suspendDebuggee}, terminate: ${args.terminateDebuggee}`);
         this.sendResponse(response);
-	}
+    }
 
     /**
      * The 'initialize' request is the first request called by the frontend
@@ -79,7 +79,7 @@ export class DebugSession extends LoggingDebugSession {
         console.log(' ');
 
         const path = args.source.path as string;
-		const clientLines = args.lines || [];
+        const clientLines = args.lines || [];
 
         clientLines.forEach((line) => {
             let bps = this.breakPoints.get(path);
@@ -95,11 +95,9 @@ export class DebugSession extends LoggingDebugSession {
             breakpoints: breakpoints
         };
 
-        this.sendEvent(new StoppedEvent('entry', DebugSession.threadID));
         if (breakpoints.length > 0) {
-            this.sendEvent(new StoppedEvent('breakpoint', threadId));
+            this.sendEvent(new StoppedEvent('breakpoint', DebugSession.threadID));
         }
-
         return this.sendResponse(response);
     }
 
@@ -121,7 +119,9 @@ export class DebugSession extends LoggingDebugSession {
         // TODO do we need this?
         // wait 1 second until configuration has finished (and configurationDoneRequest has been called)
         // await this._configurationDone.wait(1000);
-
+        if (this.breakPoints.size === 0) {
+            this.sendEvent(new StoppedEvent('entry', DebugSession.threadID));
+        }
         this.sendResponse(response);
     }
 
@@ -138,6 +138,20 @@ export class DebugSession extends LoggingDebugSession {
         this.sendResponse(response);
     }
 
+    protected nextRequest(response: DebugProtocol.NextResponse, args: DebugProtocol.NextArguments): void {
+        console.log(`nextRequest ${JSON.stringify(args)} line=${this.line}`);
+        this.line++;
+        this.sendEvent(new StoppedEvent('step', DebugSession.threadID));
+        this.sendResponse(response);
+    }
+
+    protected stepBackRequest(response: DebugProtocol.StepBackResponse, args: DebugProtocol.StepBackArguments): void {
+        console.log(`stepBackRequest ${JSON.stringify(args)} line=${this.line}`);
+        this.line--;
+        this.sendEvent(new StoppedEvent('step', DebugSession.threadID));
+        this.sendResponse(response);
+    }
+
     protected stackTraceRequest(response: DebugProtocol.StackTraceResponse, args: DebugProtocol.StackTraceArguments): void {
         console.log(`stackTraceRequest ${JSON.stringify(args)}`);
         console.log(' ');
@@ -146,8 +160,13 @@ export class DebugSession extends LoggingDebugSession {
         var logdbgPath = path.resolve(__dirname, '../bin/logdbg');
         var execFile = require('child_process').execFileSync;
         
-        let bps = this.breakPoints.get(this.launchArgs.log) || [];
-        let line = bps[0].line || 1;
+        let bps = this.breakPoints.get(this.launchArgs.log) || [{line: 1, verified: false}];
+        var bpLine = bps[0].line || 1;
+        let line = this.line;
+        if (this.line < bpLine) {
+            line = bpLine;
+            this.line = bpLine;
+        }
         let start = line - 1;
         let end = line;
         let stdout = execFile(logdbgPath, ['--source', this.launchArgs.source,
@@ -164,6 +183,6 @@ export class DebugSession extends LoggingDebugSession {
     }
 
     private createSource(filePath: string): Source {
-		return new Source("basic.rs", filePath);
-	}
+        return new Source("basic.rs", filePath);
+    }
 }
