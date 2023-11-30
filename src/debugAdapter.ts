@@ -13,6 +13,7 @@ import {
     StoppedEvent,
 } from '@vscode/debugadapter';
 import { DebugProtocol } from '@vscode/debugprotocol';
+import * as vscode from 'vscode';
 
 
 interface SourceRef {
@@ -41,6 +42,7 @@ export class DebugSession extends LoggingDebugSession {
     private breakPoints = new Map<string, DebugProtocol.Breakpoint[]>();
     private line = 1;
     private launchArgs: ILaunchRequestArguments = {source: "", log: ""};
+    private highlightDecoration: vscode.TextEditorDecorationType;
 
     /**
      * Create a new debug adapter to use with a debug session.
@@ -50,10 +52,14 @@ export class DebugSession extends LoggingDebugSession {
 
         this.setDebuggerLinesStartAt1(true);
         this.setDebuggerColumnsStartAt1(true);
+
+        const focusColor = new vscode.ThemeColor('editor.focusedStackFrameHighlightBackground');
+        this.highlightDecoration = vscode.window.createTextEditorDecorationType({"backgroundColor": focusColor});
     }
 
     protected disconnectRequest(response: DebugProtocol.DisconnectResponse, args: DebugProtocol.DisconnectArguments, request?: DebugProtocol.Request): void {
         console.log(`disconnectRequest suspend: ${args.suspendDebuggee}, terminate: ${args.terminateDebuggee}`);
+        vscode.window.visibleTextEditors.forEach((editor) => editor.setDecorations(this.highlightDecoration, []));
         this.sendResponse(response);
     }
 
@@ -169,6 +175,17 @@ export class DebugSession extends LoggingDebugSession {
         }
         let start = line - 1;
         let end = line;
+
+        const editors = vscode.window.visibleTextEditors.filter((editor) => editor.document.fileName === this.launchArgs.log);
+        if (editors !== undefined && editors.length >= 1) {
+            const editor = editors[0];
+            let range = new vscode.Range(
+                new vscode.Position(start, 0),
+                new vscode.Position(start, Number.MAX_VALUE)
+            );
+            editor.setDecorations(this.highlightDecoration, [range]);
+        }
+
         let stdout = execFile(logdbgPath, ['--source', this.launchArgs.source,
                                            '--log', this.launchArgs.log,
                                            '--start', start,
