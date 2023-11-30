@@ -98,7 +98,8 @@ pub fn extract(source: &str) -> Vec<SourceRef> {
                     let line = range.start_point.row + 1;
                     let col = range.start_point.column;
                     let unquoted = &source[range.start_byte + 1..range.end_byte - 1];
-                    let replaced = unquoted.replace("{}", "(\\w)+");
+                    let mut replaced = unquoted.replace("{}", "(\\w)+");
+                    replaced = replaced.replace("{:?}", "(\\w)+");
                     let matcher = Regex::new(&replaced).unwrap();
                     let vars = Vec::new();
                     let name = find_fn_name(&capture.node, source);
