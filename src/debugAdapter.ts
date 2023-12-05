@@ -42,6 +42,7 @@ export class DebugSession extends LoggingDebugSession {
     private breakPoints = new Map<string, DebugProtocol.Breakpoint[]>();
     private line = 1;
     private launchArgs: ILaunchRequestArguments = {source: "", log: ""};
+    private logLines = Number.MAX_SAFE_INTEGER;
     private highlightDecoration: vscode.TextEditorDecorationType;
 
     /**
@@ -121,6 +122,9 @@ export class DebugSession extends LoggingDebugSession {
         logger.setup(args.trace ? Logger.LogLevel.Verbose : Logger.LogLevel.Stop, false);
 
         this.launchArgs = args;
+        var execFile = require('child_process').execFileSync;
+        let stdout = execFile('wc', ['-l', this.launchArgs.log]);
+        this.logLines = +stdout.toString().trim().split(" ")[0] || Number.MAX_VALUE;
 
         // TODO do we need this?
         // wait 1 second until configuration has finished (and configurationDoneRequest has been called)
@@ -144,16 +148,50 @@ export class DebugSession extends LoggingDebugSession {
         this.sendResponse(response);
     }
 
+    protected continueRequest(response: DebugProtocol.ContinueResponse, args: DebugProtocol.ContinueArguments): void {
+        console.log(`continueRequest ${JSON.stringify(args)}`);
+        console.log(' ');
+
+        const next = this.findNextLine();
+        this.line = next;
+        this.sendEvent(new StoppedEvent('breakpoint', DebugSession.threadID));
+        this.sendResponse(response);
+    }
+
+    protected reverseContinueRequest(response: DebugProtocol.ReverseContinueResponse, args: DebugProtocol.ReverseContinueArguments): void {
+        console.log(`reverseContinueRequest ${JSON.stringify(args)}`);
+        console.log(' ');
+
+        const next = this.findNextLine(true);
+        this.line = next;
+        this.sendEvent(new StoppedEvent('breakpoint', DebugSession.threadID));
+        this.sendResponse(response);
+    }
+
+    private findNextLine(reverse = false): number {
+        const bps = this.breakPoints.get(this.launchArgs.log) || [];
+        const bp = bps.find((bp) => {
+            bp.line && reverse ? bp.line < this.line : bp.line && bp.line > this.line;
+        });
+        if (bp !== undefined && bp.line !== undefined) {
+            return bp.line;
+        } else {
+            return reverse ? -1 : this.logLines;
+        }
+    }
+
     protected nextRequest(response: DebugProtocol.NextResponse, args: DebugProtocol.NextArguments): void {
         console.log(`nextRequest ${JSON.stringify(args)} line=${this.line}`);
-        this.line++;
+        console.log(' ');
+        this.line = Math.min(this.logLines, this.line + 1);
         this.sendEvent(new StoppedEvent('step', DebugSession.threadID));
         this.sendResponse(response);
     }
 
     protected stepBackRequest(response: DebugProtocol.StepBackResponse, args: DebugProtocol.StepBackArguments): void {
         console.log(`stepBackRequest ${JSON.stringify(args)} line=${this.line}`);
-        this.line--;
+        console.log(' ');
+        this.line = Math.max(-1, this.line - 1);
         this.sendEvent(new StoppedEvent('step', DebugSession.threadID));
         this.sendResponse(response);
     }
