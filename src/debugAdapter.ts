@@ -88,17 +88,17 @@ export class DebugSession extends LoggingDebugSession {
         console.log(' ');
 
         const path = args.source.path as string;
-        const clientLines = args.lines || [];
-
-        clientLines.forEach((line) => {
-            let bps = this._breakPoints.get(path);
-            if (!bps) {
-                bps = new Array<DebugProtocol.Breakpoint>();
-                this._breakPoints.set(path, bps);
+        // TODO handle lines?
+        const bps = args.breakpoints || [];
+        this._breakPoints.set(path, new Array<DebugProtocol.Breakpoint>());
+        bps.forEach((sourceBp) => {
+            if (this._line === 1) {
+                this._line = sourceBp.line;
             }
-            bps.push({line: line, verified: false});
+            let bps = this._breakPoints.get(path) || [];
+            const verified = sourceBp.line > 0 && sourceBp.line < this._logLines;
+            bps.push({line: sourceBp.line, verified: verified});
         });
-        
         const breakpoints = this._breakPoints.get(path) || [];
         response.body = {
             breakpoints: breakpoints
@@ -154,7 +154,7 @@ export class DebugSession extends LoggingDebugSession {
         console.log(`continueRequest ${JSON.stringify(args)}`);
         console.log(' ');
 
-        const next = this.findNextLine();
+        const next = this.findNextLineToStop();
         this._line = next;
         this.sendEvent(new StoppedEvent('breakpoint', DebugSession.threadID));
         this.sendResponse(response);
@@ -164,21 +164,33 @@ export class DebugSession extends LoggingDebugSession {
         console.log(`reverseContinueRequest ${JSON.stringify(args)}`);
         console.log(' ');
 
-        const next = this.findNextLine(true);
+        const next = this.findNextLineToStop(true);
         this._line = next;
         this.sendEvent(new StoppedEvent('breakpoint', DebugSession.threadID));
         this.sendResponse(response);
     }
 
-    private findNextLine(reverse = false): number {
+    private findNextLineToStop(reverse = false): number {
         const bps = this._breakPoints.get(this._launchArgs.log) || [];
-        const bp = bps.find((bp) => {
-            bp.line && reverse ? bp.line < this._line : bp.line && bp.line > this._line;
-        });
+        let bp;
+        if (reverse) {
+            bp = bps.findLast((bp) => {
+                return reverse ? 
+                    (bp.line !== undefined && this._line > bp.line) : 
+                    (bp.line !== undefined && this._line < bp.line);
+            });
+        } else {
+            bp = bps.find((bp) => {
+                return reverse ? 
+                    (bp.line !== undefined && this._line > bp.line) : 
+                    (bp.line !== undefined && this._line < bp.line);
+            });
+        }
+        
         if (bp !== undefined && bp.line !== undefined) {
             return bp.line;
         } else {
-            return reverse ? -1 : this._logLines;
+            return reverse ? 1 : this._logLines;
         }
     }
 
@@ -193,7 +205,7 @@ export class DebugSession extends LoggingDebugSession {
     protected stepBackRequest(response: DebugProtocol.StepBackResponse, args: DebugProtocol.StepBackArguments): void {
         console.log(`stepBackRequest ${JSON.stringify(args)} line=${this._line}`);
         console.log(' ');
-        this._line = Math.max(-1, this._line - 1);
+        this._line = Math.max(1, this._line - 1);
         this.sendEvent(new StoppedEvent('step', DebugSession.threadID));
         this.sendResponse(response);
     }
@@ -205,16 +217,8 @@ export class DebugSession extends LoggingDebugSession {
         var path = require('path');
         var logdbgPath = path.resolve(__dirname, '../bin/logdbg');
         var execFile = require('child_process').execFileSync;
-        
-        let bps = this._breakPoints.get(this._launchArgs.log) || [{line: 1, verified: false}];
-        var bpLine = bps[0].line || 1;
-        let line = this._line;
-        if (this._line < bpLine) {
-            line = bpLine;
-            this._line = bpLine;
-        }
-        let start = line - 1;
-        let end = line;
+        let start = this._line - 1;
+        let end = this._line;
 
         const editors = vscode.window.visibleTextEditors.filter((editor) => editor.document.fileName === this._launchArgs.log);
         if (editors !== undefined && editors.length >= 1) {
