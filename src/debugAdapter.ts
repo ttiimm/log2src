@@ -8,9 +8,10 @@
 
 import { 
     Logger, logger,
-    LoggingDebugSession, Thread, StackFrame, Source,
-    InitializedEvent,
-    StoppedEvent,
+    LoggingDebugSession, 
+    Thread, StackFrame, Scope, Source,
+    InitializedEvent, StoppedEvent,
+    Handles,
 } from '@vscode/debugadapter';
 import { DebugProtocol } from '@vscode/debugprotocol';
 import * as vscode from 'vscode';
@@ -39,11 +40,12 @@ interface IAttachRequestArguments extends ILaunchRequestArguments { }
 export class DebugSession extends LoggingDebugSession {
 
     private static threadID = 1;
-    private breakPoints = new Map<string, DebugProtocol.Breakpoint[]>();
-    private line = 1;
-    private launchArgs: ILaunchRequestArguments = {source: "", log: ""};
-    private logLines = Number.MAX_SAFE_INTEGER;
-    private highlightDecoration: vscode.TextEditorDecorationType;
+    private _breakPoints = new Map<string, DebugProtocol.Breakpoint[]>();
+    private _variableHandles = new Handles<'locals'>();
+    private _line = 1;
+    private _launchArgs: ILaunchRequestArguments = {source: "", log: ""};
+    private _logLines = Number.MAX_SAFE_INTEGER;
+    private _highlightDecoration: vscode.TextEditorDecorationType;
 
     /**
      * Create a new debug adapter to use with a debug session.
@@ -55,12 +57,12 @@ export class DebugSession extends LoggingDebugSession {
         this.setDebuggerColumnsStartAt1(true);
 
         const focusColor = new vscode.ThemeColor('editor.focusedStackFrameHighlightBackground');
-        this.highlightDecoration = vscode.window.createTextEditorDecorationType({"backgroundColor": focusColor});
+        this._highlightDecoration = vscode.window.createTextEditorDecorationType({"backgroundColor": focusColor});
     }
 
     protected disconnectRequest(response: DebugProtocol.DisconnectResponse, args: DebugProtocol.DisconnectArguments, request?: DebugProtocol.Request): void {
         console.log(`disconnectRequest suspend: ${args.suspendDebuggee}, terminate: ${args.terminateDebuggee}`);
-        vscode.window.visibleTextEditors.forEach((editor) => editor.setDecorations(this.highlightDecoration, []));
+        vscode.window.visibleTextEditors.forEach((editor) => editor.setDecorations(this._highlightDecoration, []));
         this.sendResponse(response);
     }
 
@@ -89,15 +91,15 @@ export class DebugSession extends LoggingDebugSession {
         const clientLines = args.lines || [];
 
         clientLines.forEach((line) => {
-            let bps = this.breakPoints.get(path);
+            let bps = this._breakPoints.get(path);
             if (!bps) {
                 bps = new Array<DebugProtocol.Breakpoint>();
-                this.breakPoints.set(path, bps);
+                this._breakPoints.set(path, bps);
             }
             bps.push({line: line, verified: false});
         });
         
-        const breakpoints = this.breakPoints.get(path) || [];
+        const breakpoints = this._breakPoints.get(path) || [];
         response.body = {
             breakpoints: breakpoints
         };
@@ -121,15 +123,15 @@ export class DebugSession extends LoggingDebugSession {
         // make sure to 'Stop' the buffered logging if 'trace' is not set
         logger.setup(args.trace ? Logger.LogLevel.Verbose : Logger.LogLevel.Stop, false);
 
-        this.launchArgs = args;
+        this._launchArgs = args;
         var execFile = require('child_process').execFileSync;
-        let stdout = execFile('wc', ['-l', this.launchArgs.log]);
-        this.logLines = +stdout.toString().trim().split(" ")[0] || Number.MAX_VALUE;
+        let stdout = execFile('wc', ['-l', this._launchArgs.log]);
+        this._logLines = +stdout.toString().trim().split(" ")[0] || Number.MAX_VALUE;
 
         // TODO do we need this?
         // wait 1 second until configuration has finished (and configurationDoneRequest has been called)
         // await this._configurationDone.wait(1000);
-        if (this.breakPoints.size === 0) {
+        if (this._breakPoints.size === 0) {
             this.sendEvent(new StoppedEvent('entry', DebugSession.threadID));
         }
         this.sendResponse(response);
@@ -153,7 +155,7 @@ export class DebugSession extends LoggingDebugSession {
         console.log(' ');
 
         const next = this.findNextLine();
-        this.line = next;
+        this._line = next;
         this.sendEvent(new StoppedEvent('breakpoint', DebugSession.threadID));
         this.sendResponse(response);
     }
@@ -163,35 +165,35 @@ export class DebugSession extends LoggingDebugSession {
         console.log(' ');
 
         const next = this.findNextLine(true);
-        this.line = next;
+        this._line = next;
         this.sendEvent(new StoppedEvent('breakpoint', DebugSession.threadID));
         this.sendResponse(response);
     }
 
     private findNextLine(reverse = false): number {
-        const bps = this.breakPoints.get(this.launchArgs.log) || [];
+        const bps = this._breakPoints.get(this._launchArgs.log) || [];
         const bp = bps.find((bp) => {
-            bp.line && reverse ? bp.line < this.line : bp.line && bp.line > this.line;
+            bp.line && reverse ? bp.line < this._line : bp.line && bp.line > this._line;
         });
         if (bp !== undefined && bp.line !== undefined) {
             return bp.line;
         } else {
-            return reverse ? -1 : this.logLines;
+            return reverse ? -1 : this._logLines;
         }
     }
 
     protected nextRequest(response: DebugProtocol.NextResponse, args: DebugProtocol.NextArguments): void {
-        console.log(`nextRequest ${JSON.stringify(args)} line=${this.line}`);
+        console.log(`nextRequest ${JSON.stringify(args)} line=${this._line}`);
         console.log(' ');
-        this.line = Math.min(this.logLines, this.line + 1);
+        this._line = Math.min(this._logLines, this._line + 1);
         this.sendEvent(new StoppedEvent('step', DebugSession.threadID));
         this.sendResponse(response);
     }
 
     protected stepBackRequest(response: DebugProtocol.StepBackResponse, args: DebugProtocol.StepBackArguments): void {
-        console.log(`stepBackRequest ${JSON.stringify(args)} line=${this.line}`);
+        console.log(`stepBackRequest ${JSON.stringify(args)} line=${this._line}`);
         console.log(' ');
-        this.line = Math.max(-1, this.line - 1);
+        this._line = Math.max(-1, this._line - 1);
         this.sendEvent(new StoppedEvent('step', DebugSession.threadID));
         this.sendResponse(response);
     }
@@ -204,36 +206,48 @@ export class DebugSession extends LoggingDebugSession {
         var logdbgPath = path.resolve(__dirname, '../bin/logdbg');
         var execFile = require('child_process').execFileSync;
         
-        let bps = this.breakPoints.get(this.launchArgs.log) || [{line: 1, verified: false}];
+        let bps = this._breakPoints.get(this._launchArgs.log) || [{line: 1, verified: false}];
         var bpLine = bps[0].line || 1;
-        let line = this.line;
-        if (this.line < bpLine) {
+        let line = this._line;
+        if (this._line < bpLine) {
             line = bpLine;
-            this.line = bpLine;
+            this._line = bpLine;
         }
         let start = line - 1;
         let end = line;
 
-        const editors = vscode.window.visibleTextEditors.filter((editor) => editor.document.fileName === this.launchArgs.log);
+        const editors = vscode.window.visibleTextEditors.filter((editor) => editor.document.fileName === this._launchArgs.log);
         if (editors !== undefined && editors.length >= 1) {
             const editor = editors[0];
             let range = new vscode.Range(
                 new vscode.Position(start, 0),
                 new vscode.Position(start, Number.MAX_VALUE)
             );
-            editor.setDecorations(this.highlightDecoration, [range]);
+            editor.setDecorations(this._highlightDecoration, [range]);
         }
 
-        let stdout = execFile(logdbgPath, ['--source', this.launchArgs.source,
-                                           '--log', this.launchArgs.log,
+        let stdout = execFile(logdbgPath, ['--source', this._launchArgs.source,
+                                           '--log', this._launchArgs.log,
                                            '--start', start,
                                            '--end', end]);
         let srcRef: SourceRef = JSON.parse(stdout);
         response.body = {
-            stackFrames: [new StackFrame(0, srcRef.name, this.createSource(this.launchArgs.source), this.convertDebuggerLineToClient(srcRef.lineNumber))],
+            stackFrames: [new StackFrame(0, srcRef.name, this.createSource(this._launchArgs.source), this.convertDebuggerLineToClient(srcRef.lineNumber))],
             totalFrames: 1
         };
 
+        this.sendResponse(response);
+    }
+
+    protected scopesRequest(response: DebugProtocol.ScopesResponse, args: DebugProtocol.ScopesArguments): void {
+        console.log(`scopesRequest ${JSON.stringify(args)}`);
+        console.log(' ');
+
+        response.body = {
+            scopes: [
+                new Scope("Locals", this._variableHandles.create('locals'), false),
+            ]
+        };
         this.sendResponse(response);
     }
 
