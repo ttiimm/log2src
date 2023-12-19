@@ -230,13 +230,19 @@ export class DebugSession extends LoggingDebugSession {
             editor.setDecorations(this._highlightDecoration, [range]);
         }
 
+        const sourceName = path.basename(this._launchArgs.source);
         let stdout = execFile(logdbgPath, ['--source', this._launchArgs.source,
                                            '--log', this._launchArgs.log,
                                            '--start', start,
                                            '--end', end]);
         let srcRef: SourceRef = JSON.parse(stdout);
         response.body = {
-            stackFrames: [new StackFrame(0, srcRef.name, this.createSource(this._launchArgs.source), this.convertDebuggerLineToClient(srcRef.lineNumber))],
+            stackFrames: [new StackFrame(
+                0, 
+                srcRef.name, 
+                new Source(sourceName, this._launchArgs.source), 
+                this.convertDebuggerLineToClient(srcRef.lineNumber)
+            )],
             totalFrames: 1
         };
 
@@ -255,7 +261,4 @@ export class DebugSession extends LoggingDebugSession {
         this.sendResponse(response);
     }
 
-    private createSource(filePath: string): Source {
-        return new Source("basic.rs", filePath);
-    }
 }
