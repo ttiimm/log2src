@@ -17,10 +17,15 @@ import { DebugProtocol } from '@vscode/debugprotocol';
 import * as vscode from 'vscode';
 
 
+interface LogMapping {
+    srcRef: SourceRef,
+    variables: Map<string, string>,
+}
+
 interface SourceRef {
     lineNumber: number,
     column: number,
-    name: string
+    name: string,
 }
 
 interface ILaunchRequestArguments extends DebugProtocol.LaunchRequestArguments {
@@ -46,6 +51,7 @@ export class DebugSession extends LoggingDebugSession {
     private _launchArgs: ILaunchRequestArguments = {source: "", log: ""};
     private _logLines = Number.MAX_SAFE_INTEGER;
     private _highlightDecoration: vscode.TextEditorDecorationType;
+    private _mapping: LogMapping = undefined;
 
     /**
      * Create a new debug adapter to use with a debug session.
@@ -235,13 +241,13 @@ export class DebugSession extends LoggingDebugSession {
                                            '--log', this._launchArgs.log,
                                            '--start', start,
                                            '--end', end]);
-        let srcRef: SourceRef = JSON.parse(stdout);
+        this._mapping = JSON.parse(stdout);
         response.body = {
             stackFrames: [new StackFrame(
                 0, 
-                srcRef.name, 
+                this._mapping.srcRef.name, 
                 new Source(sourceName, this._launchArgs.source), 
-                this.convertDebuggerLineToClient(srcRef.lineNumber)
+                this.convertDebuggerLineToClient(this._mapping.srcRef.lineNumber)
             )],
             totalFrames: 1
         };
@@ -261,4 +267,26 @@ export class DebugSession extends LoggingDebugSession {
         this.sendResponse(response);
     }
 
+    protected variablesRequest(response: DebugProtocol.VariablesResponse, args: DebugProtocol.VariablesArguments, request?: DebugProtocol.Request): void {
+        console.log(`variablesRequest ${JSON.stringify(args)}`);
+        console.log(' ');
+
+        let vs: DebugProtocol.Variable[] = [];
+    
+        const v = this._variableHandles.get(args.variablesReference);
+        if (v === 'locals' && this._mapping !== undefined) {
+            for (let [key, value] of Object.entries(this._mapping.variables)) {
+                vs.push({
+                    name: key,
+                    value: value,
+                    variablesReference: 0
+                });
+            }        
+        }
+    
+        response.body = {
+            variables: vs
+        };
+        this.sendResponse(response);
+    }
 }
