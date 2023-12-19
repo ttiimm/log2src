@@ -1,8 +1,8 @@
 use clap::Parser as ClapParser;
-use logdbg::{extract, filter_log, link_to_source, LogRef, SourceRef};
+use logdbg::{extract_source, extract_variables, filter_log, link_to_source, LogMapping, SourceRef};
 use regex::Regex;
 use serde_json;
-use std::{error::Error, fs, io, path::PathBuf};
+use std::{collections::HashMap, error::Error, fs, io, path::PathBuf};
 mod ui;
 
 #[derive(ClapParser)]
@@ -53,21 +53,24 @@ fn main() -> Result<(), Box<dyn Error>> {
     let filtered = filter_log(&buffer, thread_re, start, end);
 
     let source = fs::read_to_string(&args.source).expect("Can read the source file");
-    let src_logs = extract(&source);
+    let src_logs = extract_source(&source);
 
     let log_mappings = filtered
         .iter()
         .map(|log_ref| {
             let src_ref: Option<&SourceRef<'_>> = link_to_source(&log_ref, &src_logs);
-            (log_ref, src_ref)
+            let variables = src_ref.map_or(
+                HashMap::new(),
+                |src_ref| extract_variables(&log_ref, src_ref));
+            LogMapping { log_ref, src_ref, variables }
         })
-        .collect::<Vec<(&LogRef<'_>, Option<&SourceRef<'_>>)>>();
+        .collect::<Vec<LogMapping>>();
 
     if args.ui.unwrap_or(false) {
         ui::start(&source, &log_mappings);
     } else if args.da.unwrap_or(true) {
         for mapping in log_mappings {
-            let serialized = serde_json::to_string(&mapping.1).unwrap();
+            let serialized = serde_json::to_string(&mapping).unwrap();
             println!("{}", serialized);
         }
     }

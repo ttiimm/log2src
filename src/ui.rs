@@ -8,9 +8,9 @@ use cursive::{Cursive, CursiveRunnable};
 use syntect::highlighting::{Theme, ThemeSet};
 use syntect::parsing::SyntaxSet;
 
-use logdbg::{LogRef, SourceRef};
+use logdbg::LogMapping;
 
-pub fn start(source: &str, log_mappings: &Vec<(&LogRef<'_>, Option<&SourceRef<'_>>)>) {
+pub fn start(source: &str, log_mappings: &Vec<LogMapping>) {
     let mut siv = cursive::default();
     siv.add_global_callback('q', |s| s.quit());
 
@@ -29,7 +29,7 @@ pub fn start(source: &str, log_mappings: &Vec<(&LogRef<'_>, Option<&SourceRef<'_
 
 fn make_log_view(
     num_lines: usize,
-    log_mappings: &Vec<(&LogRef<'_>, Option<&SourceRef<'_>>)>,
+    log_mappings: &Vec<LogMapping>,
 ) -> LinearLayout {
     let mut select_view = SelectView::<String>::new().autojump().on_select(
         move |s: &mut Cursive, line_no: &String| {
@@ -52,8 +52,8 @@ fn make_log_view(
     );
 
     for (i, lm) in log_mappings.iter().enumerate() {
-        if lm.1.is_some() {
-            select_view.add_item(format!("{}", i), format!("{}", lm.1.unwrap().line_no));
+        if lm.src_ref.is_some() {
+            select_view.add_item(format!("{}", i), format!("{}", lm.src_ref.unwrap().line_no));
         }
     }
 
@@ -74,7 +74,7 @@ fn make_log_view(
 
     let logs = log_mappings
         .iter()
-        .map(|e| e.0.text)
+        .map(|e| e.log_ref.text)
         .collect::<Vec<&str>>()
         .join("\n");
     LinearLayout::horizontal().child(selector).child(

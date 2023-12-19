@@ -1,7 +1,19 @@
 use regex::Regex;
 use std::fmt;
+use std::collections::HashMap;
 use serde::Serialize;
 use tree_sitter::{Node, Parser, Query, QueryCursor};
+
+
+#[derive(Serialize)]
+pub struct LogMapping<'a> {
+    #[serde(skip_serializing)]
+    pub log_ref: &'a LogRef<'a>,
+    #[serde(rename(serialize = "srcRef"))]
+    pub src_ref: Option<&'a SourceRef<'a>>,
+    pub variables: HashMap<&'a str, &'a str>,
+}
+
 
 #[derive(Debug)]
 pub struct LogRef<'a> {
@@ -15,6 +27,7 @@ impl fmt::Display for LogRef<'_> {
         write!(f, "[{}] `{}`", self.id, self.text)
     }
 }
+
 
 #[derive(Debug, Serialize)]
 pub struct SourceRef<'a> {
@@ -43,12 +56,27 @@ pub fn link_to_source<'a>(
     src_logs: &'a Vec<SourceRef>,
 ) -> Option<&'a SourceRef<'a>> {
     src_logs.iter().find(|&source_ref| {
-        if let Some(_capture) = source_ref.matcher.captures(log_line.text) {
-            // println!("{:?}", capture.get(1));
+        if let Some(_) = source_ref.matcher.captures(log_line.text) {
             return true;
         }
         false
     })
+}
+
+pub fn extract_variables<'a>(
+    log_line: &'a LogRef,
+    src_ref: &'a SourceRef
+) -> HashMap<&'a str, &'a str> {
+    let mut variables = HashMap::new();
+    if src_ref.vars.len() > 0 {
+        if let Some(captures) = src_ref.matcher.captures(log_line.text) {
+            for i in 0..captures.len() - 1 {
+                variables.insert(src_ref.vars[i], captures.get(i + 1).unwrap().as_str());
+            }
+        }
+    }
+
+    variables
 }
 
 pub fn filter_log(buffer: &String, thread_re: Regex, start: usize, end: usize) -> Vec<LogRef> {
@@ -68,7 +96,7 @@ pub fn filter_log(buffer: &String, thread_re: Regex, start: usize, end: usize) -
     results
 }
 
-pub fn extract(source: &str) -> Vec<SourceRef> {
+pub fn extract_source(source: &str) -> Vec<SourceRef> {
     let mut parser = Parser::new();
     parser.set_language(tree_sitter_rust::language())
           .expect("Error loading Rust grammar");
@@ -98,8 +126,8 @@ pub fn extract(source: &str) -> Vec<SourceRef> {
                     let line = range.start_point.row + 1;
                     let col = range.start_point.column;
                     let unquoted = &source[range.start_byte + 1..range.end_byte - 1];
-                    let mut replaced = unquoted.replace("{}", "(\\w)+");
-                    replaced = replaced.replace("{:?}", "(\\w)+");
+                    let mut replaced = unquoted.replace("{}", "(\\w+)");
+                    replaced = replaced.replace("{:?}", "(\\w+)");
                     let matcher = Regex::new(&replaced).unwrap();
                     let vars = Vec::new();
                     let name = find_fn_name(&capture.node, source);
