@@ -2,7 +2,7 @@ use regex::Regex;
 use std::fmt;
 use std::collections::HashMap;
 use serde::Serialize;
-use tree_sitter::{Node, Parser, Query, QueryCursor};
+use tree_sitter::{Node, Parser, Query, QueryCursor, Tree};
 
 
 #[derive(Serialize)]
@@ -51,6 +51,12 @@ impl fmt::Display for SourceRef<'_> {
     }
 }
 
+
+pub struct CallGraph<'a> {
+    nodes: Vec<&'a str>
+}
+
+
 pub fn link_to_source<'a>(
     log_line: &LogRef,
     src_logs: &'a Vec<SourceRef>,
@@ -96,12 +102,33 @@ pub fn filter_log(buffer: &String, thread_re: Regex, start: usize, end: usize) -
     results
 }
 
-pub fn extract_source(source: &str) -> Vec<SourceRef> {
-    let mut parser = Parser::new();
-    parser.set_language(tree_sitter_rust::language())
-          .expect("Error loading Rust grammar");
+pub fn build_graph(source: &str) -> CallGraph {
+    let tree = parse(source);
+    let root_node = tree.root_node();
+    let fn_calls = r#"
+        (function_item name: (identifier) @fn_name parameters: (parameters)*)
+    "#;
+    let query = Query::new(tree_sitter_rust::language(), fn_calls).unwrap();
+    let mut query_cursor = QueryCursor::new();
+    let matches = query_cursor.matches(&query, root_node, source.as_bytes());
+    let name_idx = query.capture_index_for_name("fn_name").unwrap();
+    let mut nodes = Vec::new();
+    for m in matches {
+        for capture in m.captures
+                                           .iter()
+                                           .filter(|c| c.index == name_idx) {
+            let range = capture.node.range();
+            let name = &source[range.start_byte..range.end_byte];
+            nodes.push(name);
+        }
+    }
 
-    let tree = parser.parse(&source, None).unwrap();
+    
+    CallGraph{ nodes }
+}
+
+pub fn extract_source(source: &str) -> Vec<SourceRef> {
+    let tree = parse(source);
     let root_node = tree.root_node();
     // println!("{:?}", root_node.to_sexp());
 
@@ -169,4 +196,12 @@ fn find_fn_name<'a>(node: &Node, source: &'a str) -> &'a str {
             find_fn_name(&node.parent().unwrap(), source)
         }
     }
+}
+
+fn parse(source: &str) -> Tree {
+    let mut parser = Parser::new();
+    parser.set_language(tree_sitter_rust::language())
+          .expect("Error loading Rust grammar");
+    parser.parse(&source, None)
+          .expect("source is parable")
 }

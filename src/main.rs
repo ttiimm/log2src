@@ -1,5 +1,5 @@
 use clap::Parser as ClapParser;
-use logdbg::{extract_source, extract_variables, filter_log, link_to_source, LogMapping, SourceRef};
+use logdbg::{build_graph, extract_source, extract_variables, filter_log, link_to_source, LogMapping, SourceRef};
 use regex::Regex;
 use serde_json;
 use std::{collections::HashMap, error::Error, fs, io, path::PathBuf};
@@ -54,6 +54,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let source = fs::read_to_string(&args.source).expect("Can read the source file");
     let src_logs = extract_source(&source);
+    let _call_graph = build_graph(&source);
 
     let log_mappings = filtered
         .iter()
