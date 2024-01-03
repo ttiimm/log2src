@@ -54,7 +54,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let source = fs::read_to_string(&args.source).expect("Can read the source file");
     let src_logs = extract_source(&source);
-    let _call_graph = build_graph(&source);
+    let call_graph = build_graph(&source);
+    println!("{:?}", call_graph);
 
     let log_mappings = filtered
         .iter()

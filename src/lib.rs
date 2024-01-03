@@ -51,9 +51,16 @@ impl fmt::Display for SourceRef<'_> {
     }
 }
 
-
+#[derive(Debug)]
 pub struct CallGraph<'a> {
-    nodes: Vec<&'a str>
+    nodes: Vec<&'a str>,
+    edges: Vec<Edge<'a>>,
+}
+
+#[derive(Debug)]
+pub struct Edge<'a> {
+    from: &'a str,
+    to: &'a str,
 }
 
 
@@ -105,26 +112,54 @@ pub fn filter_log(buffer: &String, thread_re: Regex, start: usize, end: usize) -
 pub fn build_graph(source: &str) -> CallGraph {
     let tree = parse(source);
     let root_node = tree.root_node();
-    let fn_calls = r#"
+    let node_query = r#"
         (function_item name: (identifier) @fn_name parameters: (parameters)*)
     "#;
-    let query = Query::new(tree_sitter_rust::language(), fn_calls).unwrap();
+    let nodes = find_nodes(root_node, source, node_query);
+
+    let edge_query = r#"
+        (call_expression function: (identifier) @fn_name arguments: (arguments (_))*)
+    "#;
+    let edges = find_edges(root_node, source, edge_query);
+
+    CallGraph{ nodes, edges }
+}
+
+fn find_nodes<'a, 'b>(root_node: Node, source: &'a str, to_query: &'b str) -> Vec<&'a str> {
+    let query = Query::new(tree_sitter_rust::language(), to_query).unwrap();
     let mut query_cursor = QueryCursor::new();
     let matches = query_cursor.matches(&query, root_node, source.as_bytes());
     let name_idx = query.capture_index_for_name("fn_name").unwrap();
-    let mut nodes = Vec::new();
+    let mut symbols = Vec::new();
     for m in matches {
         for capture in m.captures
                                            .iter()
                                            .filter(|c| c.index == name_idx) {
             let range = capture.node.range();
             let name = &source[range.start_byte..range.end_byte];
-            nodes.push(name);
+            symbols.push(name);
         }
     }
+    symbols
+}
 
-    
-    CallGraph{ nodes }
+fn find_edges<'a, 'b>(root_node: Node, source: &'a str, to_query: &'b str) -> Vec<Edge<'a>> {
+    let query = Query::new(tree_sitter_rust::language(), to_query).unwrap();
+    let mut query_cursor = QueryCursor::new();
+    let matches = query_cursor.matches(&query, root_node, source.as_bytes());
+    let name_idx = query.capture_index_for_name("fn_name").unwrap();
+    let mut symbols = Vec::new();
+    for m in matches {
+        for capture in m.captures
+                                           .iter()
+                                           .filter(|c| c.index == name_idx) {
+            let range = capture.node.range();
+            let fn_call = &source[range.start_byte..range.end_byte];
+            let enclosing = find_fn_name(&capture.node, source);
+            symbols.push(Edge { from: enclosing, to: fn_call });
+        }
+    }
+    symbols
 }
 
 pub fn extract_source(source: &str) -> Vec<SourceRef> {
