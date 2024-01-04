@@ -1,5 +1,5 @@
 use clap::Parser as ClapParser;
-use logdbg::{build_graph, extract_source, extract_variables, filter_log, link_to_source, LogMapping, SourceRef};
+use logdbg::{build_graph, build_stack, extract_source, extract_variables, filter_log, link_to_source, LogMapping, SourceRef};
 use regex::Regex;
 use serde_json;
 use std::{collections::HashMap, error::Error, fs, io, path::PathBuf};
@@ -64,7 +64,11 @@ fn main() -> Result<(), Box<dyn Error>> {
             let variables = src_ref.map_or(
                 HashMap::new(),
                 |src_ref| extract_variables(&log_ref, src_ref));
-            LogMapping { log_ref, src_ref, variables }
+            let stack = src_ref.map_or(
+                Vec::new(),
+                |src_ref| build_stack(src_ref, &call_graph)
+            );
+            LogMapping { log_ref, src_ref, variables, stack }
         })
         .collect::<Vec<LogMapping>>();
 

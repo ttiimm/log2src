@@ -2,7 +2,7 @@ use regex::Regex;
 use std::fmt;
 use std::collections::HashMap;
 use serde::Serialize;
-use tree_sitter::{Node, Parser, Query, QueryCursor, Tree};
+use tree_sitter::{Node, Parser, Query, QueryCapture, QueryCursor, Tree};
 
 
 #[derive(Serialize)]
@@ -12,6 +12,7 @@ pub struct LogMapping<'a> {
     #[serde(rename(serialize = "srcRef"))]
     pub src_ref: Option<&'a SourceRef<'a>>,
     pub variables: HashMap<&'a str, &'a str>,
+    pub stack: Vec<SourceRef<'a>>,
 }
 
 
@@ -61,6 +62,7 @@ pub struct CallGraph<'a> {
 pub struct Edge<'a> {
     from: &'a str,
     to: &'a str,
+    via: SourceRef<'a>,
 }
 
 
@@ -107,6 +109,12 @@ pub fn filter_log(buffer: &String, thread_re: Regex, start: usize, end: usize) -
         })
         .collect();
     results
+}
+
+pub fn build_stack<'a, 'b>(src_ref: &'a SourceRef, call_graph: &'b CallGraph) -> Vec<SourceRef<'a>> {
+    let stack = Vec::new();
+    
+    stack
 }
 
 pub fn build_graph(source: &str) -> CallGraph {
@@ -156,7 +164,8 @@ fn find_edges<'a, 'b>(root_node: Node, source: &'a str, to_query: &'b str) -> Ve
             let range = capture.node.range();
             let fn_call = &source[range.start_byte..range.end_byte];
             let enclosing = find_fn_name(&capture.node, source);
-            symbols.push(Edge { from: enclosing, to: fn_call });
+            let src_ref = build_src_ref(&source, &capture);
+            symbols.push(Edge { from: enclosing, to: fn_call, via: src_ref });
         }
     }
     symbols
@@ -183,24 +192,7 @@ pub fn extract_source(source: &str) -> Vec<SourceRef> {
         for capture in m.captures.iter() {
             match capture.node.kind() {
                 "string_literal" => {
-                    let range = capture.node.range();
-                    let text = &source[range.start_byte..range.end_byte];
-                    let line = range.start_point.row + 1;
-                    let col = range.start_point.column;
-                    let unquoted = &source[range.start_byte + 1..range.end_byte - 1];
-                    let mut replaced = unquoted.replace("{}", "(\\w+)");
-                    replaced = replaced.replace("{:?}", "(\\w+)");
-                    let matcher = Regex::new(&replaced).unwrap();
-                    let vars = Vec::new();
-                    let name = find_fn_name(&capture.node, source);
-                    let result = SourceRef {
-                        line_no: line,
-                        column: col,
-                        name,
-                        text,
-                        matcher,
-                        vars,
-                    };
+                    let result = build_src_ref(source, capture);
                     matched.push(result);
                 }
                 "identifier" => {
@@ -219,6 +211,27 @@ pub fn extract_source(source: &str) -> Vec<SourceRef> {
         }
     }
     matched
+}
+
+fn build_src_ref<'a>(source: &'a str, capture: &QueryCapture<'_>) -> SourceRef<'a> {
+    let range = capture.node.range();
+    let text = &source[range.start_byte..range.end_byte];
+    let line = range.start_point.row + 1;
+    let col = range.start_point.column;
+    let unquoted = &source[range.start_byte + 1..range.end_byte - 1];
+    let mut replaced = unquoted.replace("{}", "(\\w+)");
+    replaced = replaced.replace("{:?}", "(\\w+)");
+    let matcher = Regex::new(&replaced).unwrap();
+    let vars = Vec::new();
+    let name = find_fn_name(&capture.node, source);
+    SourceRef {
+        line_no: line,
+        column: col,
+        name,
+        text,
+        matcher,
+        vars,
+    }
 }
 
 fn find_fn_name<'a>(node: &Node, source: &'a str) -> &'a str {
