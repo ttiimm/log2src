@@ -12,7 +12,7 @@ pub struct LogMapping<'a> {
     #[serde(rename(serialize = "srcRef"))]
     pub src_ref: Option<&'a SourceRef<'a>>,
     pub variables: HashMap<&'a str, &'a str>,
-    pub stack: Vec<SourceRef<'a>>,
+    pub stack: Vec<Vec<&'a SourceRef<'a>>>,
 }
 
 
@@ -54,7 +54,7 @@ impl fmt::Display for SourceRef<'_> {
 
 #[derive(Debug)]
 pub struct CallGraph<'a> {
-    nodes: Vec<&'a str>,
+    _nodes: Vec<&'a str>,
     edges: Vec<Edge<'a>>,
 }
 
@@ -111,10 +111,40 @@ pub fn filter_log(buffer: &String, thread_re: Regex, start: usize, end: usize) -
     results
 }
 
-pub fn build_stack<'a, 'b>(src_ref: &'a SourceRef, call_graph: &'b CallGraph) -> Vec<SourceRef<'a>> {
-    let stack = Vec::new();
-    
-    stack
+pub fn find_possible_paths<'a>(src_ref: &'a SourceRef, call_graph: &'a CallGraph) -> Vec<Vec<&'a SourceRef<'a>>> {
+    let mut possible = Vec::new();
+    let mut visited = Vec::new();
+    for main_edge in call_graph.edges.iter().filter(|e| e.from == "main") {
+        let mut path = Vec::new();
+        path.push(&main_edge.via);
+        viable_path(main_edge.to, src_ref.name, call_graph, &mut possible, &mut visited, &mut path);
+    }
+    possible
+}
+
+fn viable_path<'a>(
+    node: &'a str, 
+    target: &'a str, 
+    call_graph: &'a CallGraph, 
+    possible: &mut Vec<Vec<&SourceRef<'a>>>, 
+    visited: &mut Vec<&'a str>, 
+    path: &mut Vec<&'a SourceRef<'a>>
+) {
+    if visited.contains(&node) {
+        return;
+    }
+    visited.push(node);
+
+    if node == target {
+        possible.push(path.to_vec());
+        return;
+    }
+
+    for next_edge in call_graph.edges.iter().filter(|e| e.from == node) {
+        path.push(&next_edge.via);
+        viable_path(next_edge.to, target, call_graph, possible, visited, path);
+        path.pop();
+    }
 }
 
 pub fn build_graph(source: &str) -> CallGraph {
@@ -130,7 +160,7 @@ pub fn build_graph(source: &str) -> CallGraph {
     "#;
     let edges = find_edges(root_node, source, edge_query);
 
-    CallGraph{ nodes, edges }
+    CallGraph{ _nodes: nodes, edges }
 }
 
 fn find_nodes<'a, 'b>(root_node: Node, source: &'a str, to_query: &'b str) -> Vec<&'a str> {
