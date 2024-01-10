@@ -28,3 +28,6 @@ name = "basic"
 
 [[example]]
 name = "animals"
+
+[[example]]
+name = "stack"
