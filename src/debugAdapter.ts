@@ -20,6 +20,7 @@ import * as vscode from 'vscode';
 interface LogMapping {
     srcRef: SourceRef,
     variables: Map<string, string>,
+    stack: Array<Array<SourceRef>> 
 }
 
 interface SourceRef {
@@ -51,7 +52,7 @@ export class DebugSession extends LoggingDebugSession {
     private _launchArgs: ILaunchRequestArguments = {source: "", log: ""};
     private _logLines = Number.MAX_SAFE_INTEGER;
     private _highlightDecoration: vscode.TextEditorDecorationType;
-    private _mapping: LogMapping = undefined;
+    private _mapping?: LogMapping = undefined;
 
     /**
      * Create a new debug adapter to use with a debug session.
@@ -236,23 +237,48 @@ export class DebugSession extends LoggingDebugSession {
             editor.setDecorations(this._highlightDecoration, [range]);
         }
 
-        const sourceName = path.basename(this._launchArgs.source);
         let stdout = execFile(logdbgPath, ['--source', this._launchArgs.source,
                                            '--log', this._launchArgs.log,
                                            '--start', start,
                                            '--end', end]);
         this._mapping = JSON.parse(stdout);
+
+        const sourceName = path.basename(this._launchArgs.source);
+        let index = 0;
+        const currentFrame = this.buildStackFrame(index++, sourceName, this._mapping?.srcRef);
+        const stack: StackFrame[] = [];
+        stack.push(currentFrame);
+
+        if (this._mapping?.stack.length === 1 && this._mapping?.stack[0].length > 0) {
+            this._mapping?.stack[0].forEach((srcRef) => {
+                const frame = this.buildStackFrame(index++, sourceName, srcRef);
+                stack.push(frame);
+            });
+        }
+
         response.body = {
-            stackFrames: [new StackFrame(
-                0, 
-                this._mapping.srcRef.name, 
-                new Source(sourceName, this._launchArgs.source), 
-                this.convertDebuggerLineToClient(this._mapping.srcRef.lineNumber)
-            )],
-            totalFrames: 1
+            stackFrames: stack,
+            totalFrames: stack.length
         };
 
         this.sendResponse(response);
+    }
+
+    private buildStackFrame(index: number, sourceName: string, srcRef?: SourceRef): StackFrame {
+        let name = "???";
+        let lineNumber = -1;
+
+        if (srcRef !== undefined) {
+            name = srcRef.name;
+            lineNumber = srcRef.lineNumber;
+        }
+
+        return new StackFrame(
+            index,
+            name,
+            new Source(sourceName, this._launchArgs.source),
+            this.convertDebuggerLineToClient(lineNumber)
+        );
     }
 
     protected scopesRequest(response: DebugProtocol.ScopesResponse, args: DebugProtocol.ScopesArguments): void {
