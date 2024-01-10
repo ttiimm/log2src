@@ -136,7 +136,9 @@ fn viable_path<'a>(
     visited.push(node);
 
     if node == target {
-        possible.push(path.to_vec());
+        let mut foundPath = path.to_vec();
+        foundPath.reverse();
+        possible.push(foundPath);
         return;
     }
 
@@ -248,7 +250,12 @@ fn build_src_ref<'a>(source: &'a str, capture: &QueryCapture<'_>) -> SourceRef<'
     let text = &source[range.start_byte..range.end_byte];
     let line = range.start_point.row + 1;
     let col = range.start_point.column;
-    let unquoted = &source[range.start_byte + 1..range.end_byte - 1];
+    let start = range.start_byte + 1;
+    let mut end = range.end_byte - 1;
+    if start == range.end_byte {
+        end = range.end_byte;
+    }
+    let unquoted = &source[start..end];
     let mut replaced = unquoted.replace("{}", "(\\w+)");
     replaced = replaced.replace("{:?}", "(\\w+)");
     let matcher = Regex::new(&replaced).unwrap();
