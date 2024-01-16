@@ -136,9 +136,9 @@ fn viable_path<'a>(
     visited.push(node);
 
     if node == target {
-        let mut foundPath = path.to_vec();
-        foundPath.reverse();
-        possible.push(foundPath);
+        let mut found_path = path.to_vec();
+        found_path.reverse();
+        possible.push(found_path);
         return;
     }
 
