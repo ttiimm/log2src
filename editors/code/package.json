@@ -1,6 +1,6 @@
 {
-  "name": "logdbg-ext",
-  "displayName": "logdbg",
+  "name": "log2src-ext",
+  "displayName": "log2src",
   "description": "A debugger driven by logs",
   "version": "0.0.1",
   "author": {
@@ -16,13 +16,13 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/ttiimm/logdbg-ext.git"
+    "url": "https://github.com/ttiimm/log2src.git"
   },
   "bugs": {
-    "url": "https://github.com/ttiimm/logdbg-ext/issues"
+    "url": "https://github.com/ttiimm/log2src/issues"
   },
   "activationEvents": [
-    "onDebugResolve:logdbg"
+    "onDebugResolve:log2src"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -39,8 +39,8 @@
     ],
     "debuggers": [
       {
-        "type": "logdbg",
-        "label": "logdbg",
+        "type": "log2src",
+        "label": "log2src",
         "program": "./out/debugAdapter.js",
         "runtime": "node",
 
@@ -62,9 +62,9 @@
 
         "initialConfigurations": [
           {
-            "type": "logdbg",
+            "type": "log2src",
             "request": "launch",
-            "name": "Launch: logdbg",
+            "name": "Launch: log2src",
             "source": "${workspaceFolder}/src/main.rs",
             "log": "${workspaceFolder}/log/*"
           }
@@ -72,12 +72,12 @@
 
         "configurationSnippets": [
           {
-            "label": "logdbg: Launch",
+            "label": "log2src: Launch",
             "description": "A new configuration for 'debugging' via logs.",
             "body": {
-              "type": "logdbg",
+              "type": "log2src",
               "request": "launch",
-              "name": "Launch: logdbg",
+              "name": "Launch: log2src",
               "source": "^\"\\${workspaceFolder}/...fillmein...\"",
               "log": "^\"\\${workspaceFolder}/log/*\""
             }

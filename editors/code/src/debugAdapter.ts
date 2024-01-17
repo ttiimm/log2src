@@ -1,5 +1,5 @@
 /**
- * debugAdapter.ts implements the Debug Adapter protocol and integrates it with the logdbg
+ * debugAdapter.ts implements the Debug Adapter protocol and integrates it with the log2src
  * "debugger".
  * 
  * Care should be given to make sure that this module is independent from VS Code so that it
@@ -58,7 +58,7 @@ export class DebugSession extends LoggingDebugSession {
      * Create a new debug adapter to use with a debug session.
      */
     public constructor() {
-        super("logdbg-dap.txt");
+        super("log2src-dap.txt");
 
         this.setDebuggerLinesStartAt1(true);
         this.setDebuggerColumnsStartAt1(true);
@@ -222,7 +222,7 @@ export class DebugSession extends LoggingDebugSession {
         console.log(' ');
 
         var path = require('path');
-        var logdbgPath = path.resolve(__dirname, '../bin/logdbg');
+        var log2srcPath = path.resolve(__dirname, '../bin/log2src');
         var execFile = require('child_process').execFileSync;
         let start = this._line - 1;
         let end = this._line;
@@ -237,7 +237,7 @@ export class DebugSession extends LoggingDebugSession {
             editor.setDecorations(this._highlightDecoration, [range]);
         }
 
-        let stdout = execFile(logdbgPath, ['--source', this._launchArgs.source,
+        let stdout = execFile(log2srcPath, ['--source', this._launchArgs.source,
                                            '--log', this._launchArgs.log,
                                            '--start', start,
                                            '--end', end]);

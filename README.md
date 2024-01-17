@@ -32,21 +32,21 @@ You can also build and run the VS Code extension by building the log2src binary 
 
 ```
 {
-	"version": "0.2.0",
-	"configurations": [
-		{
-			"name": "Run Extension",
-			"type": "extensionHost",
-			"request": "launch",
-			"args": [
-				"--extensionDevelopmentPath=${workspaceFolder}/editors/code"
-			],
-			"outFiles": [
-				"${workspaceFolder}/editors/code/out/**/*.js"
-			],
-			"preLaunchTask": "${defaultBuildTask}"
-		}
-	]
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Run Extension",
+            "type": "extensionHost",
+            "request": "launch",
+            "args": [
+                "--extensionDevelopmentPath=${workspaceFolder}/editors/code"
+            ],
+            "outFiles": [
+                "${workspaceFolder}/editors/code/out/**/*.js"
+            ],
+            "preLaunchTask": "${defaultBuildTask}"
+        }
+    ]
 }
 ```
 
@@ -58,9 +58,9 @@ You can run the log2src debugger using this example configuration that shows how
     "version": "0.2.0",
     "configurations": [
         {
-            "type": "logdbg",
+            "type": "log2src",
             "request": "launch",
-            "name": "Launch: logdbg: stack",
+            "name": "Launch: log2src: stack",
             "source": "${workspaceFolder}/examples/basic.rs",
             "log": "/tmp/basic.log"
         }

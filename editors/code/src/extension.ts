@@ -1,9 +1,9 @@
 /**
- * A "debugger" plug in for use with logdbg, a "logging debugger", that associates log files
+ * A "debugger" plug in for use with log2src, a "logging debugger", that associates log files
  * with the source code that generated it. 
  * 
  * The extentions serves as a Debug Adapater and implements the applicable parts of the Debug Adapter
- * Protocol for logdbg. 
+ * Protocol for log2src. 
  * 
  * The extension is based off of vscode-mock-debug that Microsoft provides as an example debugger. This
  * module is a mash up of the extension.ts and activateMockDebug.ts.
@@ -27,7 +27,7 @@ export function activate(context: vscode.ExtensionContext) {
 		case 'inline':
 			// is there a way to do this in the package.json configuration instead?
 			let factory = new InlineDebugAdapterFactory();
-			context.subscriptions.push(vscode.debug.registerDebugAdapterDescriptorFactory('logdbg', factory));
+			context.subscriptions.push(vscode.debug.registerDebugAdapterDescriptorFactory('log2src', factory));
 			break;
 
 		default:
