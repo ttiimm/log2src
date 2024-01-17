@@ -1,9 +1,9 @@
 use clap::Parser as ClapParser;
-use logdbg::{build_graph, find_possible_paths, extract_source, extract_variables, filter_log, link_to_source, LogMapping, SourceRef};
+use log2src::{build_graph, find_possible_paths, extract_source, extract_variables, filter_log, link_to_source, LogMapping, SourceRef};
 use regex::Regex;
 use serde_json;
 use std::{collections::HashMap, error::Error, fs, io, path::PathBuf};
-mod ui;
+
 
 #[derive(ClapParser)]
 #[command(author, version, about, long_about = None)]
@@ -19,13 +19,6 @@ struct Cli {
 
     #[arg(short, long, value_name = "END")]
     end: Option<usize>,
-
-    #[arg(short, long, value_name = "UI", default_value = "false")]
-    ui: Option<bool>,
-
-    // output something usable by a Debug Adapter
-    #[arg(short, long, value_name = "DA", default_value = "true")]
-    da: Option<bool>,
 
     #[arg(short, long, value_name = "THREADID")]
     thread_id: Option<String>,
@@ -72,13 +65,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         })
         .collect::<Vec<LogMapping>>();
 
-    if args.ui.unwrap_or(false) {
-        ui::start(&source, &log_mappings);
-    } else if args.da.unwrap_or(true) {
-        for mapping in log_mappings {
-            let serialized = serde_json::to_string(&mapping).unwrap();
-            println!("{}", serialized);
-        }
+    for mapping in log_mappings {
+        let serialized = serde_json::to_string(&mapping).unwrap();
+        println!("{}", serialized);
     }
 
     Ok(())

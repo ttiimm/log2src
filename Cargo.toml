@@ -1,5 +1,5 @@
 [package]
-name = "logdbg"
+name = "log2src"
 version = "0.1.0"
 edition = "2021"
 
