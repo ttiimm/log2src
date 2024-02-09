@@ -18,17 +18,8 @@ pub struct LogMapping<'a> {
 
 #[derive(Debug)]
 pub struct LogRef<'a> {
-    id: &'a str,
-    _line_no: usize,
     pub text: &'a str,
 }
-
-impl fmt::Display for LogRef<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "[{}] `{}`", self.id, self.text)
-    }
-}
-
 
 #[derive(Debug, Serialize)]
 pub struct SourceRef<'a> {
@@ -94,18 +85,15 @@ pub fn extract_variables<'a>(
     variables
 }
 
-pub fn filter_log(buffer: &String, thread_re: Regex, start: usize, end: usize) -> Vec<LogRef> {
+pub fn filter_log(buffer: &String, start: usize, end: usize) -> Vec<LogRef> {
     let results = buffer
         .lines()
         .enumerate()
-        .filter(|(line_no, _line)|  start <= *line_no && *line_no < end)
-        .filter_map(|(_line_no, line)| match thread_re.captures(line) {
-            Some(capture) => {
-                let id = capture.get(0).unwrap().as_str();
-                let text = line;
-                Some(LogRef { id, _line_no, text })
-            }
-            _ => None,
+        .filter_map(|(line_no, line)|  
+        if start <= line_no && line_no < end {
+            Some(LogRef { text: line })
+        } else { 
+            None
         })
         .collect();
     results

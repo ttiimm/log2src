@@ -1,6 +1,5 @@
 use clap::Parser as ClapParser;
 use log2src::{build_graph, find_possible_paths, extract_source, extract_variables, filter_log, link_to_source, LogMapping, SourceRef};
-use regex::Regex;
 use serde_json;
 use std::{collections::HashMap, error::Error, fs, io, path::PathBuf};
 
@@ -20,19 +19,10 @@ struct Cli {
     #[arg(short, long, value_name = "END")]
     end: Option<usize>,
 
-    #[arg(short, long, value_name = "THREADID")]
-    thread_id: Option<String>,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args= Cli::parse();
-
-    let thread_re = if args.thread_id.is_some() {
-        Regex::new(&args.thread_id.unwrap()).expect("Valid regex")
-    } else {
-        Regex::new(&"^").unwrap()
-    };
-
     let input = args.log;
     let mut reader: Box<dyn io::Read> = match input {
         None => Box::new(io::stdin()),
@@ -43,7 +33,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     reader.read_to_string(&mut buffer)?;
     let start = args.start.unwrap_or(0);
     let end = args.end.unwrap_or(usize::MAX);
-    let filtered = filter_log(&buffer, thread_re, start, end);
+    let filtered = filter_log(&buffer, start, end);
 
     let source = fs::read_to_string(&args.source).expect("Can read the source file");
     let src_logs = extract_source(&source);
