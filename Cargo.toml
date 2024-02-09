@@ -15,9 +15,6 @@ tree-sitter = "0.20"
 tree-sitter-rust = "0.20"
 
 [[example]]
-name = "dining"
-
-[[example]]
 name = "basic"
 
 [[example]]
