@@ -1,8 +1,10 @@
 use clap::Parser as ClapParser;
-use log2src::{build_graph, find_possible_paths, extract_source, extract_variables, filter_log, link_to_source, LogMapping, SourceRef};
+use log2src::{
+    build_graph, extract_source, extract_variables, filter_log, find_possible_paths,
+    link_to_source, LogMapping, SourceRef,
+};
 use serde_json;
 use std::{collections::HashMap, error::Error, fs, io, path::PathBuf};
-
 
 #[derive(ClapParser)]
 #[command(author, version, about, long_about = None)]
@@ -18,11 +20,10 @@ struct Cli {
 
     #[arg(short, long, value_name = "END")]
     end: Option<usize>,
-
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let args= Cli::parse();
+    let args = Cli::parse();
     let input = args.log;
     let mut reader: Box<dyn io::Read> = match input {
         None => Box::new(io::stdin()),
@@ -38,20 +39,24 @@ fn main() -> Result<(), Box<dyn Error>> {
     let source = fs::read_to_string(&args.source).expect("Can read the source file");
     let src_logs = extract_source(&source);
     let call_graph = build_graph(&source);
-    // println!("{:?}", call_graph);
 
+    // maybe should move this into a lib
     let log_mappings = filtered
         .iter()
         .map(|log_ref| {
             let src_ref: Option<&SourceRef<'_>> = link_to_source(&log_ref, &src_logs);
-            let variables = src_ref.map_or(
-                HashMap::new(),
-                |src_ref| extract_variables(&log_ref, src_ref));
-            let stack = src_ref.map_or(
-                Vec::new(),
-                |src_ref| find_possible_paths(src_ref, &call_graph)
-            );
-            LogMapping { log_ref, src_ref, variables, stack }
+            let variables = src_ref.map_or(HashMap::new(), |src_ref| {
+                extract_variables(&log_ref, src_ref)
+            });
+            let stack = src_ref.map_or(Vec::new(), |src_ref| {
+                find_possible_paths(src_ref, &call_graph)
+            });
+            LogMapping {
+                log_ref,
+                src_ref,
+                variables,
+                stack,
+            }
         })
         .collect::<Vec<LogMapping>>();
 

@@ -1,9 +1,8 @@
 use regex::Regex;
-use std::fmt;
-use std::collections::HashMap;
 use serde::Serialize;
+use std::collections::HashMap;
+use std::fmt;
 use tree_sitter::{Node, Parser, Query, QueryCapture, QueryCursor, Tree};
-
 
 #[derive(Serialize)]
 pub struct LogMapping<'a> {
@@ -14,7 +13,6 @@ pub struct LogMapping<'a> {
     pub variables: HashMap<&'a str, &'a str>,
     pub stack: Vec<Vec<&'a SourceRef<'a>>>,
 }
-
 
 #[derive(Debug)]
 pub struct LogRef<'a> {
@@ -56,7 +54,6 @@ pub struct Edge<'a> {
     via: SourceRef<'a>,
 }
 
-
 pub fn link_to_source<'a>(
     log_line: &LogRef,
     src_logs: &'a Vec<SourceRef>,
@@ -71,7 +68,7 @@ pub fn link_to_source<'a>(
 
 pub fn extract_variables<'a>(
     log_line: &'a LogRef,
-    src_ref: &'a SourceRef
+    src_ref: &'a SourceRef,
 ) -> HashMap<&'a str, &'a str> {
     let mut variables = HashMap::new();
     if src_ref.vars.len() > 0 {
@@ -89,34 +86,45 @@ pub fn filter_log(buffer: &String, start: usize, end: usize) -> Vec<LogRef> {
     let results = buffer
         .lines()
         .enumerate()
-        .filter_map(|(line_no, line)|  
-        if start <= line_no && line_no < end {
-            Some(LogRef { text: line })
-        } else { 
-            None
+        .filter_map(|(line_no, line)| {
+            if start <= line_no && line_no < end {
+                Some(LogRef { text: line })
+            } else {
+                None
+            }
         })
         .collect();
     results
 }
 
-pub fn find_possible_paths<'a>(src_ref: &'a SourceRef, call_graph: &'a CallGraph) -> Vec<Vec<&'a SourceRef<'a>>> {
+pub fn find_possible_paths<'a>(
+    src_ref: &'a SourceRef,
+    call_graph: &'a CallGraph,
+) -> Vec<Vec<&'a SourceRef<'a>>> {
     let mut possible = Vec::new();
     let mut visited = Vec::new();
     for main_edge in call_graph.edges.iter().filter(|e| e.from == "main") {
         let mut path = Vec::new();
         path.push(&main_edge.via);
-        viable_path(main_edge.to, src_ref.name, call_graph, &mut possible, &mut visited, &mut path);
+        viable_path(
+            main_edge.to,
+            src_ref.name,
+            call_graph,
+            &mut possible,
+            &mut visited,
+            &mut path,
+        );
     }
     possible
 }
 
 fn viable_path<'a>(
-    node: &'a str, 
-    target: &'a str, 
-    call_graph: &'a CallGraph, 
-    possible: &mut Vec<Vec<&SourceRef<'a>>>, 
-    visited: &mut Vec<&'a str>, 
-    path: &mut Vec<&'a SourceRef<'a>>
+    node: &'a str,
+    target: &'a str,
+    call_graph: &'a CallGraph,
+    possible: &mut Vec<Vec<&SourceRef<'a>>>,
+    visited: &mut Vec<&'a str>,
+    path: &mut Vec<&'a SourceRef<'a>>,
 ) {
     if visited.contains(&node) {
         return;
@@ -150,7 +158,10 @@ pub fn build_graph(source: &str) -> CallGraph {
     "#;
     let edges = find_edges(root_node, source, edge_query);
 
-    CallGraph{ _nodes: nodes, edges }
+    CallGraph {
+        _nodes: nodes,
+        edges,
+    }
 }
 
 fn find_nodes<'a, 'b>(root_node: Node, source: &'a str, to_query: &'b str) -> Vec<&'a str> {
@@ -160,9 +171,7 @@ fn find_nodes<'a, 'b>(root_node: Node, source: &'a str, to_query: &'b str) -> Ve
     let name_idx = query.capture_index_for_name("fn_name").unwrap();
     let mut symbols = Vec::new();
     for m in matches {
-        for capture in m.captures
-                                           .iter()
-                                           .filter(|c| c.index == name_idx) {
+        for capture in m.captures.iter().filter(|c| c.index == name_idx) {
             let range = capture.node.range();
             let name = &source[range.start_byte..range.end_byte];
             symbols.push(name);
@@ -178,14 +187,16 @@ fn find_edges<'a, 'b>(root_node: Node, source: &'a str, to_query: &'b str) -> Ve
     let name_idx = query.capture_index_for_name("fn_name").unwrap();
     let mut symbols = Vec::new();
     for m in matches {
-        for capture in m.captures
-                                           .iter()
-                                           .filter(|c| c.index == name_idx) {
+        for capture in m.captures.iter().filter(|c| c.index == name_idx) {
             let range = capture.node.range();
             let fn_call = &source[range.start_byte..range.end_byte];
             let enclosing = find_fn_name(&capture.node, source);
             let src_ref = build_src_ref(&source, &capture);
-            symbols.push(Edge { from: enclosing, to: fn_call, via: src_ref });
+            symbols.push(Edge {
+                from: enclosing,
+                to: fn_call,
+                via: src_ref,
+            });
         }
     }
     symbols
@@ -264,17 +275,15 @@ fn find_fn_name<'a>(node: &Node, source: &'a str) -> &'a str {
         "function_item" => {
             let range = node.child_by_field_name("name").unwrap().range();
             &source[range.start_byte..range.end_byte]
-        },
-        _ => {
-            find_fn_name(&node.parent().unwrap(), source)
         }
+        _ => find_fn_name(&node.parent().unwrap(), source),
     }
 }
 
 fn parse(source: &str) -> Tree {
     let mut parser = Parser::new();
-    parser.set_language(tree_sitter_rust::language())
-          .expect("Error loading Rust grammar");
-    parser.parse(&source, None)
-          .expect("source is parable")
+    parser
+        .set_language(tree_sitter_rust::language())
+        .expect("Error loading Rust grammar");
+    parser.parse(&source, None).expect("source is parable")
 }
