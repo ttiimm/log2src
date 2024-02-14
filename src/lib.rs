@@ -4,6 +4,17 @@ use std::collections::HashMap;
 use std::fmt;
 use tree_sitter::{Node, Parser, Query, QueryCapture, QueryCursor, Tree};
 
+pub struct Filter {
+    pub start: usize,
+    pub end: usize,
+}
+
+impl Default for Filter {
+    fn default() -> Self {
+        Self { start: 0, end: usize::MAX }
+    }
+}
+
 #[derive(Serialize)]
 pub struct LogMapping<'a> {
     #[serde(skip_serializing)]
@@ -15,6 +26,7 @@ pub struct LogMapping<'a> {
 }
 
 #[derive(Debug)]
+#[derive(PartialEq)]
 pub struct LogRef<'a> {
     pub text: &'a str,
 }
@@ -82,12 +94,12 @@ pub fn extract_variables<'a>(
     variables
 }
 
-pub fn filter_log(buffer: &String, start: usize, end: usize) -> Vec<LogRef> {
+pub fn filter_log(buffer: &String, filter: Filter) -> Vec<LogRef> {
     let results = buffer
         .lines()
         .enumerate()
         .filter_map(|(line_no, line)| {
-            if start <= line_no && line_no < end {
+            if filter.start <= line_no && line_no < filter.end {
                 Some(LogRef { text: line })
             } else {
                 None
@@ -286,4 +298,11 @@ fn parse(source: &str) -> Tree {
         .set_language(tree_sitter_rust::language())
         .expect("Error loading Rust grammar");
     parser.parse(&source, None).expect("source is parable")
+}
+
+#[test]
+fn test_filter_log_defaults() {
+    let buffer = String::from("hello\nwarning\nerror\nboom");
+    let result = filter_log(&buffer, Filter::default());
+    assert_eq!(result, vec![LogRef{text: "hello"}, LogRef{text: "warning"}, LogRef{text: "error"}, LogRef{text: "boom"}]);
 }

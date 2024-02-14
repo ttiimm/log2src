@@ -1,7 +1,7 @@
 use clap::Parser as ClapParser;
 use log2src::{
-    build_graph, extract_source, extract_variables, filter_log, find_possible_paths,
-    link_to_source, LogMapping, SourceRef,
+    build_graph, extract_source, extract_variables, filter_log, find_possible_paths, link_to_source, 
+    Filter, LogMapping, SourceRef
 };
 use serde_json;
 use std::{collections::HashMap, error::Error, fs, io, path::PathBuf};
@@ -32,9 +32,10 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut buffer = String::new();
     reader.read_to_string(&mut buffer)?;
-    let start = args.start.unwrap_or(0);
-    let end = args.end.unwrap_or(usize::MAX);
-    let filtered = filter_log(&buffer, start, end);
+    let filter = Filter { start: args.start.unwrap_or(0), end: args.end.unwrap_or(usize::MAX) };
+    // let start = args.start.unwrap_or(0);
+    // let end = args.end.unwrap_or(usize::MAX);
+    let filtered = filter_log(&buffer, filter);
 
     let source = fs::read_to_string(&args.source).expect("Can read the source file");
     let src_logs = extract_source(&source);
