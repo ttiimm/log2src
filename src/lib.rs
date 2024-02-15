@@ -12,7 +12,10 @@ pub struct Filter {
 
 impl Default for Filter {
     fn default() -> Self {
-        Self { start: 0, end: usize::MAX }
+        Self {
+            start: 0,
+            end: usize::MAX,
+        }
     }
 }
 
@@ -304,27 +307,37 @@ fn parse(source: &str) -> Tree {
 fn test_filter_log_defaults() {
     let buffer = String::from("hello\nwarning\nerror\nboom");
     let result = filter_log(&buffer, Filter::default());
-    assert_eq!(result, vec![LogRef{text: "hello"}, LogRef{text: "warning"}, LogRef{text: "error"}, LogRef{text: "boom"}]);
+    assert_eq!(
+        result,
+        vec![
+            LogRef { text: "hello" },
+            LogRef { text: "warning" },
+            LogRef { text: "error" },
+            LogRef { text: "boom" }
+        ]
+    );
 }
 
 #[test]
 fn test_filter_log_with_filter() {
     let buffer = String::from("hello\nwarning\nerror\nboom");
     let result = filter_log(&buffer, Filter { start: 1, end: 2 });
-    assert_eq!(result, vec![LogRef{text: "warning"}]);
+    assert_eq!(result, vec![LogRef { text: "warning" }]);
 }
 
 #[test]
 fn test_link_to_source() {
-    let log_ref = LogRef { text: "[2024-02-15T03:46:44Z DEBUG stack] you're only funky as your last cut" };
+    let log_ref = LogRef {
+        text: "[2024-02-15T03:46:44Z DEBUG stack] you're only funky as your last cut",
+    };
     let text = "you're only funky as your last cut";
-    let should_match = SourceRef { 
+    let should_match = SourceRef {
         line_no: 2,
         column: 8,
         name: "foo",
         text,
         matcher: Regex::new(text).unwrap(),
-        vars: Vec::new()
+        vars: Vec::new(),
     };
     let not_match = SourceRef {
         line_no: 8,
@@ -332,7 +345,7 @@ fn test_link_to_source() {
         name: "foo",
         text: r#"debug!("this won't match");"#,
         matcher: Regex::new(r#""this won't match""#).unwrap(),
-        vars: Vec::new()
+        vars: Vec::new(),
     };
     let src_refs = vec![should_match, not_match];
     let result = link_to_source(&log_ref, &src_refs);
