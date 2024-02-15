@@ -2,6 +2,7 @@ use regex::Regex;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::fmt;
+use std::ptr;
 use tree_sitter::{Node, Parser, Query, QueryCapture, QueryCursor, Tree};
 
 pub struct Filter {
@@ -25,8 +26,7 @@ pub struct LogMapping<'a> {
     pub stack: Vec<Vec<&'a SourceRef<'a>>>,
 }
 
-#[derive(Debug)]
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct LogRef<'a> {
     pub text: &'a str,
 }
@@ -67,11 +67,11 @@ pub struct Edge<'a> {
 }
 
 pub fn link_to_source<'a>(
-    log_line: &LogRef,
-    src_logs: &'a Vec<SourceRef>,
+    log_ref: &LogRef,
+    src_refs: &'a Vec<SourceRef>,
 ) -> Option<&'a SourceRef<'a>> {
-    src_logs.iter().find(|&source_ref| {
-        if let Some(_) = source_ref.matcher.captures(log_line.text) {
+    src_refs.iter().find(|&source_ref| {
+        if let Some(_) = source_ref.matcher.captures(log_ref.text) {
             return true;
         }
         false
@@ -305,4 +305,36 @@ fn test_filter_log_defaults() {
     let buffer = String::from("hello\nwarning\nerror\nboom");
     let result = filter_log(&buffer, Filter::default());
     assert_eq!(result, vec![LogRef{text: "hello"}, LogRef{text: "warning"}, LogRef{text: "error"}, LogRef{text: "boom"}]);
+}
+
+#[test]
+fn test_filter_log_with_filter() {
+    let buffer = String::from("hello\nwarning\nerror\nboom");
+    let result = filter_log(&buffer, Filter { start: 1, end: 2 });
+    assert_eq!(result, vec![LogRef{text: "warning"}]);
+}
+
+#[test]
+fn test_link_to_source() {
+    let log_ref = LogRef { text: "[2024-02-15T03:46:44Z DEBUG stack] you're only funky as your last cut" };
+    let text = "you're only funky as your last cut";
+    let should_match = SourceRef { 
+        line_no: 2,
+        column: 8,
+        name: "foo",
+        text,
+        matcher: Regex::new(text).unwrap(),
+        vars: Vec::new()
+    };
+    let not_match = SourceRef {
+        line_no: 8,
+        column: 8,
+        name: "foo",
+        text: r#"debug!("this won't match");"#,
+        matcher: Regex::new(r#""this won't match""#).unwrap(),
+        vars: Vec::new()
+    };
+    let src_refs = vec![should_match, not_match];
+    let result = link_to_source(&log_ref, &src_refs);
+    assert!(ptr::eq(result.unwrap(), &src_refs[0]));
 }
