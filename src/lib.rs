@@ -3,7 +3,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::fmt;
 use std::ptr;
-use tree_sitter::{Node, Parser, Query, QueryCapture, QueryCursor, Tree};
+use tree_sitter::{Node, Parser, Query, QueryCursor, Tree};
 
 pub struct Filter {
     pub start: usize,
@@ -32,6 +32,57 @@ pub struct LogMapping<'a> {
 #[derive(Debug, PartialEq)]
 pub struct LogRef<'a> {
     pub text: &'a str,
+}
+
+struct SourceQuery<'a> {
+    source: &'a str,
+    tree: Tree,
+    query: Query,
+}
+
+impl<'a> SourceQuery<'a> {
+    pub fn new(source: &'a str, query: &str) -> SourceQuery<'a> {
+        let mut parser = Parser::new();
+        parser
+            .set_language(tree_sitter_rust::language())
+            .expect("Error loading Rust grammar");
+        let tree = parser.parse(&source, None).expect("source is parable");
+        let query = Query::new(tree_sitter_rust::language(), query).unwrap();
+        SourceQuery {
+            source,
+            tree,
+            query,
+        }
+    }
+
+    pub fn to_source_refs(&self) -> Vec<SourceRef<'a>> {
+        let mut cursor = QueryCursor::new();
+        let matches = cursor.matches(&self.query, self.tree.root_node(), self.source.as_bytes());
+        let mut matched = Vec::new();
+        for m in matches {
+            for capture in m.captures.iter() {
+                match capture.node.kind() {
+                    "string_literal" => {
+                        let result = build_src_ref(self.source, capture.node);
+                        matched.push(result);
+                    }
+                    "identifier" => {
+                        let range = capture.node.range();
+                        let text = &self.source[range.start_byte..range.end_byte];
+                        if text != "debug" {
+                            let length = matched.len() - 1;
+                            let prior_result: &mut SourceRef<'_> = matched.get_mut(length).unwrap();
+                            prior_result.vars.push(&text);
+                        }
+                    }
+                    _ => {
+                        println!("ignoring {}", capture.node.kind())
+                    }
+                }
+            }
+        }
+        matched
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -205,8 +256,8 @@ fn find_edges<'a, 'b>(root_node: Node, source: &'a str, to_query: &'b str) -> Ve
         for capture in m.captures.iter().filter(|c| c.index == name_idx) {
             let range = capture.node.range();
             let fn_call = &source[range.start_byte..range.end_byte];
-            let enclosing = find_fn_name(&capture.node, source);
-            let src_ref = build_src_ref(&source, &capture);
+            let enclosing = find_fn_name(capture.node, source);
+            let src_ref = build_src_ref(&source, capture.node);
             symbols.push(Edge {
                 from: enclosing,
                 to: fn_call,
@@ -217,11 +268,7 @@ fn find_edges<'a, 'b>(root_node: Node, source: &'a str, to_query: &'b str) -> Ve
     symbols
 }
 
-pub fn extract_source(source: &str) -> Vec<SourceRef> {
-    let tree = parse(source);
-    let root_node = tree.root_node();
-    // println!("{:?}", root_node.to_sexp());
-
+pub fn extract_logging(source: &str) -> Vec<SourceRef> {
     let debug_macros = r#"
         (macro_invocation macro: (identifier) @macro-name
             (token_tree
@@ -229,38 +276,12 @@ pub fn extract_source(source: &str) -> Vec<SourceRef> {
             ) (#eq? @macro-name "debug")
         )
     "#;
-    let query = Query::new(tree_sitter_rust::language(), debug_macros).unwrap();
-    let mut query_cursor = QueryCursor::new();
-    let matches = query_cursor.matches(&query, root_node, source.as_bytes());
-
-    let mut matched = Vec::new();
-    for m in matches {
-        for capture in m.captures.iter() {
-            match capture.node.kind() {
-                "string_literal" => {
-                    let result = build_src_ref(source, capture);
-                    matched.push(result);
-                }
-                "identifier" => {
-                    let range = capture.node.range();
-                    let text = &source[range.start_byte..range.end_byte];
-                    if text != "debug" {
-                        let length = matched.len() - 1;
-                        let prior_result: &mut SourceRef<'_> = matched.get_mut(length).unwrap();
-                        prior_result.vars.push(&text);
-                    }
-                }
-                _ => {
-                    println!("ignoring {}", capture.node.kind())
-                }
-            }
-        }
-    }
-    matched
+    let source_query = SourceQuery::new(source, debug_macros);
+    source_query.to_source_refs()
 }
 
-fn build_src_ref<'a>(source: &'a str, capture: &QueryCapture<'_>) -> SourceRef<'a> {
-    let range = capture.node.range();
+fn build_src_ref<'a>(source: &'a str, node: Node<'_>) -> SourceRef<'a> {
+    let range = node.range();
     let text = &source[range.start_byte..range.end_byte];
     let line = range.start_point.row + 1;
     let col = range.start_point.column;
@@ -274,7 +295,7 @@ fn build_src_ref<'a>(source: &'a str, capture: &QueryCapture<'_>) -> SourceRef<'
     replaced = replaced.replace("{:?}", "(\\w+)");
     let matcher = Regex::new(&replaced).unwrap();
     let vars = Vec::new();
-    let name = find_fn_name(&capture.node, source);
+    let name = find_fn_name(node, source);
     SourceRef {
         line_no: line,
         column: col,
@@ -285,13 +306,13 @@ fn build_src_ref<'a>(source: &'a str, capture: &QueryCapture<'_>) -> SourceRef<'
     }
 }
 
-fn find_fn_name<'a>(node: &Node, source: &'a str) -> &'a str {
+fn find_fn_name<'a>(node: Node, source: &'a str) -> &'a str {
     match node.kind() {
         "function_item" => {
             let range = node.child_by_field_name("name").unwrap().range();
             &source[range.start_byte..range.end_byte]
         }
-        _ => find_fn_name(&node.parent().unwrap(), source),
+        _ => find_fn_name(node.parent().unwrap(), source),
     }
 }
 
@@ -355,7 +376,7 @@ fn test_link_to_source() {
 #[test]
 fn test_link_to_source_no_matches() {
     let log_ref = LogRef {
-        text: "[2024-02-26T03:44:40Z DEBUG stack] nope!"
+        text: "[2024-02-26T03:44:40Z DEBUG stack] nope!",
     };
     let wont_match = SourceRef {
         line_no: 2,

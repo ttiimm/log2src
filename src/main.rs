@@ -1,6 +1,6 @@
 use clap::Parser as ClapParser;
 use log2src::{
-    build_graph, extract_source, extract_variables, filter_log, find_possible_paths,
+    build_graph, extract_logging, extract_variables, filter_log, find_possible_paths,
     link_to_source, Filter, LogMapping, SourceRef,
 };
 use serde_json;
@@ -39,7 +39,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let filtered = filter_log(&buffer, filter);
 
     let source = fs::read_to_string(&args.source).expect("Can read the source file");
-    let src_logs = extract_source(&source);
+    let src_logs = extract_logging(&source);
     let call_graph = build_graph(&source);
 
     // maybe should move this into a lib
