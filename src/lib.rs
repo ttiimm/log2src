@@ -346,29 +346,27 @@ fn test_filter_log_with_filter() {
     assert_eq!(result, vec![LogRef { text: "warning" }]);
 }
 
+const TEST_SOURCE: &str = r#"
+#[macro_use]
+extern crate log;
+
+fn main() {
+    env_logger::init();
+    debug!("you're only funky as your last cut");
+}
+
+fn nope() {
+    debug!("this won't match");
+}
+"#;
+
 #[test]
 fn test_link_to_source() {
     let log_ref = LogRef {
         text: "[2024-02-15T03:46:44Z DEBUG stack] you're only funky as your last cut",
     };
-    let text = "you're only funky as your last cut";
-    let should_match = SourceRef {
-        line_no: 2,
-        column: 8,
-        name: "foo",
-        text,
-        matcher: Regex::new(text).unwrap(),
-        vars: Vec::new(),
-    };
-    let not_match = SourceRef {
-        line_no: 8,
-        column: 8,
-        name: "foo",
-        text: r#"debug!("this won't match");"#,
-        matcher: Regex::new(r#""this won't match""#).unwrap(),
-        vars: Vec::new(),
-    };
-    let src_refs = vec![should_match, not_match];
+    let src_refs = extract_logging(TEST_SOURCE);
+    assert_eq!(src_refs.len(), 2);
     let result = link_to_source(&log_ref, &src_refs);
     assert!(ptr::eq(result.unwrap(), &src_refs[0]));
 }
@@ -378,24 +376,9 @@ fn test_link_to_source_no_matches() {
     let log_ref = LogRef {
         text: "[2024-02-26T03:44:40Z DEBUG stack] nope!",
     };
-    let wont_match = SourceRef {
-        line_no: 2,
-        column: 8,
-        name: "foo",
-        text: "you're only funky as your last cut",
-        matcher: Regex::new("you're only funky as your last cut").unwrap(),
-        vars: Vec::new(),
-    };
-    let not_match = SourceRef {
-        line_no: 8,
-        column: 8,
-        name: "foo",
-        text: r#"debug!("this won't match");"#,
-        matcher: Regex::new(r#""this won't match""#).unwrap(),
-        vars: Vec::new(),
-    };
 
-    let src_refs = vec![wont_match, not_match];
+    let src_refs = extract_logging(TEST_SOURCE);
+    assert_eq!(src_refs.len(), 2);
     let result = link_to_source(&log_ref, &src_refs);
     assert_eq!(result.is_none(), true);
 }
