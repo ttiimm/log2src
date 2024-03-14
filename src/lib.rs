@@ -2,6 +2,7 @@ use regex::Regex;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::fmt;
+#[cfg(test)]
 use std::ptr;
 use tree_sitter::{Node, Parser, Query, QueryCursor, Tree};
 
@@ -346,24 +347,47 @@ fn test_filter_log_with_filter() {
     assert_eq!(result, vec![LogRef { text: "warning" }]);
 }
 
+#[cfg(test)]
 const TEST_SOURCE: &str = r#"
 #[macro_use]
 extern crate log;
 
 fn main() {
     env_logger::init();
-    debug!("you're only funky as your last cut");
+    debug!("you're only as funky as your last cut");
+    for i in 0..3 {
+        nope(i);
+    }
 }
 
-fn nope() {
-    debug!("this won't match");
+fn nope(i: u32) {
+    debug!("this won't match i={}", i);
 }
 "#;
 
 #[test]
+fn test_extract_logging() {
+    let src_refs = extract_logging(TEST_SOURCE);
+    assert_eq!(src_refs.len(), 2);
+    let first = &src_refs[0];
+    assert_eq!(first.line_no, 7);
+    assert_eq!(first.column, 11);
+    assert_eq!(first.name, "main");
+    assert_eq!(first.text, "\"you're only as funky as your last cut\"");
+    assert!(first.vars.is_empty());
+
+    let second = &src_refs[1];
+    assert_eq!(second.line_no, 14);
+    assert_eq!(second.column, 11);
+    assert_eq!(second.name, "nope");
+    assert_eq!(second.text, "\"this won't match i={}\"");
+    assert_eq!(second.vars[0], "i");
+}
+
+#[test]
 fn test_link_to_source() {
     let log_ref = LogRef {
-        text: "[2024-02-15T03:46:44Z DEBUG stack] you're only funky as your last cut",
+        text: "[2024-02-15T03:46:44Z DEBUG stack] you're only as funky as your last cut",
     };
     let src_refs = extract_logging(TEST_SOURCE);
     assert_eq!(src_refs.len(), 2);
@@ -381,4 +405,15 @@ fn test_link_to_source_no_matches() {
     assert_eq!(src_refs.len(), 2);
     let result = link_to_source(&log_ref, &src_refs);
     assert_eq!(result.is_none(), true);
+}
+
+#[test]
+fn test_extract_variables() {
+    let log_ref = LogRef {
+        text: "[2024-02-15T03:46:44Z DEBUG nope] this won't match i=1",
+    };
+    let src_refs = extract_logging(TEST_SOURCE);
+    assert_eq!(src_refs.len(), 2);
+    let vars = extract_variables(&log_ref, &src_refs[1]);
+    assert_eq!(vars.get("i"), Some(&"1"));
 }
