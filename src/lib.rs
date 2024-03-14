@@ -2,9 +2,10 @@ use regex::Regex;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::fmt;
+use std::ops::Range;
 #[cfg(test)]
 use std::ptr;
-use tree_sitter::{Node, Parser, Query, QueryCursor, Tree};
+use tree_sitter::{Node, Parser, Query, QueryCursor, Range as TSRange, Tree};
 
 pub struct Filter {
     pub start: usize,
@@ -35,54 +36,55 @@ pub struct LogRef<'a> {
     pub text: &'a str,
 }
 
-struct SourceQuery<'a> {
+pub struct QueryResult {
+    kind: String,
+    range: TSRange,
+    name_range: Range<usize>,
+}
+
+pub struct SourceQuery<'a> {
     source: &'a str,
     tree: Tree,
-    query: Query,
 }
 
 impl<'a> SourceQuery<'a> {
-    pub fn new(source: &'a str, query: &str) -> SourceQuery<'a> {
+    pub fn new(source: &'a str) -> SourceQuery<'a> {
         let mut parser = Parser::new();
         parser
             .set_language(tree_sitter_rust::language())
             .expect("Error loading Rust grammar");
         let tree = parser.parse(&source, None).expect("source is parable");
-        let query = Query::new(tree_sitter_rust::language(), query).unwrap();
-        SourceQuery {
-            source,
-            tree,
-            query,
-        }
+        SourceQuery { source, tree }
     }
 
-    pub fn to_source_refs(&self) -> Vec<SourceRef<'a>> {
+    pub fn query(&self, query: &str, node_kind: Option<&str>) -> Vec<QueryResult> {
+        let query = Query::new(tree_sitter_rust::language(), query).unwrap();
+        let filter_idx = node_kind.map_or(None, |kind| query.capture_index_for_name(kind));
         let mut cursor = QueryCursor::new();
-        let matches = cursor.matches(&self.query, self.tree.root_node(), self.source.as_bytes());
-        let mut matched = Vec::new();
-        for m in matches {
-            for capture in m.captures.iter() {
-                match capture.node.kind() {
-                    "string_literal" => {
-                        let result = build_src_ref(self.source, capture.node);
-                        matched.push(result);
-                    }
-                    "identifier" => {
-                        let range = capture.node.range();
-                        let text = &self.source[range.start_byte..range.end_byte];
-                        if text != "debug" {
-                            let length = matched.len() - 1;
-                            let prior_result: &mut SourceRef<'_> = matched.get_mut(length).unwrap();
-                            prior_result.vars.push(&text);
-                        }
-                    }
-                    _ => {
-                        println!("ignoring {}", capture.node.kind())
-                    }
-                }
-            }
+        let matches = cursor.matches(&query, self.tree.root_node(), self.source.as_bytes());
+        matches
+            .into_iter()
+            .flat_map(|m| m.captures)
+            .filter(|c| {
+                filter_idx.is_none()
+                    || (filter_idx.is_some() && filter_idx.unwrap() == c.index)
+            })
+            .map(|c| QueryResult {
+                kind: String::from(c.node.kind()),
+                range: c.node.range(),
+                name_range: find_fn_name(c.node, self.source),
+            })
+            .collect()
+    }
+}
+
+fn find_fn_name<'a>(node: Node, source: &'a str) -> Range<usize> {
+    match node.kind() {
+        "function_item" => {
+            let range = node.child_by_field_name("name").unwrap().range();
+            range.start_byte..range.end_byte
         }
-        matched
+        _ => find_fn_name(node.parent().unwrap(), source),
     }
 }
 
@@ -122,59 +124,40 @@ pub struct Edge<'a> {
 }
 
 impl<'a> CallGraph<'a> {
-    pub fn new(source: &'a str) -> CallGraph {
-        let tree = parse(source);
-        let root_node = tree.root_node();
+    pub fn new(source: &'a str, src_query: &'a SourceQuery) -> CallGraph<'a> {
+        let _nodes = Self::find_nodes(source, src_query);
+        let edges = Self::find_edges(source, src_query);
+        CallGraph { _nodes, edges }
+    }
+
+    fn find_nodes<'b>(source: &'a str, src_query: &'a SourceQuery) -> Vec<&'a str> {
         let node_query = r#"
             (function_item name: (identifier) @fn_name parameters: (parameters)*)
         "#;
-        let nodes = Self::find_nodes(root_node, source, node_query);
-
-        let edge_query = r#"
-            (call_expression function: (identifier) @fn_name arguments: (arguments (_))*)
-        "#;
-        let edges = Self::find_edges(root_node, source, edge_query);
-
-        CallGraph {
-            _nodes: nodes,
-            edges,
-        }
-    }
-
-    fn find_nodes<'b>(root_node: Node, source: &'a str, to_query: &'b str) -> Vec<&'a str> {
-        let query = Query::new(tree_sitter_rust::language(), to_query).unwrap();
-        let mut query_cursor = QueryCursor::new();
-        let matches = query_cursor.matches(&query, root_node, source.as_bytes());
-        let name_idx = query.capture_index_for_name("fn_name").unwrap();
+        let results = src_query.query(node_query, Some("fn_name"));
         let mut symbols = Vec::new();
-        for m in matches {
-            for capture in m.captures.iter().filter(|c| c.index == name_idx) {
-                let range = capture.node.range();
-                let name = &source[range.start_byte..range.end_byte];
-                symbols.push(name);
-            }
+        for result in results {
+            symbols.push(&source[result.name_range]);
         }
         symbols
     }
 
-    fn find_edges<'b>(root_node: Node, source: &'a str, to_query: &'b str) -> Vec<Edge<'a>> {
-        let query = Query::new(tree_sitter_rust::language(), to_query).unwrap();
-        let mut query_cursor = QueryCursor::new();
-        let matches = query_cursor.matches(&query, root_node, source.as_bytes());
-        let name_idx = query.capture_index_for_name("fn_name").unwrap();
+    fn find_edges(source: &'a str, src_query: &'a SourceQuery) -> Vec<Edge<'a>> {
+        let edge_query = r#"
+            (call_expression function: (identifier) @fn_name arguments: (arguments (_))*)
+        "#;
+        let results = src_query.query(edge_query, Some("fn_name"));
         let mut symbols = Vec::new();
-        for m in matches {
-            for capture in m.captures.iter().filter(|c| c.index == name_idx) {
-                let range = capture.node.range();
-                let fn_call = &source[range.start_byte..range.end_byte];
-                let enclosing = find_fn_name(capture.node, source);
-                let src_ref = build_src_ref(&source, capture.node);
-                symbols.push(Edge {
-                    from: enclosing,
-                    to: fn_call,
-                    via: src_ref,
-                });
-            }
+        for result in results {
+            let range = result.range;
+            let fn_call = &source[range.start_byte..range.end_byte];
+            let src_ref = build_src_ref(&source, result);
+
+            symbols.push(Edge {
+                from: src_ref.name,
+                to: fn_call,
+                via: src_ref,
+            });
         }
         symbols
     }
@@ -233,7 +216,7 @@ pub fn find_possible_paths<'a>(
         let mut path = Vec::new();
         path.push(&main_edge.via);
         viable_path(
-            main_edge.to,
+            &main_edge.to,
             src_ref.name,
             call_graph,
             &mut possible,
@@ -266,12 +249,12 @@ fn viable_path<'a>(
 
     for next_edge in call_graph.edges.iter().filter(|e| e.from == node) {
         path.push(&next_edge.via);
-        viable_path(next_edge.to, target, call_graph, possible, visited, path);
+        viable_path(&next_edge.to, target, call_graph, possible, visited, path);
         path.pop();
     }
 }
 
-pub fn extract_logging(source: &str) -> Vec<SourceRef> {
+pub fn extract_logging<'a>(source: &'a str, src_query: &'a SourceQuery) -> Vec<SourceRef<'a>> {
     let debug_macros = r#"
         (macro_invocation macro: (identifier) @macro-name
             (token_tree
@@ -279,12 +262,34 @@ pub fn extract_logging(source: &str) -> Vec<SourceRef> {
             ) (#eq? @macro-name "debug")
         )
     "#;
-    let source_query = SourceQuery::new(source, debug_macros);
-    source_query.to_source_refs()
+
+    let results = src_query.query(debug_macros, None);
+    let mut matched = Vec::new();
+    for result in results {
+        match result.kind.as_str() {
+            "string_literal" => {
+                let src_ref = build_src_ref(source, result);
+                matched.push(src_ref);
+            }
+            "identifier" => {
+                let range = result.range;
+                let text = &source[range.start_byte..range.end_byte];
+                if text != "debug" {
+                    let length = matched.len() - 1;
+                    let prior_result: &mut SourceRef<'_> = matched.get_mut(length).unwrap();
+                    prior_result.vars.push(&text);
+                }
+            }
+            _ => {
+                println!("ignoring {}", result.kind)
+            }
+        }
+    }
+    matched
 }
 
-fn build_src_ref<'a>(source: &'a str, node: Node<'_>) -> SourceRef<'a> {
-    let range = node.range();
+fn build_src_ref<'a, 'q>(source: &'a str, result: QueryResult) -> SourceRef<'a> {
+    let range = result.range;
     let text = &source[range.start_byte..range.end_byte];
     let line = range.start_point.row + 1;
     let col = range.start_point.column;
@@ -298,7 +303,7 @@ fn build_src_ref<'a>(source: &'a str, node: Node<'_>) -> SourceRef<'a> {
     replaced = replaced.replace("{:?}", "(\\w+)");
     let matcher = Regex::new(&replaced).unwrap();
     let vars = Vec::new();
-    let name = find_fn_name(node, source);
+    let name = &source[result.name_range];
     SourceRef {
         line_no: line,
         column: col,
@@ -307,24 +312,6 @@ fn build_src_ref<'a>(source: &'a str, node: Node<'_>) -> SourceRef<'a> {
         matcher,
         vars,
     }
-}
-
-fn find_fn_name<'a>(node: Node, source: &'a str) -> &'a str {
-    match node.kind() {
-        "function_item" => {
-            let range = node.child_by_field_name("name").unwrap().range();
-            &source[range.start_byte..range.end_byte]
-        }
-        _ => find_fn_name(node.parent().unwrap(), source),
-    }
-}
-
-fn parse(source: &str) -> Tree {
-    let mut parser = Parser::new();
-    parser
-        .set_language(tree_sitter_rust::language())
-        .expect("Error loading Rust grammar");
-    parser.parse(&source, None).expect("source is parable")
 }
 
 #[test]
@@ -373,7 +360,8 @@ fn nope(i: u32) {
 
 #[test]
 fn test_extract_logging() {
-    let src_refs = extract_logging(TEST_SOURCE);
+    let src_query = SourceQuery::new(TEST_SOURCE);
+    let src_refs = extract_logging(TEST_SOURCE, &src_query);
     assert_eq!(src_refs.len(), 2);
     let first = &src_refs[0];
     assert_eq!(first.line_no, 7);
@@ -395,7 +383,8 @@ fn test_link_to_source() {
     let log_ref = LogRef {
         text: "[2024-02-15T03:46:44Z DEBUG stack] you're only as funky as your last cut",
     };
-    let src_refs = extract_logging(TEST_SOURCE);
+    let src_query = SourceQuery::new(TEST_SOURCE);
+    let src_refs = extract_logging(TEST_SOURCE, &src_query);
     assert_eq!(src_refs.len(), 2);
     let result = link_to_source(&log_ref, &src_refs);
     assert!(ptr::eq(result.unwrap(), &src_refs[0]));
@@ -407,7 +396,8 @@ fn test_link_to_source_no_matches() {
         text: "[2024-02-26T03:44:40Z DEBUG stack] nope!",
     };
 
-    let src_refs = extract_logging(TEST_SOURCE);
+    let src_query = SourceQuery::new(TEST_SOURCE);
+    let src_refs = extract_logging(TEST_SOURCE, &src_query);
     assert_eq!(src_refs.len(), 2);
     let result = link_to_source(&log_ref, &src_refs);
     assert_eq!(result.is_none(), true);
@@ -418,7 +408,8 @@ fn test_extract_variables() {
     let log_ref = LogRef {
         text: "[2024-02-15T03:46:44Z DEBUG nope] this won't match i=1",
     };
-    let src_refs = extract_logging(TEST_SOURCE);
+    let src_query = SourceQuery::new(TEST_SOURCE);
+    let src_refs = extract_logging(TEST_SOURCE, &src_query);
     assert_eq!(src_refs.len(), 2);
     let vars = extract_variables(&log_ref, &src_refs[1]);
     assert_eq!(vars.get("i"), Some(&"1"));
