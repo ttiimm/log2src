@@ -43,7 +43,7 @@ pub struct QueryResult {
 }
 
 pub struct SourceQuery<'a> {
-    source: &'a str,
+    pub source: &'a str,
     tree: Tree,
 }
 
@@ -66,25 +66,24 @@ impl<'a> SourceQuery<'a> {
             .into_iter()
             .flat_map(|m| m.captures)
             .filter(|c| {
-                filter_idx.is_none()
-                    || (filter_idx.is_some() && filter_idx.unwrap() == c.index)
+                filter_idx.is_none() || (filter_idx.is_some() && filter_idx.unwrap() == c.index)
             })
             .map(|c| QueryResult {
                 kind: String::from(c.node.kind()),
                 range: c.node.range(),
-                name_range: find_fn_name(c.node, self.source),
+                name_range: self.find_fn_name(c.node, self.source),
             })
             .collect()
     }
-}
 
-fn find_fn_name<'a>(node: Node, source: &'a str) -> Range<usize> {
-    match node.kind() {
-        "function_item" => {
-            let range = node.child_by_field_name("name").unwrap().range();
-            range.start_byte..range.end_byte
+    fn find_fn_name(&self, node: Node, source: &'a str) -> Range<usize> {
+        match node.kind() {
+            "function_item" => {
+                let range = node.child_by_field_name("name").unwrap().range();
+                range.start_byte..range.end_byte
+            }
+            _ => self.find_fn_name(node.parent().unwrap(), source),
         }
-        _ => find_fn_name(node.parent().unwrap(), source),
     }
 }
 
@@ -110,13 +109,23 @@ impl fmt::Display for SourceRef<'_> {
     }
 }
 
+impl PartialEq for SourceRef<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.line_no == other.line_no
+            && self.column == other.column
+            && self.name == other.name
+            && self.text == other.text
+            && self.vars == other.vars
+    }
+}
+
 #[derive(Debug)]
 pub struct CallGraph<'a> {
     _nodes: Vec<&'a str>,
     edges: Vec<Edge<'a>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Edge<'a> {
     from: &'a str,
     to: &'a str,
@@ -124,25 +133,25 @@ pub struct Edge<'a> {
 }
 
 impl<'a> CallGraph<'a> {
-    pub fn new(source: &'a str, src_query: &'a SourceQuery) -> CallGraph<'a> {
-        let _nodes = Self::find_nodes(source, src_query);
-        let edges = Self::find_edges(source, src_query);
+    pub fn new(src_query: &'a SourceQuery) -> CallGraph<'a> {
+        let _nodes = Self::find_nodes(src_query);
+        let edges = Self::find_edges(src_query);
         CallGraph { _nodes, edges }
     }
 
-    fn find_nodes<'b>(source: &'a str, src_query: &'a SourceQuery) -> Vec<&'a str> {
+    fn find_nodes<'b>(src_query: &'a SourceQuery) -> Vec<&'a str> {
         let node_query = r#"
             (function_item name: (identifier) @fn_name parameters: (parameters)*)
         "#;
         let results = src_query.query(node_query, Some("fn_name"));
         let mut symbols = Vec::new();
         for result in results {
-            symbols.push(&source[result.name_range]);
+            symbols.push(&src_query.source[result.name_range]);
         }
         symbols
     }
 
-    fn find_edges(source: &'a str, src_query: &'a SourceQuery) -> Vec<Edge<'a>> {
+    fn find_edges(src_query: &'a SourceQuery) -> Vec<Edge<'a>> {
         let edge_query = r#"
             (call_expression function: (identifier) @fn_name arguments: (arguments (_))*)
         "#;
@@ -150,8 +159,8 @@ impl<'a> CallGraph<'a> {
         let mut symbols = Vec::new();
         for result in results {
             let range = result.range;
-            let fn_call = &source[range.start_byte..range.end_byte];
-            let src_ref = build_src_ref(&source, result);
+            let fn_call = &src_query.source[range.start_byte..range.end_byte];
+            let src_ref = build_src_ref(&src_query.source, result);
 
             symbols.push(Edge {
                 from: src_ref.name,
@@ -254,7 +263,7 @@ fn viable_path<'a>(
     }
 }
 
-pub fn extract_logging<'a>(source: &'a str, src_query: &'a SourceQuery) -> Vec<SourceRef<'a>> {
+pub fn extract_logging<'a>(src_query: &'a SourceQuery) -> Vec<SourceRef<'a>> {
     let debug_macros = r#"
         (macro_invocation macro: (identifier) @macro-name
             (token_tree
@@ -268,12 +277,12 @@ pub fn extract_logging<'a>(source: &'a str, src_query: &'a SourceQuery) -> Vec<S
     for result in results {
         match result.kind.as_str() {
             "string_literal" => {
-                let src_ref = build_src_ref(source, result);
+                let src_ref = build_src_ref(src_query.source, result);
                 matched.push(src_ref);
             }
             "identifier" => {
                 let range = result.range;
-                let text = &source[range.start_byte..range.end_byte];
+                let text = &src_query.source[range.start_byte..range.end_byte];
                 if text != "debug" {
                     let length = matched.len() - 1;
                     let prior_result: &mut SourceRef<'_> = matched.get_mut(length).unwrap();
@@ -361,7 +370,7 @@ fn nope(i: u32) {
 #[test]
 fn test_extract_logging() {
     let src_query = SourceQuery::new(TEST_SOURCE);
-    let src_refs = extract_logging(TEST_SOURCE, &src_query);
+    let src_refs = extract_logging(&src_query);
     assert_eq!(src_refs.len(), 2);
     let first = &src_refs[0];
     assert_eq!(first.line_no, 7);
@@ -384,7 +393,7 @@ fn test_link_to_source() {
         text: "[2024-02-15T03:46:44Z DEBUG stack] you're only as funky as your last cut",
     };
     let src_query = SourceQuery::new(TEST_SOURCE);
-    let src_refs = extract_logging(TEST_SOURCE, &src_query);
+    let src_refs = extract_logging(&src_query);
     assert_eq!(src_refs.len(), 2);
     let result = link_to_source(&log_ref, &src_refs);
     assert!(ptr::eq(result.unwrap(), &src_refs[0]));
@@ -397,7 +406,7 @@ fn test_link_to_source_no_matches() {
     };
 
     let src_query = SourceQuery::new(TEST_SOURCE);
-    let src_refs = extract_logging(TEST_SOURCE, &src_query);
+    let src_refs = extract_logging(&src_query);
     assert_eq!(src_refs.len(), 2);
     let result = link_to_source(&log_ref, &src_refs);
     assert_eq!(result.is_none(), true);
@@ -409,17 +418,76 @@ fn test_extract_variables() {
         text: "[2024-02-15T03:46:44Z DEBUG nope] this won't match i=1",
     };
     let src_query = SourceQuery::new(TEST_SOURCE);
-    let src_refs = extract_logging(TEST_SOURCE, &src_query);
+    let src_refs = extract_logging(&src_query);
     assert_eq!(src_refs.len(), 2);
     let vars = extract_variables(&log_ref, &src_refs[1]);
     assert_eq!(vars.get("i"), Some(&"1"));
 }
 
-// #[test]
-// fn test_call_graph() {
-//     let call_graph = CallGraph::new(TEST_SOURCE);
-//     assert_eq!(call_graph._nodes, vec!["main", "foo", "nope"]);
-//     assert_eq!(call_graph.edges, vec![
-//         Edge { from: "main", to: "foo", via: SourceRef {} }
-//     ])
-// }
+#[test]
+fn test_call_graph() {
+    let src_query = SourceQuery::new(TEST_SOURCE);
+    let call_graph = CallGraph::new(&src_query);
+    assert_eq!(call_graph._nodes, vec!["main", "foo", "nope"]);
+    let star_regex = Regex::new(".*").unwrap();
+    let main_2_foo = SourceRef {
+        line_no: 9,
+        column: 8,
+        name: "main",
+        text: "foo",
+        matcher: star_regex,
+        vars: vec![],
+    };
+    let star_regex = Regex::new(".*").unwrap();
+    let foo_2_nope = SourceRef {
+        line_no: 14,
+        column: 4,
+        name: "foo",
+        text: "nope",
+        matcher: star_regex,
+        vars: vec![],
+    };
+    assert_eq!(
+        call_graph.edges,
+        vec![
+            Edge {
+                from: "main",
+                to: "foo",
+                via: main_2_foo
+            },
+            Edge {
+                from: "foo",
+                to: "nope",
+                via: foo_2_nope
+            }
+        ]
+    )
+}
+
+#[test]
+fn test_find_possible_paths() {
+    let src_query = SourceQuery::new(TEST_SOURCE);
+    let call_graph = CallGraph::new(&src_query);
+    let src_refs = extract_logging(&src_query);
+    let paths = find_possible_paths(&src_refs[1], &call_graph);
+
+    let star_regex = Regex::new(".*").unwrap();
+    let main_2_foo = SourceRef {
+        line_no: 9,
+        column: 8,
+        name: "main",
+        text: "foo",
+        matcher: star_regex,
+        vars: vec![],
+    };
+    let star_regex = Regex::new(".*").unwrap();
+    let foo_2_nope = SourceRef {
+        line_no: 14,
+        column: 4,
+        name: "foo",
+        text: "nope",
+        matcher: star_regex,
+        vars: vec![],
+    };
+    assert_eq!(paths, vec![vec![&foo_2_nope, &main_2_foo]])
+}

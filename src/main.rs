@@ -40,8 +40,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let source = fs::read_to_string(&args.source).expect("Can read the source file");
     let src_query = SourceQuery::new(&source);
-    let src_logs = extract_logging(&source, &src_query);
-    let call_graph = CallGraph::new(&source, &src_query);
+    let src_logs = extract_logging(&src_query);
+    let call_graph = CallGraph::new(&src_query);
 
     // maybe should move this into a lib
     let log_mappings = filtered
