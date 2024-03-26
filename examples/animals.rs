@@ -51,5 +51,6 @@ fn init() -> [Animal; 6] {
 }
 
 fn make_noise(animal: &Animal) {
-    debug!("Animal {:?} says something", animal);
+    let sound = animal.sound();
+    debug!("Animal {:?} says {:?}", animal, sound);
 }
