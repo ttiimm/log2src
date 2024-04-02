@@ -1,23 +1,28 @@
 use clap::Parser as ClapParser;
 use log2src::{
-    extract_logging, extract_variables, filter_log, find_possible_paths, link_to_source, CallGraph,
-    Filter, LogMapping, SourceQuery, SourceRef,
+    do_mappings, extract_logging, extract_variables, filter_log, find_possible_paths,
+    link_to_source, CallGraph, Filter, LogMapping, SourceQuery, SourceRef,
 };
 use serde_json;
 use std::{collections::HashMap, error::Error, fs, io, path::PathBuf};
 
+/// The log2src command maps log statements back to the source code that emitted them.
 #[derive(ClapParser)]
-#[command(author, version, about, long_about = None)]
+#[command(author, version, about, long_about)]
 struct Cli {
-    #[arg(long, value_name = "SOURCE")]
-    source: String,
+    /// A source directory (or soon directoires) to map logs onto
+    #[arg(short = 'd', long, value_name = "SOURCES")]
+    sources: String,
 
+    /// A log file to use, if not from stdin
     #[arg(short, long, value_name = "LOG")]
     log: Option<PathBuf>,
 
+    /// The line in the log to use (1 based)
     #[arg(short, long, value_name = "START")]
     start: Option<usize>,
 
+    /// The last line of the log to use (1 based)
     #[arg(short, long, value_name = "END")]
     end: Option<usize>,
 }
@@ -38,30 +43,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
     let filtered = filter_log(&buffer, filter);
 
-    let source = fs::read_to_string(&args.source).expect("Can read the source file");
+    let source = fs::read_to_string(&args.sources).expect("Can read the source file");
     let src_query = SourceQuery::new(&source);
     let src_logs = extract_logging(&src_query);
     let call_graph = CallGraph::new(&src_query);
-
-    // maybe should move this into a lib
-    let log_mappings = filtered
-        .iter()
-        .map(|log_ref| {
-            let src_ref: Option<&SourceRef<'_>> = link_to_source(&log_ref, &src_logs);
-            let variables = src_ref.map_or(HashMap::new(), |src_ref| {
-                extract_variables(&log_ref, src_ref)
-            });
-            let stack = src_ref.map_or(Vec::new(), |src_ref| {
-                find_possible_paths(src_ref, &call_graph)
-            });
-            LogMapping {
-                log_ref,
-                src_ref,
-                variables,
-                stack,
-            }
-        })
-        .collect::<Vec<LogMapping>>();
+    let log_mappings = do_mappings(&filtered, &src_logs, &call_graph);
 
     for mapping in log_mappings {
         let serialized = serde_json::to_string(&mapping).unwrap();

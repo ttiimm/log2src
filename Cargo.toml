@@ -1,12 +1,12 @@
 [package]
 name = "log2src"
+authors = ["Tim Likarish Ellis"]
+description = "log2src maps logs back to source code"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 clap = { version = "4.1", features = ["derive"] }
-log = "0.4"
-env_logger = "0.11.1"
 regex = "1.9"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -14,4 +14,6 @@ tree-sitter = "0.20"
 tree-sitter-rust = "0.20"
 
 [dev-dependencies]
+env_logger = "0.11.1"
+log = "0.4"
 rand = "0.8"
