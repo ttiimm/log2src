@@ -215,6 +215,31 @@ pub fn filter_log(buffer: &String, filter: Filter) -> Vec<LogRef> {
     results
 }
 
+pub fn do_mappings<'a>(
+    log_refs: &'a Vec<LogRef>,
+    src_logs: &'a Vec<SourceRef>,
+    call_graph: &'a CallGraph,
+) -> Vec<LogMapping<'a>> {
+    log_refs
+        .iter()
+        .map(|log_ref| {
+            let src_ref: Option<&SourceRef<'_>> = link_to_source(&log_ref, &src_logs);
+            let variables = src_ref.map_or(HashMap::new(), |src_ref| {
+                extract_variables(&log_ref, src_ref)
+            });
+            let stack = src_ref.map_or(Vec::new(), |src_ref| {
+                find_possible_paths(src_ref, &call_graph)
+            });
+            LogMapping {
+                log_ref,
+                src_ref,
+                variables,
+                stack,
+            }
+        })
+        .collect::<Vec<LogMapping>>()
+}
+
 pub fn find_possible_paths<'a>(
     src_ref: &'a SourceRef,
     call_graph: &'a CallGraph,
