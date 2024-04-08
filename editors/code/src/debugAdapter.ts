@@ -6,9 +6,9 @@
  * could potentially be used in other IDE.
  */
 
-import { 
+import {
     Logger, logger,
-    LoggingDebugSession, 
+    LoggingDebugSession,
     Thread, StackFrame, Scope, Source,
     InitializedEvent, StoppedEvent,
     Handles,
@@ -20,7 +20,7 @@ import * as vscode from 'vscode';
 interface LogMapping {
     srcRef: SourceRef,
     variables: Map<string, string>,
-    stack: Array<Array<SourceRef>> 
+    stack: Array<Array<SourceRef>>
 }
 
 interface SourceRef {
@@ -49,7 +49,7 @@ export class DebugSession extends LoggingDebugSession {
     private _breakPoints = new Map<string, DebugProtocol.Breakpoint[]>();
     private _variableHandles = new Handles<'locals'>();
     private _line = 1;
-    private _launchArgs: ILaunchRequestArguments = {source: "", log: ""};
+    private _launchArgs: ILaunchRequestArguments = { source: "", log: "" };
     private _logLines = Number.MAX_SAFE_INTEGER;
     private _highlightDecoration: vscode.TextEditorDecorationType;
     private _mapping?: LogMapping = undefined;
@@ -64,7 +64,7 @@ export class DebugSession extends LoggingDebugSession {
         this.setDebuggerColumnsStartAt1(true);
 
         const focusColor = new vscode.ThemeColor('editor.focusedStackFrameHighlightBackground');
-        this._highlightDecoration = vscode.window.createTextEditorDecorationType({"backgroundColor": focusColor});
+        this._highlightDecoration = vscode.window.createTextEditorDecorationType({ "backgroundColor": focusColor });
     }
 
     protected disconnectRequest(response: DebugProtocol.DisconnectResponse, args: DebugProtocol.DisconnectArguments, request?: DebugProtocol.Request): void {
@@ -85,7 +85,7 @@ export class DebugSession extends LoggingDebugSession {
         response.body.supportsStepBack = true;
         // response.body.supportsBreakpointLocationsRequest = true;
         response.body.supportTerminateDebuggee = true;
-        
+
         this.sendResponse(response);
         this.sendEvent(new InitializedEvent());
     }
@@ -104,7 +104,7 @@ export class DebugSession extends LoggingDebugSession {
             }
             let bps = this._breakPoints.get(path) || [];
             const verified = sourceBp.line > 0 && sourceBp.line < this._logLines;
-            bps.push({line: sourceBp.line, verified: verified});
+            bps.push({ line: sourceBp.line, verified: verified });
         });
         const breakpoints = this._breakPoints.get(path) || [];
         response.body = {
@@ -182,18 +182,18 @@ export class DebugSession extends LoggingDebugSession {
         let bp;
         if (reverse) {
             bp = bps.findLast((bp) => {
-                return reverse ? 
-                    (bp.line !== undefined && this._line > bp.line) : 
+                return reverse ?
+                    (bp.line !== undefined && this._line > bp.line) :
                     (bp.line !== undefined && this._line < bp.line);
             });
         } else {
             bp = bps.find((bp) => {
-                return reverse ? 
-                    (bp.line !== undefined && this._line > bp.line) : 
+                return reverse ?
+                    (bp.line !== undefined && this._line > bp.line) :
                     (bp.line !== undefined && this._line < bp.line);
             });
         }
-        
+
         if (bp !== undefined && bp.line !== undefined) {
             return bp.line;
         } else {
@@ -237,10 +237,11 @@ export class DebugSession extends LoggingDebugSession {
             editor.setDecorations(this._highlightDecoration, [range]);
         }
 
-        let stdout = execFile(log2srcPath, ['--source', this._launchArgs.source,
-                                           '--log', this._launchArgs.log,
-                                           '--start', start,
-                                           '--end', end]);
+        const l2sArgs = ['-d', this._launchArgs.source,
+            '--log', this._launchArgs.log,
+            '--start', start,
+            '--end', end]
+        let stdout = execFile(log2srcPath, l2sArgs);
         this._mapping = JSON.parse(stdout);
 
         const sourceName = path.basename(this._launchArgs.source);
@@ -298,7 +299,7 @@ export class DebugSession extends LoggingDebugSession {
         console.log(' ');
 
         let vs: DebugProtocol.Variable[] = [];
-    
+
         const v = this._variableHandles.get(args.variablesReference);
         if (v === 'locals' && this._mapping !== undefined) {
             for (let [key, value] of Object.entries(this._mapping.variables)) {
@@ -307,9 +308,9 @@ export class DebugSession extends LoggingDebugSession {
                     value: value,
                     variablesReference: 0
                 });
-            }        
+            }
         }
-    
+
         response.body = {
             variables: vs
         };
