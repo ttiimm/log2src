@@ -51,14 +51,14 @@ impl<'a> SourceQuery<'a> {
     pub fn new(source: &'a str) -> SourceQuery<'a> {
         let mut parser = Parser::new();
         parser
-            .set_language(tree_sitter_rust::language())
+            .set_language(&tree_sitter_rust::language())
             .expect("Error loading Rust grammar");
         let tree = parser.parse(&source, None).expect("source is parable");
         SourceQuery { source, tree }
     }
 
     pub fn query(&self, query: &str, node_kind: Option<&str>) -> Vec<QueryResult> {
-        let query = Query::new(tree_sitter_rust::language(), query).unwrap();
+        let query = Query::new(&tree_sitter_rust::language(), query).unwrap();
         let filter_idx = node_kind.map_or(None, |kind| query.capture_index_for_name(kind));
         let mut cursor = QueryCursor::new();
         let matches = cursor.matches(&query, self.tree.root_node(), self.source.as_bytes());
