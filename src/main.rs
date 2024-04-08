@@ -1,10 +1,10 @@
 use clap::Parser as ClapParser;
 use log2src::{
-    do_mappings, extract_logging, extract_variables, filter_log, find_possible_paths,
-    link_to_source, CallGraph, Filter, LogMapping, SourceQuery, SourceRef,
+    do_mappings, extract_logging, filter_log,
+    CallGraph, Filter, SourceQuery,
 };
 use serde_json;
-use std::{collections::HashMap, error::Error, fs, io, path::PathBuf};
+use std::{error::Error, fs, io, path::PathBuf};
 
 /// The log2src command maps log statements back to the source code that emitted them.
 #[derive(ClapParser)]
