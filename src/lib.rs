@@ -111,6 +111,8 @@ impl<'a> SourceQuery<'a> {
 
 #[derive(Debug, Serialize)]
 pub struct SourceRef {
+    #[serde(rename(serialize = "sourcePath"))]
+    source_path: String,
     #[serde(rename(serialize = "lineNumber"))]
     pub line_no: usize,
     column: usize,
@@ -328,7 +330,7 @@ pub fn extract_logging<'a>(paths: Vec<PathBuf>) -> Vec<SourceRef> {
         for result in results {
             match result.kind.as_str() {
                 "string_literal" => {
-                    let src_ref = build_src_ref(&source, result);
+                    let src_ref = build_src_ref(&source, result, &path);
                     matched.push(src_ref);
                 }
                 "identifier" => {
@@ -349,7 +351,7 @@ pub fn extract_logging<'a>(paths: Vec<PathBuf>) -> Vec<SourceRef> {
     matched
 }
 
-fn build_src_ref<'a, 'q>(source: &str, result: QueryResult) -> SourceRef {
+fn build_src_ref<'a, 'q>(source: &str, result: QueryResult, source_path: &PathBuf) -> SourceRef {
     let range = result.range;
     let text = source[range.start_byte..range.end_byte].to_string();
     let line = range.start_point.row + 1;
@@ -366,6 +368,7 @@ fn build_src_ref<'a, 'q>(source: &str, result: QueryResult) -> SourceRef {
     let vars = Vec::new();
     let name = source[result.name_range].to_string();
     SourceRef {
+        source_path: source_path.to_string_lossy().to_string(),
         line_no: line,
         column: col,
         name,

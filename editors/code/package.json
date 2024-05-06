@@ -50,7 +50,7 @@
             "properties": {
               "source": {
                 "type": "string",
-                "description": "Absolute path to a source file."
+                "description": "Absolute path to a source directory."
               },
               "log": {
                 "type": "string",
@@ -65,7 +65,7 @@
             "type": "log2src",
             "request": "launch",
             "name": "Launch: log2src",
-            "source": "${workspaceFolder}/src/main.rs",
+            "source": "${workspaceFolder}/src/",
             "log": "${workspaceFolder}/log/*"
           }
         ],
@@ -73,7 +73,7 @@
         "configurationSnippets": [
           {
             "label": "log2src: Launch",
-            "description": "A new configuration for 'debugging' via logs.",
+            "description": "The log2src run configuration for mapping logs to source files",
             "body": {
               "type": "log2src",
               "request": "launch",
@@ -88,11 +88,11 @@
   },
   "scripts": {
     "vscode:prepublish": "pnpm run compile",
-    "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./",
+    "compile": "tsc -p editors/code",
+    "watch": "tsc -watch -p editors/code",
     "pretest": "pnpm run compile && pnpm run lint",
     "lint": "eslint src --ext ts",
-    "test": "node ./out/test/runTest.js"
+    "test": "node editors/code/out/test/runTest.js"
   },
   "devDependencies": {
     "@types/vscode": "^1.83.0",

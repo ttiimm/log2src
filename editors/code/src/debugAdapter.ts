@@ -15,6 +15,7 @@ import {
 } from '@vscode/debugadapter';
 import { DebugProtocol } from '@vscode/debugprotocol';
 import * as vscode from 'vscode';
+import * as path from 'path';
 
 
 interface LogMapping {
@@ -24,6 +25,7 @@ interface LogMapping {
 }
 
 interface SourceRef {
+    sourcePath: string,
     lineNumber: number,
     column: number,
     name: string,
@@ -94,19 +96,19 @@ export class DebugSession extends LoggingDebugSession {
         console.log(`setBreakPointsRequest ${JSON.stringify(args)}`);
         console.log(' ');
 
-        const path = args.source.path as string;
+        const bpPath = args.source.path as string;
         // TODO handle lines?
         const bps = args.breakpoints || [];
-        this._breakPoints.set(path, new Array<DebugProtocol.Breakpoint>());
+        this._breakPoints.set(bpPath, new Array<DebugProtocol.Breakpoint>());
         bps.forEach((sourceBp) => {
             if (this._line === 1) {
                 this._line = sourceBp.line;
             }
-            let bps = this._breakPoints.get(path) || [];
+            let bps = this._breakPoints.get(bpPath) || [];
             const verified = sourceBp.line > 0 && sourceBp.line < this._logLines;
             bps.push({ line: sourceBp.line, verified: verified });
         });
-        const breakpoints = this._breakPoints.get(path) || [];
+        const breakpoints = this._breakPoints.get(bpPath) || [];
         response.body = {
             breakpoints: breakpoints
         };
@@ -221,7 +223,6 @@ export class DebugSession extends LoggingDebugSession {
         console.log(`stackTraceRequest ${JSON.stringify(args)}`);
         console.log(' ');
 
-        var path = require('path');
         var log2srcPath = path.resolve(__dirname, '../bin/log2src');
         var execFile = require('child_process').execFileSync;
         let start = this._line - 1;
@@ -243,16 +244,16 @@ export class DebugSession extends LoggingDebugSession {
             '--end', end]
         let stdout = execFile(log2srcPath, l2sArgs);
         this._mapping = JSON.parse(stdout);
+        console.log(`mapped ${JSON.stringify(this._mapping)}`)
 
-        const sourceName = path.basename(this._launchArgs.source);
         let index = 0;
-        const currentFrame = this.buildStackFrame(index++, sourceName, this._mapping?.srcRef);
+        const currentFrame = this.buildStackFrame(index++, this._mapping?.srcRef);
         const stack: StackFrame[] = [];
         stack.push(currentFrame);
 
         if (this._mapping?.stack.length === 1 && this._mapping?.stack[0].length > 0) {
             this._mapping?.stack[0].forEach((srcRef) => {
-                const frame = this.buildStackFrame(index++, sourceName, srcRef);
+                const frame = this.buildStackFrame(index++, srcRef);
                 stack.push(frame);
             });
         }
@@ -265,19 +266,25 @@ export class DebugSession extends LoggingDebugSession {
         this.sendResponse(response);
     }
 
-    private buildStackFrame(index: number, sourceName: string, srcRef?: SourceRef): StackFrame {
+    private buildStackFrame(index: number, srcRef?: SourceRef): StackFrame {
         let name = "???";
         let lineNumber = -1;
+        let sourceName = "???";
+        let sourcePath = "???";
+        
 
         if (srcRef !== undefined) {
             name = srcRef.name;
             lineNumber = srcRef.lineNumber;
+            const codeSrcPath = path.parse(srcRef.sourcePath);
+            sourceName = codeSrcPath.base;
+            sourcePath = srcRef.sourcePath;
         }
 
         return new StackFrame(
             index,
             name,
-            new Source(sourceName, this._launchArgs.source),
+            new Source(sourceName, sourcePath),
             this.convertDebuggerLineToClient(lineNumber)
         );
     }
