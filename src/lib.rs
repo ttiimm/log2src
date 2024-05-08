@@ -1,8 +1,8 @@
 use regex::Regex;
 use serde::Serialize;
-use std::{collections::HashMap, fmt, fs, io, ops::Range, path::PathBuf};
 #[cfg(test)]
 use std::ptr;
+use std::{collections::HashMap, fmt, fs, io, ops::Range, path::PathBuf};
 use tree_sitter::{Node, Parser, Query, QueryCursor, Range as TSRange, Tree};
 
 pub struct Filter {
@@ -196,10 +196,7 @@ pub struct Edge<'a> {
 //     }
 // }
 
-pub fn link_to_source<'a>(
-    log_ref: &LogRef,
-    src_refs: &'a Vec<SourceRef>,
-) -> Option<&'a SourceRef> {
+pub fn link_to_source<'a>(log_ref: &LogRef, src_refs: &'a Vec<SourceRef>) -> Option<&'a SourceRef> {
     src_refs.iter().find(|&source_ref| {
         if let Some(_) = source_ref.matcher.captures(log_ref.text) {
             return true;
@@ -216,7 +213,10 @@ pub fn extract_variables<'a>(
     if src_ref.vars.len() > 0 {
         if let Some(captures) = src_ref.matcher.captures(log_line.text) {
             for i in 0..captures.len() - 1 {
-                variables.insert(src_ref.vars[i].as_str(), captures.get(i + 1).unwrap().as_str());
+                variables.insert(
+                    src_ref.vars[i].as_str(),
+                    captures.get(i + 1).unwrap().as_str(),
+                );
             }
         }
     }
@@ -241,7 +241,7 @@ pub fn filter_log(buffer: &String, filter: Filter) -> Vec<LogRef> {
 
 pub fn do_mappings<'a>(
     log_refs: &'a Vec<LogRef>,
-    src_logs: &'a Vec<SourceRef>
+    src_logs: &'a Vec<SourceRef>,
 ) -> Vec<LogMapping<'a>> {
     log_refs
         .iter()
@@ -324,9 +324,9 @@ pub fn extract_logging<'a>(paths: Vec<PathBuf>) -> Vec<SourceRef> {
                 ) (#eq? @macro-name "debug")
             )
         "#;
-    
+
         let results = src_query.query(debug_macros, None);
-        
+
         for result in results {
             match result.kind.as_str() {
                 "string_literal" => {

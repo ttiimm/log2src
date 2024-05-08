@@ -3,7 +3,7 @@ use crate::garden::vegetables::{Asparagus, Brocolli, Carrot, Dill, Vegetable};
 mod vegetables;
 
 pub struct Garden {
-    plants: Vec<Box<dyn Vegetable>>
+    plants: Vec<Box<dyn Vegetable>>,
 }
 
 impl Garden {
