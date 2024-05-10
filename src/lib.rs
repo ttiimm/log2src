@@ -3,7 +3,7 @@ use serde::Serialize;
 #[cfg(test)]
 use std::ptr;
 use std::{collections::HashMap, fmt, fs, io, ops::Range, path::PathBuf};
-use tree_sitter::{Node, Parser, Query, QueryCursor, Range as TSRange, Tree};
+use tree_sitter::{Language, Node, Parser, Query, QueryCursor, Range as TSRange, Tree};
 
 pub struct Filter {
     pub start: usize,
@@ -68,23 +68,35 @@ pub struct QueryResult {
 pub struct SourceQuery<'a> {
     pub source: &'a str,
     tree: Tree,
+    language: Language,
 }
 
 impl<'a> SourceQuery<'a> {
-    pub fn new(source: &'a str) -> SourceQuery<'a> {
+    pub fn new(source: &'a str, extension: &'a str) -> SourceQuery<'a> {
         let mut parser = Parser::new();
+        let language = match extension {
+            "rs" => tree_sitter_rust::language(),
+            "java" => tree_sitter_java::language(),
+            _ => panic!("Unsupported language"),
+        };
         parser
-            .set_language(&tree_sitter_rust::language())
-            .expect("Error loading Rust grammar");
-        let tree = parser.parse(&source, None).expect("source is parable");
-        SourceQuery { source, tree }
+            .set_language(&language)
+            .expect(format!("Error loading {:?} grammar", language).as_str());
+        let tree = parser.parse(&source, None).expect("source is parsable");
+        // println!("{:?}", tree.root_node().to_sexp());
+        SourceQuery {
+            source,
+            tree,
+            language,
+        }
     }
 
     pub fn query(&self, query: &str, node_kind: Option<&str>) -> Vec<QueryResult> {
-        let query = Query::new(&tree_sitter_rust::language(), query).unwrap();
+        let query = Query::new(&self.language, query).unwrap();
         let filter_idx = node_kind.map_or(None, |kind| query.capture_index_for_name(kind));
         let mut cursor = QueryCursor::new();
-        cursor.matches(&query, self.tree.root_node(), self.source.as_bytes())
+        cursor
+            .matches(&query, self.tree.root_node(), self.source.as_bytes())
             .into_iter()
             .flat_map(|m| m.captures)
             .filter(|c| {
@@ -103,7 +115,11 @@ impl<'a> SourceQuery<'a> {
             "function_item" => {
                 let range = node.child_by_field_name("name").unwrap().range();
                 range.start_byte..range.end_byte
-            }
+            },
+            "method_declaration" => {
+                let range = node.child_by_field_name("name").unwrap().range();
+                range.start_byte..range.end_byte
+            },
             _ => self.find_fn_range(node.parent().unwrap(), source),
         }
     }
@@ -315,37 +331,64 @@ pub fn do_mappings<'a>(
 pub fn extract_logging<'a>(paths: Vec<PathBuf>) -> Vec<SourceRef> {
     let mut matched = Vec::new();
     for path in paths {
-        let source = fs::read_to_string(&path).expect("Can read source");
-        let src_query = SourceQuery::new(&source);
-        let debug_macros = r#"
-            (macro_invocation macro: (identifier) @macro-name
-                (token_tree
-                    (string_literal) @log (identifier)* @arguments
-                ) (#eq? @macro-name "debug")
-            )
-        "#;
+        let extension = path.extension();
+        match extension {
+            Some(ext) => {
+                let source = fs::read_to_string(&path).expect("Can read source");
+                let ext_str = ext.to_str().expect("can convert extension to str");
+                let results = match ext_str {
+                    "rs" => {
+                        let src_query = SourceQuery::new(&source, ext_str);
+                        // XXX: assumes it's a debug macro
+                        let debug_macros = r#"
+                            (macro_invocation macro: (identifier) @macro-name
+                                (token_tree
+                                    (string_literal) @log (identifier)* @arguments
+                                ) (#eq? @macro-name "debug")
+                            )
+                        "#;
+                        src_query.query(debug_macros, None)
+                    },
+                    "java" => {
+                        let src_query = SourceQuery::new(&source, ext_str);
+                        let log_invocations = r#"
+                            (method_invocation object: (identifier) @object-name
+                                name: (identifier) @method-name
+                                arguments: (argument_list [
+                                    (string_literal) @log
+                                    (_ (string_literal (_ (identifier)* @arguments)) @log)
+                                ])
+                                (#eq? @object-name "logger")
+                                (#eq? @method-name "fine")
+                            )
+                        "#;
+                        src_query.query(log_invocations, None)
+                    },
+                    _ => continue,
+                };
 
-        let results = src_query.query(debug_macros, None);
-
-        for result in results {
-            match result.kind.as_str() {
-                "string_literal" => {
-                    let src_ref = build_src_ref(&source, result, &path);
-                    matched.push(src_ref);
-                }
-                "identifier" => {
-                    let range = result.range;
-                    let text = source[range.start_byte..range.end_byte].to_string();
-                    if text != "debug" {
-                        let length = matched.len() - 1;
-                        let prior_result: &mut SourceRef = matched.get_mut(length).unwrap();
-                        prior_result.vars.push(text);
+                for result in results {
+                    match result.kind.as_str() {
+                        "string_literal" => {
+                            let src_ref = build_src_ref(&source, result, &path);
+                            matched.push(src_ref);
+                        }
+                        "identifier" => {
+                            let range = result.range;
+                            let text = source[range.start_byte..range.end_byte].to_string();
+                            if text != "debug" && text != "logger" && text != "fine" {
+                                let length = matched.len() - 1;
+                                let prior_result: &mut SourceRef = matched.get_mut(length).unwrap();
+                                prior_result.vars.push(text);
+                            }
+                        }
+                        _ => {
+                            println!("ignoring {}", result.kind)
+                        }
                     }
                 }
-                _ => {
-                    println!("ignoring {}", result.kind)
-                }
             }
+            None => continue,
         }
     }
     matched
@@ -364,6 +407,8 @@ fn build_src_ref<'a, 'q>(source: &str, result: QueryResult, source_path: &PathBu
     let unquoted = &source[start..end];
     let mut replaced = unquoted.replace("{}", "(\\w+)");
     replaced = replaced.replace("{:?}", "(\\w+)");
+    let re = Regex::new(r"\\\{.*?\}").unwrap();
+    replaced = re.replace_all(&replaced, "(\\w+)").to_string();
     let matcher = Regex::new(&replaced).unwrap();
     let vars = Vec::new();
     let name = source[result.name_range].to_string();
