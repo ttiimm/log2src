@@ -14,9 +14,9 @@ fn basic() -> Result<(), Box<dyn std::error::Error>> {
         .arg("-l")
         .arg(basic_log.to_str().expect("test case log exists"));
     cmd.assert().success().stdout(r#"{"srcRef":{"sourcePath":"tests/java/Basic.java","lineNumber":18,"column":16,"name":"main","text":"\"Hello from main\"","vars":[]},"variables":{},"stack":[]}
-{"srcRef":{"sourcePath":"tests/java/Basic.java","lineNumber":25,"column":16,"name":"foo","text":"\"Hello from foo i={}\"","vars":["i"]},"variables":{"i":"0"},"stack":[]}
-{"srcRef":{"sourcePath":"tests/java/Basic.java","lineNumber":25,"column":16,"name":"foo","text":"\"Hello from foo i={}\"","vars":["i"]},"variables":{"i":"1"},"stack":[]}
-{"srcRef":{"sourcePath":"tests/java/Basic.java","lineNumber":25,"column":16,"name":"foo","text":"\"Hello from foo i={}\"","vars":["i"]},"variables":{"i":"2"},"stack":[]}
+{"srcRef":{"sourcePath":"tests/java/Basic.java","lineNumber":25,"column":20,"name":"foo","text":"\"Hello from foo i=\\{i}\"","vars":["i"]},"variables":{"i":"0"},"stack":[]}
+{"srcRef":{"sourcePath":"tests/java/Basic.java","lineNumber":25,"column":20,"name":"foo","text":"\"Hello from foo i=\\{i}\"","vars":["i"]},"variables":{"i":"1"},"stack":[]}
+{"srcRef":{"sourcePath":"tests/java/Basic.java","lineNumber":25,"column":20,"name":"foo","text":"\"Hello from foo i=\\{i}\"","vars":["i"]},"variables":{"i":"2"},"stack":[]}
 "#);
     Ok(())
 }
