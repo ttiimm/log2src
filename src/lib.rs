@@ -29,12 +29,12 @@ impl SourceLanguage {
             SourceLanguage::Rust => {
                 // XXX: assumes it's a debug macro
                 r#"
-                (macro_invocation macro: (identifier) @macro-name
-                    (token_tree
-                        (string_literal) @log (identifier)* @arguments
-                    ) (#eq? @macro-name "debug")
-                )
-            "#
+                    (macro_invocation macro: (identifier) @macro-name
+                        (token_tree
+                            (string_literal) @log (identifier)* @arguments
+                        ) (#eq? @macro-name "debug")
+                    )
+                "#
             }
             SourceLanguage::Java => {
                 r#"
@@ -504,7 +504,6 @@ fn nope(i: u32) {
     debug!("this won't match i={}", i);
 }
 "#;
-
 
 #[test]
 fn test_extract_logging() {
