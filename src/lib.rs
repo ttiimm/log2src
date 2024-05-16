@@ -19,24 +19,98 @@ impl Default for Filter {
     }
 }
 
-pub fn find_paths(sources: &str) -> Vec<PathBuf> {
+enum SourceLanguage {
+    Rust,
+    Java,
+}
+impl SourceLanguage {
+    fn get_query(&self) -> &str {
+        match self {
+            SourceLanguage::Rust => {
+                // XXX: assumes it's a debug macro
+                r#"
+                (macro_invocation macro: (identifier) @macro-name
+                    (token_tree
+                        (string_literal) @log (identifier)* @arguments
+                    ) (#eq? @macro-name "debug")
+                )
+            "#
+            }
+            SourceLanguage::Java => {
+                r#"
+                    (method_invocation object: (identifier) @object-name
+                        name: (identifier) @method-name
+                        arguments: (argument_list [
+                            (string_literal) @log
+                            (_ (string_literal (_ (identifier)* @arguments)) @log)
+                        ])
+                        (#eq? @object-name "logger")
+                        (#eq? @method-name "fine")
+                    )
+                "#
+            }
+        }
+    }
+}
+
+pub struct CodeSource {
+    filename: String,
+    language: SourceLanguage,
+    buffer: String,
+}
+
+impl CodeSource {
+    fn new(path: PathBuf, mut input: Box<dyn io::Read>) -> CodeSource {
+        let language = match path.extension() {
+            Some(ext) => match ext.to_str().unwrap() {
+                "rs" => SourceLanguage::Rust,
+                "java" => SourceLanguage::Java,
+                _ => panic!("Unsupported language"),
+            },
+            None => panic!("No extension"),
+        };
+        let mut buffer = String::new();
+        input.read_to_string(&mut buffer).expect("can read source");
+        CodeSource {
+            language,
+            filename: path.to_string_lossy().to_string(),
+            buffer,
+        }
+    }
+
+    fn ts_language(&self) -> Language {
+        match self.language {
+            SourceLanguage::Rust => tree_sitter_rust::language(),
+            SourceLanguage::Java => tree_sitter_java::language(),
+        }
+    }
+}
+
+pub fn find_code(sources: &str) -> Vec<CodeSource> {
     let mut srcs = vec![];
     let meta = fs::metadata(sources).expect("Can read file metadata");
     if meta.is_file() {
-        srcs.push(PathBuf::from(sources));
+        let path = PathBuf::from(sources);
+        let input = Box::new(fs::File::open(PathBuf::from(sources)).expect("Can open file"));
+        let code = CodeSource::new(path, input);
+        srcs.push(code);
     } else {
         walk_dir(PathBuf::from(sources), &mut srcs).expect("Couldn't traverse directory");
     }
     srcs
 }
 
-fn walk_dir(dir: PathBuf, srcs: &mut Vec<PathBuf>) -> io::Result<()> {
+fn walk_dir(dir: PathBuf, srcs: &mut Vec<CodeSource>) -> io::Result<()> {
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
         let path = entry.path();
         let metadata = fs::metadata(&path)?;
         if metadata.is_file() {
-            srcs.push(path)
+            let path = entry.path();
+            let input =
+                Box::new(fs::File::open(PathBuf::from(entry.path())).expect("Can open file"));
+            let code = CodeSource::new(path, input);
+            srcs.push(code)
         } else if metadata.is_dir() {
             walk_dir(path, srcs).expect("Couldn't traverse directory");
         }
@@ -72,17 +146,14 @@ pub struct SourceQuery<'a> {
 }
 
 impl<'a> SourceQuery<'a> {
-    pub fn new(source: &'a str, extension: &'a str) -> SourceQuery<'a> {
+    pub fn new(code: &'a CodeSource) -> SourceQuery<'a> {
         let mut parser = Parser::new();
-        let language = match extension {
-            "rs" => tree_sitter_rust::language(),
-            "java" => tree_sitter_java::language(),
-            _ => panic!("Unsupported language"),
-        };
+        let language = code.ts_language();
         parser
             .set_language(&language)
             .expect(format!("Error loading {:?} grammar", language).as_str());
-        let tree = parser.parse(&source, None).expect("source is parsable");
+        let source = code.buffer.as_str();
+        let tree = parser.parse(source, None).expect("source is parsable");
         // println!("{:?}", tree.root_node().to_sexp());
         SourceQuery {
             source,
@@ -115,11 +186,11 @@ impl<'a> SourceQuery<'a> {
             "function_item" => {
                 let range = node.child_by_field_name("name").unwrap().range();
                 range.start_byte..range.end_byte
-            },
+            }
             "method_declaration" => {
                 let range = node.child_by_field_name("name").unwrap().range();
                 range.start_byte..range.end_byte
-            },
+            }
             _ => self.find_fn_range(node.parent().unwrap(), source),
         }
     }
@@ -328,74 +399,41 @@ pub fn do_mappings<'a>(
 //     }
 // }
 
-pub fn extract_logging<'a>(paths: Vec<PathBuf>) -> Vec<SourceRef> {
+pub fn extract_logging<'a>(sources: &mut Vec<CodeSource>) -> Vec<SourceRef> {
     let mut matched = Vec::new();
-    for path in paths {
-        let extension = path.extension();
-        match extension {
-            Some(ext) => {
-                let source = fs::read_to_string(&path).expect("Can read source");
-                let ext_str = ext.to_str().expect("can convert extension to str");
-                let results = match ext_str {
-                    "rs" => {
-                        let src_query = SourceQuery::new(&source, ext_str);
-                        // XXX: assumes it's a debug macro
-                        let debug_macros = r#"
-                            (macro_invocation macro: (identifier) @macro-name
-                                (token_tree
-                                    (string_literal) @log (identifier)* @arguments
-                                ) (#eq? @macro-name "debug")
-                            )
-                        "#;
-                        src_query.query(debug_macros, None)
-                    },
-                    "java" => {
-                        let src_query = SourceQuery::new(&source, ext_str);
-                        let log_invocations = r#"
-                            (method_invocation object: (identifier) @object-name
-                                name: (identifier) @method-name
-                                arguments: (argument_list [
-                                    (string_literal) @log
-                                    (_ (string_literal (_ (identifier)* @arguments)) @log)
-                                ])
-                                (#eq? @object-name "logger")
-                                (#eq? @method-name "fine")
-                            )
-                        "#;
-                        src_query.query(log_invocations, None)
-                    },
-                    _ => continue,
-                };
+    for code in sources.iter() {
+        let src_query = SourceQuery::new(code);
+        let query = code.language.get_query();
+        let results = src_query.query(query, None);
 
-                for result in results {
-                    match result.kind.as_str() {
-                        "string_literal" => {
-                            let src_ref = build_src_ref(&source, result, &path);
-                            matched.push(src_ref);
-                        }
-                        "identifier" => {
-                            let range = result.range;
-                            let text = source[range.start_byte..range.end_byte].to_string();
-                            if text != "debug" && text != "logger" && text != "fine" {
-                                let length = matched.len() - 1;
-                                let prior_result: &mut SourceRef = matched.get_mut(length).unwrap();
-                                prior_result.vars.push(text);
-                            }
-                        }
-                        _ => {
-                            println!("ignoring {}", result.kind)
-                        }
+        for result in results {
+            match result.kind.as_str() {
+                "string_literal" => {
+                    let src_ref = build_src_ref(code, result);
+                    matched.push(src_ref);
+                }
+                "identifier" => {
+                    let range = result.range;
+                    let source = code.buffer.as_str();
+                    let text = source[range.start_byte..range.end_byte].to_string();
+                    if text != "debug" && text != "logger" && text != "fine" {
+                        let length = matched.len() - 1;
+                        let prior_result: &mut SourceRef = matched.get_mut(length).unwrap();
+                        prior_result.vars.push(text);
                     }
                 }
+                _ => {
+                    println!("ignoring {}", result.kind)
+                }
             }
-            None => continue,
         }
     }
     matched
 }
 
-fn build_src_ref<'a, 'q>(source: &str, result: QueryResult, source_path: &PathBuf) -> SourceRef {
+fn build_src_ref<'a, 'q>(code: &CodeSource, result: QueryResult) -> SourceRef {
     let range = result.range;
+    let source = code.buffer.as_str();
     let text = source[range.start_byte..range.end_byte].to_string();
     let line = range.start_point.row + 1;
     let col = range.start_point.column;
@@ -413,7 +451,7 @@ fn build_src_ref<'a, 'q>(source: &str, result: QueryResult, source_path: &PathBu
     let vars = Vec::new();
     let name = source[result.name_range].to_string();
     SourceRef {
-        source_path: source_path.to_string_lossy().to_string(),
+        source_path: code.filename.clone(),
         line_no: line,
         column: col,
         name,
@@ -445,84 +483,85 @@ fn test_filter_log_with_filter() {
     assert_eq!(result, vec![LogRef { text: "warning" }]);
 }
 
-// #[cfg(test)]
-// const TEST_SOURCE: &str = r#"
-// #[macro_use]
-// extern crate log;
+#[cfg(test)]
+const TEST_SOURCE: &str = r#"
+#[macro_use]
+extern crate log;
 
-// fn main() {
-//     env_logger::init();
-//     debug!("you're only as funky as your last cut");
-//     for i in 0..3 {
-//         foo(i);
-//     }
-// }
+fn main() {
+    env_logger::init();
+    debug!("you're only as funky as your last cut");
+    for i in 0..3 {
+        foo(i);
+    }
+}
 
-// fn foo(i: u32) {
-//     nope(i);
-// }
+fn foo(i: u32) {
+    nope(i);
+}
 
-// fn nope(i: u32) {
-//     debug!("this won't match i={}", i);
-// }
-// "#;
+fn nope(i: u32) {
+    debug!("this won't match i={}", i);
+}
+"#;
 
-// #[test]
-// fn test_extract_logging() {
-//     let src_query = SourceQuery::new(TEST_SOURCE);
-//     let src_refs = extract_logging(&src_query);
-//     assert_eq!(src_refs.len(), 2);
-//     let first = &src_refs[0];
-//     assert_eq!(first.line_no, 7);
-//     assert_eq!(first.column, 11);
-//     assert_eq!(first.name, "main");
-//     assert_eq!(first.text, "\"you're only as funky as your last cut\"");
-//     assert!(first.vars.is_empty());
 
-//     let second = &src_refs[1];
-//     assert_eq!(second.line_no, 18);
-//     assert_eq!(second.column, 11);
-//     assert_eq!(second.name, "nope");
-//     assert_eq!(second.text, "\"this won't match i={}\"");
-//     assert_eq!(second.vars[0], "i");
-// }
+#[test]
+fn test_extract_logging() {
+    let code = CodeSource::new(PathBuf::from("in-mem.rs"), Box::new(TEST_SOURCE.as_bytes()));
+    let src_refs = extract_logging(&mut vec![code]);
+    assert_eq!(src_refs.len(), 2);
+    let first = &src_refs[0];
+    assert_eq!(first.line_no, 7);
+    assert_eq!(first.column, 11);
+    assert_eq!(first.name, "main");
+    assert_eq!(first.text, "\"you're only as funky as your last cut\"");
+    assert!(first.vars.is_empty());
 
-// #[test]
-// fn test_link_to_source() {
-//     let log_ref = LogRef {
-//         text: "[2024-02-15T03:46:44Z DEBUG stack] you're only as funky as your last cut",
-//     };
-//     let src_query = SourceQuery::new(TEST_SOURCE);
-//     let src_refs = extract_logging(&src_query);
-//     assert_eq!(src_refs.len(), 2);
-//     let result = link_to_source(&log_ref, &src_refs);
-//     assert!(ptr::eq(result.unwrap(), &src_refs[0]));
-// }
+    let second = &src_refs[1];
+    assert_eq!(second.line_no, 18);
+    assert_eq!(second.column, 11);
+    assert_eq!(second.name, "nope");
+    assert_eq!(second.text, "\"this won't match i={}\"");
+    assert_eq!(second.vars[0], "i");
+}
 
-// #[test]
-// fn test_link_to_source_no_matches() {
-//     let log_ref = LogRef {
-//         text: "[2024-02-26T03:44:40Z DEBUG stack] nope!",
-//     };
+#[test]
+fn test_link_to_source() {
+    let log_ref = LogRef {
+        text: "[2024-02-15T03:46:44Z DEBUG stack] you're only as funky as your last cut",
+    };
+    let code = CodeSource::new(PathBuf::from("in-mem.rs"), Box::new(TEST_SOURCE.as_bytes()));
+    let src_refs = extract_logging(&mut vec![code]);
+    assert_eq!(src_refs.len(), 2);
+    let result = link_to_source(&log_ref, &src_refs);
+    assert!(ptr::eq(result.unwrap(), &src_refs[0]));
+}
 
-//     let src_query = SourceQuery::new(TEST_SOURCE);
-//     let src_refs = extract_logging(&src_query);
-//     assert_eq!(src_refs.len(), 2);
-//     let result = link_to_source(&log_ref, &src_refs);
-//     assert_eq!(result.is_none(), true);
-// }
+#[test]
+fn test_link_to_source_no_matches() {
+    let log_ref = LogRef {
+        text: "[2024-02-26T03:44:40Z DEBUG stack] nope!",
+    };
 
-// #[test]
-// fn test_extract_variables() {
-//     let log_ref = LogRef {
-//         text: "[2024-02-15T03:46:44Z DEBUG nope] this won't match i=1",
-//     };
-//     let src_query = SourceQuery::new(TEST_SOURCE);
-//     let src_refs = extract_logging(&src_query);
-//     assert_eq!(src_refs.len(), 2);
-//     let vars = extract_variables(&log_ref, &src_refs[1]);
-//     assert_eq!(vars.get("i"), Some(&"1"));
-// }
+    let code = CodeSource::new(PathBuf::from("in-mem.rs"), Box::new(TEST_SOURCE.as_bytes()));
+    let src_refs = extract_logging(&mut vec![code]);
+    assert_eq!(src_refs.len(), 2);
+    let result = link_to_source(&log_ref, &src_refs);
+    assert_eq!(result.is_none(), true);
+}
+
+#[test]
+fn test_extract_variables() {
+    let log_ref = LogRef {
+        text: "[2024-02-15T03:46:44Z DEBUG nope] this won't match i=1",
+    };
+    let code = CodeSource::new(PathBuf::from("in-mem.rs"), Box::new(TEST_SOURCE.as_bytes()));
+    let src_refs = extract_logging(&mut vec![code]);
+    assert_eq!(src_refs.len(), 2);
+    let vars = extract_variables(&log_ref, &src_refs[1]);
+    assert_eq!(vars.get("i"), Some(&"1"));
+}
 
 // #[test]
 // fn test_call_graph() {
