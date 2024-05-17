@@ -1,5 +1,5 @@
 use clap::Parser as ClapParser;
-use log2src::{do_mappings, extract_logging, filter_log, find_code, Filter};
+use log2src::{do_mappings, extract_logging, filter_log, find_code, CallGraph, Filter};
 use serde_json;
 use std::{error::Error, fs, io, path::PathBuf};
 
@@ -42,9 +42,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut sources = find_code(&args.sources);
     let src_logs = extract_logging(&mut sources);
-    // let call_graph = CallGraph::new(&src_query);
-    // let log_mappings = do_mappings(&filtered, &src_logs, &call_graph);
-    let log_mappings = do_mappings(&filtered, &src_logs);
+    let call_graph = CallGraph::new(&mut sources);
+    let log_mappings = do_mappings(&filtered, &src_logs, &call_graph);
 
     for mapping in log_mappings {
         let serialized = serde_json::to_string(&mapping).unwrap();
