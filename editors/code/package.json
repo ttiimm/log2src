@@ -28,25 +28,43 @@
   "contributes": {
     "languages": [
       {
-        "id": "log-telemetry",
+        "id": "log2src",
         "extensions": [
-          ".log"
+          ".log",
+          "*.log.?"
+        ],
+        "aliases": [
+          "Log2Src"
         ]
       }
     ],
+    "grammars": [
+      {
+        "language": "log2src",
+        "scopeName": "text.log",
+        "path": "./syntaxes/log2src.tmLanguage.json"
+      }
+    ],
     "breakpoints": [
-      { "language": "log-telemetry" }
+      {
+        "language": "log2src"
+      }
     ],
     "debuggers": [
       {
         "type": "log2src",
         "label": "log2src",
         "program": "./out/debugAdapter.js",
+        "languages": [
+          "log2src"
+        ],
         "runtime": "node",
-
         "configurationAttributes": {
           "launch": {
-            "required": ["source", "log"],
+            "required": [
+              "source",
+              "log"
+            ],
             "properties": {
               "source": {
                 "type": "string",
@@ -59,7 +77,6 @@
             }
           }
         },
-
         "initialConfigurations": [
           {
             "type": "log2src",
@@ -69,7 +86,6 @@
             "log": "${workspaceFolder}/log/*"
           }
         ],
-
         "configurationSnippets": [
           {
             "label": "log2src: Launch",
