@@ -1,8 +1,8 @@
-An extension to Visual Studio Code that allows using the debugger with the [logdbg](https://github.com/ttiimm/logdbg) debugging back end.
+An extension to Visual Studio Code that allows using the debugger with the [log2src](https://github.com/ttiimm/log2src) debugging back end.
 
-# logdbg-ext README
+# log2src-ext README
 
-This is the README for your extension "logdbg-ext". After writing up a brief description, we recommend including the following sections.
+This is the README for your extension "log2src-ext". After writing up a brief description, we recommend including the following sections.
 
 ## Features
 
