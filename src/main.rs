@@ -15,11 +15,11 @@ struct Cli {
     #[arg(short, long, value_name = "LOG")]
     log: Option<PathBuf>,
 
-    /// The line in the log to use (1 based)
+    /// The line in the log to use (0 based)
     #[arg(short, long, value_name = "START")]
     start: Option<usize>,
 
-    /// The last line of the log to use (1 based)
+    /// The last line of the log to use (0 based)
     #[arg(short, long, value_name = "END")]
     end: Option<usize>,
 }

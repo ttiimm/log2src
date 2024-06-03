@@ -24,6 +24,10 @@ enum SourceLanguage {
     Rust,
     Java,
 }
+
+const IDENTS_RS: &[&str] = &["debug", "info", "warn"];
+const IDENTS_JAVA: &[&str] = &["logger", "log", "fine", "debug", "info", "warn"];
+
 impl SourceLanguage {
     fn get_query(&self) -> &str {
         match self {
@@ -39,17 +43,27 @@ impl SourceLanguage {
             }
             SourceLanguage::Java => {
                 r#"
-                    (method_invocation object: (identifier) @object-name
+                    (method_invocation 
+                        object: (identifier) @object-name
                         name: (identifier) @method-name
                         arguments: (argument_list [
-                            (string_literal) @log
+                            (_ (string_literal) @log  (_ (identifier) @arguments))
                             (_ (string_literal (_ (identifier)* @arguments)) @log)
+                            (string_literal) @log (identifier) @arguments
+                            (string_literal) @log
                         ])
-                        (#eq? @object-name "logger")
-                        (#eq? @method-name "fine")
+                        (#match? @object-name "log(ger)?|LOG(GER)?")
+                        (#match? @method-name "fine|debug|info|warn")
                     )
                 "#
             }
+        }
+    }
+
+    fn get_identifiers(&self) -> &[&str] {
+        match self {
+            SourceLanguage::Rust => IDENTS_RS,
+            SourceLanguage::Java => IDENTS_JAVA,
         }
     }
 }
@@ -387,7 +401,6 @@ pub fn extract_logging<'a>(sources: &mut Vec<CodeSource>) -> Vec<SourceRef> {
         let src_query = SourceQuery::new(code);
         let query = code.language.get_query();
         let results = src_query.query(query, None);
-
         for result in results {
             match result.kind.as_str() {
                 "string_literal" => {
@@ -398,7 +411,8 @@ pub fn extract_logging<'a>(sources: &mut Vec<CodeSource>) -> Vec<SourceRef> {
                     let range = result.range;
                     let source = code.buffer.as_str();
                     let text = source[range.start_byte..range.end_byte].to_string();
-                    if text != "debug" && text != "logger" && text != "fine" {
+                    // check the text matches any of the identifiers we're looking for
+                    if code.language.get_identifiers().iter().all(|&s| s != text.to_lowercase()) {
                         let length = matched.len() - 1;
                         let prior_result: &mut SourceRef = matched.get_mut(length).unwrap();
                         prior_result.vars.push(text);
