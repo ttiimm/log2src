@@ -2,7 +2,7 @@ use regex::Regex;
 use serde::Serialize;
 #[cfg(test)]
 use std::ptr;
-use std::{collections::HashMap, fmt, fs, io, ops::Range, path::PathBuf};
+use std::{collections::HashMap, fmt, fs, fs::File, io, ops::Range, path::PathBuf};
 use tree_sitter::{Language, Node, Parser, Query, QueryCursor, Range as TSRange, Tree};
 
 pub struct Filter {
@@ -103,14 +103,14 @@ impl CodeSource {
 
 pub fn find_code(sources: &str) -> Vec<CodeSource> {
     let mut srcs = vec![];
-    let meta = fs::metadata(sources).expect("Can read file metadata");
+    let meta = fs::metadata(sources).expect("can read file metadata");
     if meta.is_file() {
         let path = PathBuf::from(sources);
-        let input = Box::new(fs::File::open(PathBuf::from(sources)).expect("Can open file"));
+        let input = Box::new(File::open(PathBuf::from(sources)).expect("can open file"));
         let code = CodeSource::new(path, input);
         srcs.push(code);
     } else {
-        walk_dir(PathBuf::from(sources), &mut srcs).expect("Couldn't traverse directory");
+        walk_dir(PathBuf::from(sources), &mut srcs).expect("can traverse directory");
     }
     srcs
 }
@@ -123,7 +123,7 @@ fn walk_dir(dir: PathBuf, srcs: &mut Vec<CodeSource>) -> io::Result<()> {
         if metadata.is_file() {
             let path = entry.path();
             let input =
-                Box::new(fs::File::open(PathBuf::from(entry.path())).expect("Can open file"));
+                Box::new(File::open(PathBuf::from(entry.path())).expect("Can open file"));
             let code = CodeSource::new(path, input);
             srcs.push(code)
         } else if metadata.is_dir() {
@@ -145,7 +145,7 @@ pub struct LogMapping<'a> {
 
 #[derive(Debug, PartialEq)]
 pub struct LogRef<'a> {
-    pub text: &'a str,
+    pub line: &'a str,
 }
 
 pub struct QueryResult {
@@ -292,7 +292,7 @@ impl<'a> CallGraph<'a> {
 
 pub fn link_to_source<'a>(log_ref: &LogRef, src_refs: &'a Vec<SourceRef>) -> Option<&'a SourceRef> {
     src_refs.iter().find(|&source_ref| {
-        if let Some(_) = source_ref.matcher.captures(log_ref.text) {
+        if let Some(_) = source_ref.matcher.captures(log_ref.line) {
             return true;
         }
         false
@@ -305,7 +305,7 @@ pub fn extract_variables<'a>(
 ) -> HashMap<&'a str, &'a str> {
     let mut variables = HashMap::new();
     if src_ref.vars.len() > 0 {
-        if let Some(captures) = src_ref.matcher.captures(log_line.text) {
+        if let Some(captures) = src_ref.matcher.captures(log_line.line) {
             for i in 0..captures.len() - 1 {
                 variables.insert(
                     src_ref.vars[i].as_str(),
@@ -324,7 +324,7 @@ pub fn filter_log(buffer: &String, filter: Filter) -> Vec<LogRef> {
         .enumerate()
         .filter_map(|(line_no, line)| {
             if filter.start <= line_no && line_no < filter.end {
-                Some(LogRef { text: line })
+                Some(LogRef { line })
             } else {
                 None
             }
@@ -464,10 +464,10 @@ fn test_filter_log_defaults() {
     assert_eq!(
         result,
         vec![
-            LogRef { text: "hello" },
-            LogRef { text: "warning" },
-            LogRef { text: "error" },
-            LogRef { text: "boom" }
+            LogRef { line: "hello" },
+            LogRef { line: "warning" },
+            LogRef { line: "error" },
+            LogRef { line: "boom" }
         ]
     );
 }
@@ -476,7 +476,7 @@ fn test_filter_log_defaults() {
 fn test_filter_log_with_filter() {
     let buffer = String::from("hello\nwarning\nerror\nboom");
     let result = filter_log(&buffer, Filter { start: 1, end: 2 });
-    assert_eq!(result, vec![LogRef { text: "warning" }]);
+    assert_eq!(result, vec![LogRef { line: "warning" }]);
 }
 
 #[cfg(test)]
@@ -524,7 +524,7 @@ fn test_extract_logging() {
 #[test]
 fn test_link_to_source() {
     let log_ref = LogRef {
-        text: "[2024-02-15T03:46:44Z DEBUG stack] you're only as funky as your last cut",
+        line: "[2024-02-15T03:46:44Z DEBUG stack] you're only as funky as your last cut",
     };
     let code = CodeSource::new(PathBuf::from("in-mem.rs"), Box::new(TEST_SOURCE.as_bytes()));
     let src_refs = extract_logging(&mut vec![code]);
@@ -536,7 +536,7 @@ fn test_link_to_source() {
 #[test]
 fn test_link_to_source_no_matches() {
     let log_ref = LogRef {
-        text: "[2024-02-26T03:44:40Z DEBUG stack] nope!",
+        line: "[2024-02-26T03:44:40Z DEBUG stack] nope!",
     };
 
     let code = CodeSource::new(PathBuf::from("in-mem.rs"), Box::new(TEST_SOURCE.as_bytes()));
@@ -549,7 +549,7 @@ fn test_link_to_source_no_matches() {
 #[test]
 fn test_extract_variables() {
     let log_ref = LogRef {
-        text: "[2024-02-15T03:46:44Z DEBUG nope] this won't match i=1",
+        line: "[2024-02-15T03:46:44Z DEBUG nope] this won't match i=1",
     };
     let code = CodeSource::new(PathBuf::from("in-mem.rs"), Box::new(TEST_SOURCE.as_bytes()));
     let src_refs = extract_logging(&mut vec![code]);
