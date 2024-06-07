@@ -2,7 +2,7 @@ use regex::Regex;
 use serde::Serialize;
 #[cfg(test)]
 use std::ptr;
-use std::{collections::HashMap, fmt, fs, fs::File, io, ops::Range, path::PathBuf};
+use std::{collections::HashMap, ffi::OsStr, fmt, fs::{self, File}, io, ops::Range, path::PathBuf};
 use tree_sitter::{Language, Node, Parser, Query, QueryCursor, Range as TSRange, Tree};
 
 pub struct Filter {
@@ -68,11 +68,14 @@ impl SourceLanguage {
     }
 }
 
+
 pub struct CodeSource {
     filename: String,
     language: SourceLanguage,
     buffer: String,
 }
+
+const SUPPORTED_EXTS: &[&str] = &["java", "rs"];
 
 impl CodeSource {
     fn new(path: PathBuf, mut input: Box<dyn io::Read>) -> CodeSource {
@@ -106,9 +109,7 @@ pub fn find_code(sources: &str) -> Vec<CodeSource> {
     let meta = fs::metadata(sources).expect("can read file metadata");
     if meta.is_file() {
         let path = PathBuf::from(sources);
-        let input = Box::new(File::open(PathBuf::from(sources)).expect("can open file"));
-        let code = CodeSource::new(path, input);
-        srcs.push(code);
+        try_add_file(path, &mut srcs);
     } else {
         walk_dir(PathBuf::from(sources), &mut srcs).expect("can traverse directory");
     }
@@ -121,16 +122,21 @@ fn walk_dir(dir: PathBuf, srcs: &mut Vec<CodeSource>) -> io::Result<()> {
         let path = entry.path();
         let metadata = fs::metadata(&path)?;
         if metadata.is_file() {
-            let path = entry.path();
-            let input =
-                Box::new(File::open(PathBuf::from(entry.path())).expect("Can open file"));
-            let code = CodeSource::new(path, input);
-            srcs.push(code)
+            try_add_file(path, srcs);
         } else if metadata.is_dir() {
-            walk_dir(path, srcs).expect("Couldn't traverse directory");
+            walk_dir(path, srcs).expect("can traverse directory");
         }
     }
     Ok(())
+}
+
+fn try_add_file(path: PathBuf, srcs: &mut Vec<CodeSource>) {
+    let ext = path.extension().unwrap_or(OsStr::new(""));
+    if SUPPORTED_EXTS.iter().any(|&supported| supported == ext) {
+        let input = Box::new(File::open(PathBuf::from(&path)).expect("can open file"));
+        let code = CodeSource::new(path, input);
+        srcs.push(code);
+    }
 }
 
 #[derive(Serialize)]
@@ -191,12 +197,12 @@ impl<'a> SourceQuery<'a> {
             .map(|c| QueryResult {
                 kind: String::from(c.node.kind()),
                 range: c.node.range(),
-                name_range: self.find_fn_range(c.node, self.source),
+                name_range: self.find_fn_range(c.node),
             })
             .collect()
     }
 
-    fn find_fn_range(&self, node: Node, source: &'a str) -> Range<usize> {
+    fn find_fn_range(&self, node: Node) -> Range<usize> {
         match node.kind() {
             "function_item" => {
                 let range = node.child_by_field_name("name").unwrap().range();
@@ -206,7 +212,13 @@ impl<'a> SourceQuery<'a> {
                 let range = node.child_by_field_name("name").unwrap().range();
                 range.start_byte..range.end_byte
             }
-            _ => self.find_fn_range(node.parent().unwrap(), source),
+            "constructor_declaration" => {
+                let range = node.child_by_field_name("name").unwrap().range();
+                range.start_byte..range.end_byte
+            }
+            _ => {
+                self.find_fn_range(node.parent().unwrap())
+            }
         }
     }
 }
@@ -411,7 +423,7 @@ pub fn extract_logging<'a>(sources: &mut Vec<CodeSource>) -> Vec<SourceRef> {
                     let range = result.range;
                     let source = code.buffer.as_str();
                     let text = source[range.start_byte..range.end_byte].to_string();
-                    // check the text matches any of the identifiers we're looking for
+                    // check the text doesn't match any of the identifiers we're looking for
                     if code.language.get_identifiers().iter().all(|&s| s != text.to_lowercase()) {
                         let length = matched.len() - 1;
                         let prior_result: &mut SourceRef = matched.get_mut(length).unwrap();
