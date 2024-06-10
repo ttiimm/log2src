@@ -2,7 +2,15 @@ use regex::Regex;
 use serde::Serialize;
 #[cfg(test)]
 use std::ptr;
-use std::{collections::HashMap, ffi::OsStr, fmt, fs::{self, File}, io, ops::Range, path::PathBuf};
+use std::{
+    collections::HashMap,
+    ffi::OsStr,
+    fmt,
+    fs::{self, File},
+    io,
+    ops::Range,
+    path::PathBuf,
+};
 use tree_sitter::{Language, Node, Parser, Query, QueryCursor, Range as TSRange, Tree};
 
 pub struct Filter {
@@ -67,7 +75,6 @@ impl SourceLanguage {
         }
     }
 }
-
 
 pub struct CodeSource {
     filename: String,
@@ -168,6 +175,7 @@ pub struct SourceQuery<'a> {
 
 impl<'a> SourceQuery<'a> {
     pub fn new(code: &'a CodeSource) -> SourceQuery<'a> {
+        // println!("{}", code.filename);
         let mut parser = Parser::new();
         let language = code.ts_language();
         parser
@@ -203,6 +211,7 @@ impl<'a> SourceQuery<'a> {
     }
 
     fn find_fn_range(&self, node: Node) -> Range<usize> {
+        // println!("node.kind()={:?}", node.kind());
         match node.kind() {
             "function_item" => {
                 let range = node.child_by_field_name("name").unwrap().range();
@@ -215,10 +224,16 @@ impl<'a> SourceQuery<'a> {
             "constructor_declaration" => {
                 let range = node.child_by_field_name("name").unwrap().range();
                 range.start_byte..range.end_byte
+            },
+            "class_declaration" => {
+                let range = node.child_by_field_name("name").unwrap().range();
+                range.start_byte..range.end_byte
             }
             _ => {
-                self.find_fn_range(node.parent().unwrap())
-            }
+                let r = self.find_fn_range(node.parent().unwrap());
+                // println!("*****");
+                r
+            },
         }
     }
 }
@@ -285,17 +300,17 @@ impl<'a> CallGraph<'a> {
             if code.language == SourceLanguage::Rust {
                 let src_query = SourceQuery::new(code);
                 let results = src_query.query(edge_query, Some("fn_name"));
-            
+
                 for result in results {
                     let range = result.range;
                     let fn_call = &src_query.source[range.start_byte..range.end_byte];
                     let src_ref = build_src_ref(code, result);
-        
+
                     symbols.push(Edge {
                         to: fn_call,
                         via: src_ref,
                     });
-                }    
+                }
             }
         }
         symbols
@@ -393,7 +408,7 @@ pub fn find_possible_paths<'a>(
                 .iter()
                 .filter(|edge| next.to == edge.via.name)
                 .collect::<Vec<&Edge>>();
-    
+
             for edge in candidates {
                 if !visited.contains(&edge) {
                     stack.push(edge);
@@ -401,9 +416,15 @@ pub fn find_possible_paths<'a>(
                 }
             }
         }
-        possible.push(visited.iter().rev().map(|edge| &edge.via).collect::<Vec<&SourceRef>>());
+        possible.push(
+            visited
+                .iter()
+                .rev()
+                .map(|edge| &edge.via)
+                .collect::<Vec<&SourceRef>>(),
+        );
     }
-    
+
     possible
 }
 
@@ -424,7 +445,12 @@ pub fn extract_logging<'a>(sources: &mut Vec<CodeSource>) -> Vec<SourceRef> {
                     let source = code.buffer.as_str();
                     let text = source[range.start_byte..range.end_byte].to_string();
                     // check the text doesn't match any of the identifiers we're looking for
-                    if code.language.get_identifiers().iter().all(|&s| s != text.to_lowercase()) {
+                    if code
+                        .language
+                        .get_identifiers()
+                        .iter()
+                        .all(|&s| s != text.to_lowercase())
+                    {
                         let length = matched.len() - 1;
                         let prior_result: &mut SourceRef = matched.get_mut(length).unwrap();
                         prior_result.vars.push(text);
@@ -450,12 +476,9 @@ fn build_src_ref<'a, 'q>(code: &CodeSource, result: QueryResult) -> SourceRef {
     if start == range.end_byte {
         end = range.end_byte;
     }
-    let unquoted = &source[start..end];
-    let mut replaced = unquoted.replace("{}", "(\\w+)");
-    replaced = replaced.replace("{:?}", "(\\w+)");
-    let re = Regex::new(r"\\\{.*?\}").unwrap();
-    replaced = re.replace_all(&replaced, "(\\w+)").to_string();
-    let matcher = Regex::new(&replaced).unwrap();
+    let unquoted = &source[start..end].to_string();
+    // println!("{} line {}", code.filename, line);
+    let matcher = build_matcher(unquoted);
     let vars = Vec::new();
     let name = source[result.name_range].to_string();
     SourceRef {
@@ -466,6 +489,20 @@ fn build_src_ref<'a, 'q>(code: &CodeSource, result: QueryResult) -> SourceRef {
         text,
         matcher,
         vars,
+    }
+}
+
+fn build_matcher(text: &str) -> Regex {
+    if text == "{}" || text.trim() == "" {
+        Regex::new("foo").unwrap()
+    } else {
+        let curly_replacer = Regex::new(r#"\\?\{.*?\}"#).unwrap();
+        let escaped = curly_replacer
+            .split(text)
+            .map(|s| regex::escape(s))
+            .collect::<Vec<String>>()
+            .join(r#"(\w+?)"#);
+        Regex::new(&escaped).unwrap()
     }
 }
 
@@ -639,4 +676,22 @@ fn test_find_possible_paths() {
         vars: vec![],
     };
     assert_eq!(paths, vec![vec![&foo_2_nope, &main_2_foo]])
+}
+
+#[test]
+fn test_build_matcher_curlies() {
+    let matcher = build_matcher("{}) {}, {}");
+    assert_eq!(
+        Regex::new(r#"(\w+)\) (\w+), (\w+)"#).unwrap().as_str(),
+        matcher.as_str()
+    );
+}
+
+#[test]
+fn test_build_matcher_mix() {
+    let matcher = build_matcher("{}) {:?}, {foo.bar}");
+    assert_eq!(
+        Regex::new(r#"(\w+)\) (\w+), (\w+)"#).unwrap().as_str(),
+        matcher.as_str()
+    );
 }
