@@ -34,7 +34,7 @@ enum SourceLanguage {
 }
 
 const IDENTS_RS: &[&str] = &["debug", "info", "warn"];
-const IDENTS_JAVA: &[&str] = &["logger", "log", "fine", "debug", "info", "warn"];
+const IDENTS_JAVA: &[&str] = &["logger", "log", "fine", "debug", "info", "warn", "trace"];
 
 impl SourceLanguage {
     fn get_query(&self) -> &str {
@@ -55,13 +55,13 @@ impl SourceLanguage {
                         object: (identifier) @object-name
                         name: (identifier) @method-name
                         arguments: (argument_list [
-                            (_ (string_literal) @log  (_ (identifier) @arguments))
-                            (_ (string_literal (_ (identifier)* @arguments)) @log)
-                            (string_literal) @log (identifier) @arguments
-                            (string_literal) @log
+                            (_ (string_literal) @log  (_ (this)? @this (identifier) @arguments))
+                            (_ (string_literal (_ (this)? @this (identifier) @arguments)) @log)
+                            (string_literal) @log (this)? @this (identifier) @arguments
+                            (string_literal) @log (this)? @this
                         ])
                         (#match? @object-name "log(ger)?|LOG(GER)?")
-                        (#match? @method-name "fine|debug|info|warn")
+                        (#match? @method-name "fine|debug|info|warn|trace")
                     )
                 "#
             }
@@ -224,7 +224,7 @@ impl<'a> SourceQuery<'a> {
             "constructor_declaration" => {
                 let range = node.child_by_field_name("name").unwrap().range();
                 range.start_byte..range.end_byte
-            },
+            }
             "class_declaration" => {
                 let range = node.child_by_field_name("name").unwrap().range();
                 range.start_byte..range.end_byte
@@ -233,7 +233,7 @@ impl<'a> SourceQuery<'a> {
                 let r = self.find_fn_range(node.parent().unwrap());
                 // println!("*****");
                 r
-            },
+            }
         }
     }
 }
@@ -435,16 +435,18 @@ pub fn extract_logging<'a>(sources: &mut Vec<CodeSource>) -> Vec<SourceRef> {
         let query = code.language.get_query();
         let results = src_query.query(query, None);
         for result in results {
+            // println!("node.kind()={:?} range={:?}", result.kind, result.range);
             match result.kind.as_str() {
                 "string_literal" => {
                     let src_ref = build_src_ref(code, result);
                     matched.push(src_ref);
                 }
-                "identifier" => {
+                "identifier" | "this" => {
                     let range = result.range;
                     let source = code.buffer.as_str();
                     let text = source[range.start_byte..range.end_byte].to_string();
-                    // check the text doesn't match any of the identifiers we're looking for
+                    // println!("text={} matched.len()={}", text, matched.len());
+                    // check the text doesn't match any of the logging related identifiers
                     if code
                         .language
                         .get_identifiers()
@@ -456,10 +458,9 @@ pub fn extract_logging<'a>(sources: &mut Vec<CodeSource>) -> Vec<SourceRef> {
                         prior_result.vars.push(text);
                     }
                 }
-                _ => {
-                    println!("ignoring {}", result.kind)
-                }
+                _ => println!("ignoring {}", result.kind),
             }
+            // println!("*****");
         }
     }
     matched
@@ -493,15 +494,18 @@ fn build_src_ref<'a, 'q>(code: &CodeSource, result: QueryResult) -> SourceRef {
 }
 
 fn build_matcher(text: &str) -> Regex {
+    // XXX: avoid regex that are too greedy by returning a regex that
+    //      never matches anything
     if text == "{}" || text.trim() == "" {
-        Regex::new("foo").unwrap()
+        Regex::new(r#"\w\b\w"#).unwrap()
     } else {
         let curly_replacer = Regex::new(r#"\\?\{.*?\}"#).unwrap();
         let escaped = curly_replacer
             .split(text)
             .map(|s| regex::escape(s))
             .collect::<Vec<String>>()
-            .join(r#"(\w+?)"#);
+            .join(r#"(\w+)"#);
+        // println!("escaped = {}", Regex::new(&escaped).unwrap().as_str());
         Regex::new(&escaped).unwrap()
     }
 }
@@ -679,7 +683,7 @@ fn test_find_possible_paths() {
 }
 
 #[test]
-fn test_build_matcher_curlies() {
+fn test_build_matcher_needs_escape() {
     let matcher = build_matcher("{}) {}, {}");
     assert_eq!(
         Regex::new(r#"(\w+)\) (\w+), (\w+)"#).unwrap().as_str(),
