@@ -1,5 +1,5 @@
 use clap::Parser as ClapParser;
-use log2src::{do_mappings, extract_logging, filter_log, find_code, CallGraph, Filter};
+use log2src::{do_mappings, extract_logging, filter_log, CallGraph, CodeSource, Filter};
 use serde_json::{self};
 use std::{error::Error, fs, io, path::PathBuf};
 
@@ -40,7 +40,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
     let filtered = filter_log(&buffer, filter);
 
-    let mut sources = find_code(&args.sources);
+    let mut sources = CodeSource::find_code(&args.sources);
     let src_logs = extract_logging(&mut sources);
     let call_graph = CallGraph::new(&mut sources);
     let log_mappings = do_mappings(filtered, &src_logs, &call_graph);
