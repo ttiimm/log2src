@@ -1,5 +1,8 @@
+use regex::Regex;
 use serde::Serialize;
 use std::collections::HashMap;
+#[cfg(test)]
+use std::path::PathBuf;
 #[cfg(test)]
 use std::ptr;
 
@@ -338,8 +341,8 @@ fn test_extract_variables() {
     let code = CodeSource::new(PathBuf::from("in-mem.rs"), Box::new(TEST_SOURCE.as_bytes()));
     let src_refs = extract_logging(&mut vec![code]);
     assert_eq!(src_refs.len(), 2);
-    let vars = extract_variables(&log_ref, &src_refs[1]);
-    assert_eq!(vars.get("i"), Some(&"1"));
+    let vars = extract_variables(log_ref, &src_refs[1]);
+    assert_eq!(vars.get("i").map(|val| val.as_str()), Some("1"));
 }
 
 #[test]
@@ -410,5 +413,5 @@ fn test_find_possible_paths() {
         matcher: star_regex,
         vars: vec![],
     };
-    assert_eq!(paths, vec![vec![&foo_2_nope, &main_2_foo]])
+    assert_eq!(paths, vec![vec![foo_2_nope, main_2_foo]])
 }

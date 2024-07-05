@@ -12,11 +12,11 @@ pub struct SourceRef {
     pub(crate) source_path: String,
     #[serde(rename(serialize = "lineNumber"))]
     pub line_no: usize,
-    column: usize,
+    pub(crate) column: usize,
     pub(crate) name: String,
     pub(crate) text: String,
     #[serde(skip_serializing)]
-    matcher: Regex,
+    pub(crate) matcher: Regex,
     pub(crate) vars: Vec<String>,
 }
 
