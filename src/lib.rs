@@ -85,8 +85,8 @@ pub struct LogMapping<'a> {
     pub log_ref: LogRef<'a>,
     #[serde(rename(serialize = "srcRef"))]
     pub src_ref: Option<SourceRef>,
-    pub variables: HashMap<&'a str, &'a str>,
-    pub stack: Vec<Vec<&'a SourceRef>>,
+    pub variables: HashMap<String, String>,
+    pub stack: Vec<Vec<SourceRef>>,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -103,14 +103,14 @@ pub fn link_to_source<'a>(log_ref: &LogRef, src_refs: &'a [SourceRef]) -> Option
 pub fn extract_variables<'a>(
     log_line: LogRef<'a>,
     src_ref: &'a SourceRef,
-) -> HashMap<&'a str, &'a str> {
+) -> HashMap<String, String> {
     let mut variables = HashMap::new();
     if src_ref.vars.len() > 0 {
         if let Some(captures) = src_ref.captures(&log_line) {
             for i in 0..captures.len() - 1 {
                 variables.insert(
-                    src_ref.vars[i].as_str(),
-                    captures.get(i + 1).unwrap().as_str(),
+                    src_ref.vars[i].to_string(),
+                    captures.get(i + 1).unwrap().as_str().to_string(),
                 );
             }
         }
@@ -134,11 +134,11 @@ pub fn filter_log(buffer: &String, filter: Filter) -> Vec<LogRef> {
     results
 }
 
-pub fn do_mappings<'a>(
-    log_refs: Vec<LogRef<'a>>,
-    src_logs: &'a [SourceRef],
-    call_graph: &'a CallGraph,
-) -> Vec<LogMapping<'a>> {
+pub fn do_mappings<'a>(log_refs: Vec<LogRef<'a>>, sources: &str) -> Vec<LogMapping<'a>> {
+    let mut sources = CodeSource::find_code(sources);
+    let src_logs = extract_logging(&mut sources);
+    let call_graph = CallGraph::new(&mut sources);
+
     log_refs
         .into_iter()
         .map(|log_ref| {
@@ -162,7 +162,7 @@ pub fn do_mappings<'a>(
 pub fn find_possible_paths<'a>(
     src_ref: &'a SourceRef,
     call_graph: &'a CallGraph,
-) -> Vec<Vec<&'a SourceRef>> {
+) -> Vec<Vec<SourceRef>> {
     let mut possible = Vec::new();
     let mains = call_graph
         .edges
@@ -195,7 +195,8 @@ pub fn find_possible_paths<'a>(
                 .iter()
                 .rev()
                 .map(|edge| &edge.via)
-                .collect::<Vec<&SourceRef>>(),
+                .cloned()
+                .collect::<Vec<SourceRef>>(),
         );
     }
 
