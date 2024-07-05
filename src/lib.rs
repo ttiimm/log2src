@@ -149,14 +149,14 @@ fn try_add_file(path: PathBuf, srcs: &mut Vec<CodeSource>) {
 #[derive(Serialize)]
 pub struct LogMapping<'a> {
     #[serde(skip_serializing)]
-    pub log_ref: &'a LogRef<'a>,
+    pub log_ref: LogRef<'a>,
     #[serde(rename(serialize = "srcRef"))]
-    pub src_ref: Option<&'a SourceRef>,
+    pub src_ref: Option<SourceRef>,
     pub variables: HashMap<&'a str, &'a str>,
     pub stack: Vec<Vec<&'a SourceRef>>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct LogRef<'a> {
     pub line: &'a str,
 }
@@ -238,7 +238,8 @@ impl<'a> SourceQuery<'a> {
     }
 }
 
-#[derive(Debug, Serialize)]
+// TODO: get rid of this clone?
+#[derive(Clone, Debug, Serialize)]
 pub struct SourceRef {
     #[serde(rename(serialize = "sourcePath"))]
     source_path: String,
@@ -317,7 +318,7 @@ impl<'a> CallGraph<'a> {
     }
 }
 
-pub fn link_to_source<'a>(log_ref: &LogRef, src_refs: &'a Vec<SourceRef>) -> Option<&'a SourceRef> {
+pub fn link_to_source<'a>(log_ref: &LogRef, src_refs: &'a [SourceRef]) -> Option<&'a SourceRef> {
     src_refs.iter().find(|&source_ref| {
         if let Some(_) = source_ref.matcher.captures(log_ref.line) {
             return true;
@@ -327,7 +328,7 @@ pub fn link_to_source<'a>(log_ref: &LogRef, src_refs: &'a Vec<SourceRef>) -> Opt
 }
 
 pub fn extract_variables<'a>(
-    log_line: &'a LogRef,
+    log_line: LogRef<'a>,
     src_ref: &'a SourceRef,
 ) -> HashMap<&'a str, &'a str> {
     let mut variables = HashMap::new();
@@ -361,23 +362,23 @@ pub fn filter_log(buffer: &String, filter: Filter) -> Vec<LogRef> {
 }
 
 pub fn do_mappings<'a>(
-    log_refs: &'a Vec<LogRef>,
-    src_logs: &'a Vec<SourceRef>,
+    log_refs: Vec<LogRef<'a>>,
+    src_logs: &'a [SourceRef],
     call_graph: &'a CallGraph,
 ) -> Vec<LogMapping<'a>> {
     log_refs
-        .iter()
+        .into_iter()
         .map(|log_ref| {
             let src_ref: Option<&SourceRef> = link_to_source(&log_ref, &src_logs);
-            let variables = src_ref.map_or(HashMap::new(), |src_ref| {
-                extract_variables(&log_ref, src_ref)
+            let variables = src_ref.as_ref().map_or(HashMap::new(), move |src_ref| {
+                extract_variables(log_ref, src_ref)
             });
-            let stack = src_ref.map_or(Vec::new(), |src_ref| {
+            let stack = src_ref.as_ref().map_or(Vec::new(), |src_ref| {
                 find_possible_paths(src_ref, &call_graph)
             });
             LogMapping {
                 log_ref,
-                src_ref,
+                src_ref: src_ref.cloned(),
                 variables,
                 stack,
             }

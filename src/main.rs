@@ -43,7 +43,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut sources = find_code(&args.sources);
     let src_logs = extract_logging(&mut sources);
     let call_graph = CallGraph::new(&mut sources);
-    let log_mappings = do_mappings(&filtered, &src_logs, &call_graph);
+    let log_mappings = do_mappings(filtered, &src_logs, &call_graph);
 
     for mapping in log_mappings {
         let serialized = serde_json::to_string(&mapping).unwrap();
