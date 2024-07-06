@@ -3,3 +3,4 @@
 .DS_Store
 out/
 bin/
+editors/code/node_modules

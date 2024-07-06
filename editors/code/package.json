@@ -104,25 +104,21 @@
   },
   "scripts": {
     "vscode:prepublish": "pnpm run compile",
-    "compile": "tsc -p editors/code",
-    "watch": "tsc -watch -p editors/code",
+    "compile": "tsc -p .",
+    "watch": "tsc -watch -p .",
     "pretest": "pnpm run compile && pnpm run lint",
-    "lint": "eslint src --ext ts",
-    "test": "node editors/code/out/test/runTest.js"
+    "lint": "eslint src --ext ts"
   },
   "devDependencies": {
-    "@types/vscode": "^1.83.0",
-    "@types/mocha": "^10.0.2",
     "@types/node": "18.x",
-    "@typescript-eslint/eslint-plugin": "^6.7.3",
-    "@typescript-eslint/parser": "^6.7.3",
+    "@types/vscode": "^1.83.0",
+    "@typescript-eslint/eslint-plugin": "^7.15.0",
+    "@typescript-eslint/parser": "^7.15.0",
     "@vscode/debugadapter": "^1.56.0",
     "@vscode/debugadapter-testsupport": "^1.56.0",
     "@vscode/debugprotocol": "^1.56.0",
     "@vscode/test-electron": "^2.3.4",
-    "eslint": "^8.50.0",
-    "glob": "^10.3.3",
-    "mocha": "^10.2.0",
+    "eslint": "^8.56.0",
     "typescript": "^5.2.2"
   }
 }
