@@ -1,4 +1,3 @@
-// TODO: test performance of rayonvs  non-Ryan
 
 use regex::Regex;
 use serde::Serialize;
@@ -7,8 +6,6 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 #[cfg(test)]
 use std::ptr;
-
-use rayon::prelude::*;
 
 mod call_graph;
 mod code_source;
@@ -130,7 +127,6 @@ pub fn filter_log(buffer: &String, filter: Filter) -> Vec<LogRef> {
     let results = buffer
         .lines()
         .enumerate()
-        .par_bridge()
         .filter_map(|(line_no, line)| {
             if filter.start <= line_no && line_no < filter.end {
                 Some(LogRef { line })
@@ -148,7 +144,7 @@ pub fn do_mappings<'a>(log_refs: Vec<LogRef<'a>>, sources: &str) -> Vec<LogMappi
     let call_graph = CallGraph::new(&mut sources);
 
     log_refs
-        .into_par_iter()
+        .into_iter()
         .map(|log_ref| {
             let src_ref: Option<&SourceRef> = link_to_source(&log_ref, &src_logs);
             let variables = src_ref.as_ref().map_or(HashMap::new(), move |src_ref| {
