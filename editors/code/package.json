@@ -73,6 +73,10 @@
               "log": {
                 "type": "string",
                 "description": "Absolute path to a log file"
+              },
+              "log_format": {
+                "type": "string",
+                "description": "A regex that describes the log format"
               }
             }
           }

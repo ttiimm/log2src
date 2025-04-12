@@ -36,6 +36,8 @@ interface ILaunchRequestArguments extends DebugProtocol.LaunchRequestArguments {
     source: string;
     // the log files to use for "debugging"
     log: string;
+    // the format of the log to parse the file name and line number
+    log_format: string;
     // enable logging
     trace?: boolean;
     // If true, the launch request should launch the program without enabling debugging.
@@ -51,7 +53,7 @@ export class DebugSession extends LoggingDebugSession {
     private _breakPoints = new Map<string, DebugProtocol.Breakpoint[]>();
     private _variableHandles = new Handles<'locals'>();
     private _line = 1;
-    private _launchArgs: ILaunchRequestArguments = { source: "", log: "" };
+    private _launchArgs: ILaunchRequestArguments = { source: "", log: "", log_format: "" };
     private _logLines = Number.MAX_SAFE_INTEGER;
     private _highlightDecoration: vscode.TextEditorDecorationType;
     private _mapping?: LogMapping = undefined;
@@ -238,10 +240,14 @@ export class DebugSession extends LoggingDebugSession {
             editor.setDecorations(this._highlightDecoration, [range]);
         }
 
-        const l2sArgs = ['-d', this._launchArgs.source,
+        let l2sArgs = ['-d', this._launchArgs.source,
             '--log', this._launchArgs.log,
             '--start', start,
             '--end', end]
+        if (this._launchArgs.log_format !== "") {
+            l2sArgs.push("-f");
+            l2sArgs.push(this._launchArgs.log_format);
+        }
         let stdout = execFile(log2srcPath, l2sArgs);
         this._mapping = JSON.parse(stdout);
         console.log(`mapped ${JSON.stringify(this._mapping)}`)

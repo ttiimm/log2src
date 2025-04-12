@@ -1,0 +1,4 @@
+2025-04-11 22:38:56 FINE BasicWithCustom:15 main: Hello from main
+2025-04-11 22:38:56 FINE BasicWithCustom:22 foo: Hello from foo i=0
+2025-04-11 22:38:56 FINE BasicWithCustom:22 foo: Hello from foo i=1
+2025-04-11 22:38:56 FINE BasicWithCustom:22 foo: Hello from foo i=2

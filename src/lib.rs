@@ -9,6 +9,7 @@ use std::ptr;
 
 mod call_graph;
 mod code_source;
+mod log_format;
 mod source_query;
 mod source_ref;
 
@@ -16,6 +17,7 @@ mod source_ref;
 pub use call_graph::CallGraph;
 use call_graph::Edge;
 pub use code_source::CodeSource;
+use log_format::LogFormat;
 use source_query::QueryResult;
 pub use source_query::SourceQuery;
 pub use source_ref::SourceRef;
@@ -104,6 +106,27 @@ pub fn link_to_source<'a>(log_ref: &LogRef, src_refs: &'a [SourceRef]) -> Option
         .find(|&source_ref| source_ref.captures(log_ref).is_some())
 }
 
+pub fn lookup_source<'a>(
+    log_ref: &LogRef,
+    log_format: &LogFormat,
+    src_refs: &'a [SourceRef],
+) -> Option<&'a SourceRef> {
+    let captures = log_format.captures(log_ref).expect(&format!(
+        "Couldn't match `{}` with `{:?}`",
+        log_ref.line, log_format
+    ));
+    let file_name = captures.name("file").map_or("", |m| m.as_str());
+    let line_no: usize = captures
+        .name("line")
+        .map_or(0, |m| m.as_str().parse::<usize>().unwrap_or_default());
+    // println!("{:?} {:?}", file_name, line_no);
+
+    src_refs.iter().find(|&source_ref| {
+        // println!("source_ref.source_path = {} line_no = {}", source_ref.source_path, source_ref.line_no);
+        source_ref.source_path.contains(file_name) && source_ref.line_no == line_no
+    })
+}
+
 pub fn extract_variables<'a>(
     log_line: LogRef<'a>,
     src_ref: &'a SourceRef,
@@ -123,7 +146,7 @@ pub fn extract_variables<'a>(
     variables
 }
 
-pub fn filter_log(buffer: &String, filter: Filter) -> Vec<LogRef> {
+pub fn filter_log(buffer: &str, filter: Filter) -> Vec<LogRef> {
     let results = buffer
         .lines()
         .enumerate()
@@ -138,15 +161,25 @@ pub fn filter_log(buffer: &String, filter: Filter) -> Vec<LogRef> {
     results
 }
 
-pub fn do_mappings<'a>(log_refs: Vec<LogRef<'a>>, sources: &str) -> Vec<LogMapping<'a>> {
+pub fn do_mappings<'a>(
+    log_refs: Vec<LogRef<'a>>,
+    sources: &str,
+    log_format: Option<String>,
+) -> Vec<LogMapping<'a>> {
     let mut sources = CodeSource::find_code(sources);
     let src_logs = extract_logging(&mut sources);
     let call_graph = CallGraph::new(&mut sources);
+    let log_format = LogFormat::new(log_format);
+    let use_lines = log_format.clone().is_some_and(|f| f.has_line_support());
 
     log_refs
         .into_iter()
         .map(|log_ref| {
-            let src_ref: Option<&SourceRef> = link_to_source(&log_ref, &src_logs);
+            let src_ref = if use_lines {
+                lookup_source(&log_ref, log_format.as_ref().unwrap(), &src_logs)
+            } else {
+                link_to_source(&log_ref, &src_logs)
+            };
             let variables = src_ref.as_ref().map_or(HashMap::new(), move |src_ref| {
                 extract_variables(log_ref, src_ref)
             });

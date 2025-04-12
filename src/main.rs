@@ -15,6 +15,10 @@ struct Cli {
     #[arg(short, long, value_name = "LOG")]
     log: Option<PathBuf>,
 
+    /// The regex of a log format being used
+    #[arg(short, long, value_name = "FORMAT")]
+    format: Option<String>,
+
     /// The line in the log to use (0 based)
     #[arg(short, long, value_name = "START")]
     start: Option<usize>,
@@ -40,7 +44,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
 
     let filtered = filter_log(&buffer, filter);
-    let log_mappings = do_mappings(filtered, &args.sources);
+    let log_mappings = do_mappings(filtered, &args.sources, args.format);
 
     for mapping in log_mappings {
         let serialized = serde_json::to_string(&mapping).unwrap();
