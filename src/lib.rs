@@ -111,10 +111,7 @@ pub fn lookup_source<'a>(
     log_format: &LogFormat,
     src_refs: &'a [SourceRef],
 ) -> Option<&'a SourceRef> {
-    let captures = log_format.captures(log_ref).expect(&format!(
-        "Couldn't match `{}` with `{:?}`",
-        log_ref.line, log_format
-    ));
+    let captures = log_format.captures(log_ref);
     let file_name = captures.name("file").map_or("", |m| m.as_str());
     let line_no: usize = captures
         .name("line")
@@ -166,16 +163,17 @@ pub fn do_mappings<'a>(
     sources: &str,
     log_format: Option<String>,
 ) -> Vec<LogMapping<'a>> {
-    let mut sources = CodeSource::find_code(sources);
+    let log_format = LogFormat::new(log_format);
+    let source_filter = log_format.clone().map(|f| f.build_src_filter(&log_refs));
+    let mut sources = CodeSource::find_code(sources, source_filter);
     let src_logs = extract_logging(&mut sources);
     let call_graph = CallGraph::new(&mut sources);
-    let log_format = LogFormat::new(log_format);
-    let use_lines = log_format.clone().is_some_and(|f| f.has_line_support());
+    let use_hints = log_format.clone().is_some_and(|f| f.has_hints());
 
     log_refs
         .into_iter()
         .map(|log_ref| {
-            let src_ref = if use_lines {
+            let src_ref = if use_hints {
                 lookup_source(&log_ref, log_format.as_ref().unwrap(), &src_logs)
             } else {
                 link_to_source(&log_ref, &src_logs)

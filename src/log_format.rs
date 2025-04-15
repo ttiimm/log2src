@@ -15,15 +15,27 @@ impl LogFormat {
         })
     }
 
-    pub fn has_line_support(self: LogFormat) -> bool {
-        self.regex
-            .capture_names()
-            .flatten()
-            .any(|name| name == "line")
+    pub fn has_hints(self: LogFormat) -> bool {
+        let mut flatten = self.regex.capture_names().flatten();
+        flatten.any(|name| name == "line") && flatten.any(|name| name == "file")
     }
 
-    pub fn captures<'a>(&self, log_ref: &LogRef<'a>) -> Option<Captures<'a>> {
-        self.regex.captures(log_ref.line)
+    pub fn build_src_filter(&self, log_refs: &Vec<LogRef>) -> Vec<String> {
+        let mut results = Vec::new();
+        for log_ref in log_refs {
+            let captures = self.captures(log_ref);
+            if let Some(file_match) = captures.name("file") {
+                results.push(file_match.as_str().to_string());
+            }
+        }
+        results
+    }
+
+    pub fn captures<'a>(&self, log_ref: &LogRef<'a>) -> Captures<'a> {
+        self.regex.captures(log_ref.line).expect(&format!(
+            "Couldn't match `{}` with `{:?}`",
+            log_ref.line, self.regex
+        ))
     }
 }
 
