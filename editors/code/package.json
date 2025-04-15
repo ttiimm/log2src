@@ -114,15 +114,15 @@
     "lint": "eslint src --ext ts"
   },
   "devDependencies": {
-    "@types/node": "18.x",
+    "@types/node": "22.14.1",
     "@types/vscode": "^1.83.0",
-    "@typescript-eslint/eslint-plugin": "^7.15.0",
-    "@typescript-eslint/parser": "^7.15.0",
+    "@typescript-eslint/eslint-plugin": "^8.30.1",
+    "@typescript-eslint/parser": "^8.30.1",
     "@vscode/debugadapter": "^1.56.0",
     "@vscode/debugadapter-testsupport": "^1.56.0",
     "@vscode/debugprotocol": "^1.56.0",
     "@vscode/test-electron": "^2.3.4",
-    "eslint": "^8.56.0",
+    "eslint": "^9.24.0",
     "typescript": "^5.2.2"
   }
 }
