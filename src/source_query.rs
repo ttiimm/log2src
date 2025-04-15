@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use tree_sitter::{Language, Node, Parser, Query, QueryCursor, Range as TSRange, Tree};
+use tree_sitter::{Language, Node, Parser, Query, QueryCursor, Range as TSRange, StreamingIterator, Tree};
 
 use crate::CodeSource;
 
@@ -36,21 +36,23 @@ impl<'a> SourceQuery<'a> {
 
     pub(crate) fn query(&self, query: &str, node_kind: Option<&str>) -> Vec<QueryResult> {
         let query = Query::new(&self.language, query).unwrap();
-        let filter_idx = node_kind.map_or(None, |kind| query.capture_index_for_name(kind));
+        let filter_idx = node_kind.and_then(|kind| query.capture_index_for_name(kind));
         let mut cursor = QueryCursor::new();
-        cursor
-            .matches(&query, self.tree.root_node(), self.source.as_bytes())
-            .into_iter()
-            .flat_map(|m| m.captures)
-            .filter(|c| {
-                filter_idx.is_none() || (filter_idx.is_some() && filter_idx.unwrap() == c.index)
-            })
-            .map(|c| QueryResult {
-                kind: String::from(c.node.kind()),
-                range: c.node.range(),
-                name_range: self.find_fn_range(c.node),
-            })
-            .collect()
+        let mut results = Vec::new();
+        let matches = cursor.matches(&query, self.tree.root_node(), self.source.as_bytes());
+        matches.for_each(|m| {
+            for capture in m.captures {
+                if filter_idx.is_none() || (filter_idx.is_some() && filter_idx.unwrap() == capture.index) {
+                    results.push(QueryResult {
+                        kind: String::from(capture.node.kind()),
+                        range: capture.node.range(),
+                        name_range: self.find_fn_range(capture.node),
+                    });
+                }
+            }
+        });
+        
+        results
     }
 
     fn find_fn_range(&self, node: Node) -> Range<usize> {

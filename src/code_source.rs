@@ -36,8 +36,8 @@ impl CodeSource {
 
     pub fn ts_language(&self) -> Language {
         match self.language {
-            SourceLanguage::Rust => tree_sitter_rust::language(),
-            SourceLanguage::Java => tree_sitter_java::language(),
+            SourceLanguage::Rust => tree_sitter_rust::LANGUAGE.into(),
+            SourceLanguage::Java => tree_sitter_java::LANGUAGE.into(),
         }
     }
 
