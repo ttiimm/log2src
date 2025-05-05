@@ -31,15 +31,16 @@ pub fn assert_source_ref_output(
     for (i, (actual, expected)) in output_json.iter().zip(expected_json.iter()).enumerate() {
         let mut actual = actual.clone();
         let mut expected = expected.clone();
-        
+
         normalize_json_paths(&mut actual);
         normalize_json_paths(&mut expected);
-        
+
         if actual != expected {
             return Err(format!(
-                "JSON object #{} doesn't match.\nExpected: {}\nActual: {}", 
+                "JSON object #{} doesn't match.\nExpected: {}\nActual: {}",
                 i, expected, actual
-            ).into());
+            )
+            .into());
         }
     }
 
@@ -57,9 +58,16 @@ fn normalize_json_paths(value: &mut Value) {
         if let Some(obj) = src_ref.as_object_mut() {
             if let Some(path) = obj.get_mut("sourcePath") {
                 if let Some(path_str) = path.as_str() {
+                    let path_sep = std::path::MAIN_SEPARATOR;
+
                     // Convert the path to the platform's format
                     let path_obj = Path::new(path_str);
-                    let normalized = path_obj.to_string_lossy().to_string();
+                    let normalized = if path_sep == '/' {
+                        path_str.to_string()
+                    } else {
+                        // On Windows, swap the forward slash for backslashes
+                        path_str.replace('/', &path_sep.to_string())
+                    };
                     *path = Value::String(normalized);
                 }
             }
