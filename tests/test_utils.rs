@@ -32,8 +32,8 @@ pub fn assert_source_ref_output(
         let mut actual = actual.clone();
         let mut expected = expected.clone();
 
-        normalize_json_paths(&mut actual);
-        normalize_json_paths(&mut expected);
+        normalize_src_ref(&mut actual);
+        normalize_src_ref(&mut expected);
 
         if actual != expected {
             return Err(format!(
@@ -53,24 +53,42 @@ fn to_json(text: String) -> Vec<Value> {
         .collect()
 }
 
-fn normalize_json_paths(value: &mut Value) {
+fn normalize_src_ref(value: &mut Value) {
     if let Some(src_ref) = value.get_mut("srcRef") {
         if let Some(obj) = src_ref.as_object_mut() {
             if let Some(path) = obj.get_mut("sourcePath") {
-                if let Some(path_str) = path.as_str() {
-                    let path_sep = std::path::MAIN_SEPARATOR;
+                norm_src_path(path);
+            }
+        }
+    }
 
-                    // Convert the path to the platform's format
-                    let path_obj = Path::new(path_str);
-                    let normalized = if path_sep == '/' {
-                        path_str.to_string()
-                    } else {
-                        // On Windows, swap the forward slash for backslashes
-                        path_str.replace('/', &path_sep.to_string())
-                    };
-                    *path = Value::String(normalized);
+    if let Some(src_ref) = value.get_mut("srcRef") {
+        if let Some(obj) = src_ref.as_object_mut() {
+            if let Some(stack) = obj.get_mut("stack") {
+                for call_stack in stack.as_array_mut() {
+                    for stack_item in call_stack {
+                        if let Some(obj) = stack_item.as_object_mut() {
+                            if let Some(path) = obj.get_mut("sourcePath") {
+                                norm_src_path(path);
+                            }
+                        }
+                    }
                 }
             }
         }
+    }
+}
+
+fn norm_src_path(src_path: &mut Value) {
+    if let Some(path_str) = src_path.as_str() {
+        // Convert the path to the platform's format
+        let path_sep = std::path::MAIN_SEPARATOR;
+        let normalized = if path_sep == '/' {
+            path_str.to_string()
+        } else {
+            // On Windows, swap the forward slash for backslashes
+            path_str.replace('/', &path_sep.to_string())
+        };
+        *src_path = Value::String(normalized);
     }
 }
