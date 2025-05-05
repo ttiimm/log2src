@@ -1,6 +1,8 @@
 use std::ops::Range;
 
-use tree_sitter::{Language, Node, Parser, Query, QueryCursor, Range as TSRange, StreamingIterator, Tree};
+use tree_sitter::{
+    Language, Node, Parser, Query, QueryCursor, Range as TSRange, StreamingIterator, Tree,
+};
 
 use crate::CodeSource;
 
@@ -42,7 +44,9 @@ impl<'a> SourceQuery<'a> {
         let matches = cursor.matches(&query, self.tree.root_node(), self.source.as_bytes());
         matches.for_each(|m| {
             for capture in m.captures {
-                if filter_idx.is_none() || (filter_idx.is_some() && filter_idx.unwrap() == capture.index) {
+                if filter_idx.is_none()
+                    || (filter_idx.is_some() && filter_idx.unwrap() == capture.index)
+                {
                     results.push(QueryResult {
                         kind: String::from(capture.node.kind()),
                         range: capture.node.range(),
@@ -51,7 +55,7 @@ impl<'a> SourceQuery<'a> {
                 }
             }
         });
-        
+
         results
     }
 
