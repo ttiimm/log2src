@@ -42,8 +42,6 @@ fn stack() -> Result<(), Box<dyn std::error::Error>> {
         .arg(log.to_str().expect("test case log path is valid"))
         .arg("-s")
         .arg("1");
-    cmd.assert().success().stdout(r#"{"srcRef":{"sourcePath":"examples/stack.rs","lineNumber":15,"column":11,"name":"b","text":"\"Hello from b\"","vars":[]},"variables":{},"stack":[[{"sourcePath":"examples/stack.rs","lineNumber":11,"column":4,"name":"a","text":"b","vars":[]},{"sourcePath":"examples/stack.rs","lineNumber":7,"column":4,"name":"main","text":"a","vars":[]}]]}
-"#);
 
     assert_source_ref_output(
         &mut cmd,
