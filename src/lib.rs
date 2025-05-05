@@ -276,30 +276,33 @@ pub fn extract_logging<'a>(sources: &mut Vec<CodeSource>) -> Vec<SourceRef> {
     matched
 }
 
-#[test]
-fn test_filter_log_defaults() {
-    let buffer = String::from("hello\nwarning\nerror\nboom");
-    let result = filter_log(&buffer, Filter::default());
-    assert_eq!(
-        result,
-        vec![
-            LogRef { line: "hello" },
-            LogRef { line: "warning" },
-            LogRef { line: "error" },
-            LogRef { line: "boom" }
-        ]
-    );
-}
-
-#[test]
-fn test_filter_log_with_filter() {
-    let buffer = String::from("hello\nwarning\nerror\nboom");
-    let result = filter_log(&buffer, Filter { start: 1, end: 2 });
-    assert_eq!(result, vec![LogRef { line: "warning" }]);
-}
-
 #[cfg(test)]
-const TEST_SOURCE: &str = r#"
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_filter_log_defaults() {
+        let buffer = String::from("hello\nwarning\nerror\nboom");
+        let result = filter_log(&buffer, Filter::default());
+        assert_eq!(
+            result,
+            vec![
+                LogRef { line: "hello" },
+                LogRef { line: "warning" },
+                LogRef { line: "error" },
+                LogRef { line: "boom" }
+            ]
+        );
+    }
+
+    #[test]
+    fn test_filter_log_with_filter() {
+        let buffer = String::from("hello\nwarning\nerror\nboom");
+        let result = filter_log(&buffer, Filter { start: 1, end: 2 });
+        assert_eq!(result, vec![LogRef { line: "warning" }]);
+    }
+
+    const TEST_SOURCE: &str = r#"
 #[macro_use]
 extern crate log;
 
@@ -318,132 +321,93 @@ fn foo(i: u32) {
 fn nope(i: u32) {
     debug!("this won't match i={}", i);
 }
-"#;
+    "#;
 
-#[test]
-fn test_extract_logging() {
-    let code = CodeSource::new(PathBuf::from("in-mem.rs"), Box::new(TEST_SOURCE.as_bytes()));
-    let src_refs = extract_logging(&mut vec![code]);
-    assert_eq!(src_refs.len(), 2);
-    let first = &src_refs[0];
-    assert_eq!(first.line_no, 7);
-    assert_eq!(first.column, 11);
-    assert_eq!(first.name, "main");
-    assert_eq!(first.text, "\"you're only as funky as your last cut\"");
-    assert!(first.vars.is_empty());
+    #[test]
+    fn test_extract_logging() {
+        let code = CodeSource::new(PathBuf::from("in-mem.rs"), Box::new(TEST_SOURCE.as_bytes()));
+        let src_refs = extract_logging(&mut vec![code]);
+        assert_eq!(src_refs.len(), 2);
+        let first = &src_refs[0];
+        assert_eq!(first.line_no, 7);
+        assert_eq!(first.column, 11);
+        assert_eq!(first.name, "main");
+        assert_eq!(first.text, "\"you're only as funky as your last cut\"");
+        assert!(first.vars.is_empty());
 
-    let second = &src_refs[1];
-    assert_eq!(second.line_no, 18);
-    assert_eq!(second.column, 11);
-    assert_eq!(second.name, "nope");
-    assert_eq!(second.text, "\"this won't match i={}\"");
-    assert_eq!(second.vars[0], "i");
-}
+        let second = &src_refs[1];
+        assert_eq!(second.line_no, 18);
+        assert_eq!(second.column, 11);
+        assert_eq!(second.name, "nope");
+        assert_eq!(second.text, "\"this won't match i={}\"");
+        assert_eq!(second.vars[0], "i");
+    }
 
-#[test]
-fn test_link_to_source() {
-    let log_ref = LogRef {
-        line: "[2024-02-15T03:46:44Z DEBUG stack] you're only as funky as your last cut",
-    };
-    let code = CodeSource::new(PathBuf::from("in-mem.rs"), Box::new(TEST_SOURCE.as_bytes()));
-    let src_refs = extract_logging(&mut vec![code]);
-    assert_eq!(src_refs.len(), 2);
-    let result = link_to_source(&log_ref, &src_refs);
-    assert!(ptr::eq(result.unwrap(), &src_refs[0]));
-}
+    #[test]
+    fn test_link_to_source() {
+        let log_ref = LogRef {
+            line: "[2024-02-15T03:46:44Z DEBUG stack] you're only as funky as your last cut",
+        };
+        let code = CodeSource::new(PathBuf::from("in-mem.rs"), Box::new(TEST_SOURCE.as_bytes()));
+        let src_refs = extract_logging(&mut vec![code]);
+        assert_eq!(src_refs.len(), 2);
+        let result = link_to_source(&log_ref, &src_refs);
+        assert!(ptr::eq(result.unwrap(), &src_refs[0]));
+    }
 
-#[test]
-fn test_link_to_source_no_matches() {
-    let log_ref = LogRef {
-        line: "[2024-02-26T03:44:40Z DEBUG stack] nope!",
-    };
+    #[test]
+    fn test_link_to_source_no_matches() {
+        let log_ref = LogRef {
+            line: "[2024-02-26T03:44:40Z DEBUG stack] nope!",
+        };
 
-    let code = CodeSource::new(PathBuf::from("in-mem.rs"), Box::new(TEST_SOURCE.as_bytes()));
-    let src_refs = extract_logging(&mut vec![code]);
-    assert_eq!(src_refs.len(), 2);
-    let result = link_to_source(&log_ref, &src_refs);
-    assert_eq!(result.is_none(), true);
-}
+        let code = CodeSource::new(PathBuf::from("in-mem.rs"), Box::new(TEST_SOURCE.as_bytes()));
+        let src_refs = extract_logging(&mut vec![code]);
+        assert_eq!(src_refs.len(), 2);
+        let result = link_to_source(&log_ref, &src_refs);
+        assert_eq!(result.is_none(), true);
+    }
 
-#[test]
-fn test_extract_variables() {
-    let log_ref = LogRef {
-        line: "[2024-02-15T03:46:44Z DEBUG nope] this won't match i=1",
-    };
-    let code = CodeSource::new(PathBuf::from("in-mem.rs"), Box::new(TEST_SOURCE.as_bytes()));
-    let src_refs = extract_logging(&mut vec![code]);
-    assert_eq!(src_refs.len(), 2);
-    let vars = extract_variables(log_ref, &src_refs[1]);
-    assert_eq!(vars.get("i").map(|val| val.as_str()), Some("1"));
-}
+    #[test]
+    fn test_extract_variables() {
+        let log_ref = LogRef {
+            line: "[2024-02-15T03:46:44Z DEBUG nope] this won't match i=1",
+        };
+        let code = CodeSource::new(PathBuf::from("in-mem.rs"), Box::new(TEST_SOURCE.as_bytes()));
+        let src_refs = extract_logging(&mut vec![code]);
+        assert_eq!(src_refs.len(), 2);
+        let vars = extract_variables(log_ref, &src_refs[1]);
+        assert_eq!(vars.get("i").map(|val| val.as_str()), Some("1"));
+    }
 
-#[test]
-fn test_call_graph() {
-    let code = CodeSource::new(PathBuf::from("in-mem.rs"), Box::new(TEST_SOURCE.as_bytes()));
-    let mut sources = vec![code];
-    let call_graph = CallGraph::new(&mut sources);
-    let star_regex = Regex::new(".*").unwrap();
-    let main_2_foo = SourceRef {
-        source_path: String::from("in-mem.rs"),
-        line_no: 9,
-        column: 8,
-        name: String::from("main"),
-        text: String::from("foo"),
-        matcher: star_regex,
-        vars: vec![],
-    };
-    let star_regex = Regex::new(".*").unwrap();
-    let foo_2_nope = SourceRef {
-        source_path: String::from("in-mem.rs"),
-        line_no: 14,
-        column: 4,
-        name: String::from("foo"),
-        text: String::from("nope"),
-        matcher: star_regex,
-        vars: vec![],
-    };
-    assert_eq!(
-        call_graph.edges,
-        vec![
-            Edge {
-                to: "foo",
-                via: main_2_foo
-            },
-            Edge {
-                to: "nope",
-                via: foo_2_nope
-            }
-        ]
-    )
-}
+    #[test]
+    fn test_find_possible_paths() {
+        let code = CodeSource::new(PathBuf::from("in-mem.rs"), Box::new(TEST_SOURCE.as_bytes()));
+        let mut sources = vec![code];
+        let src_refs = extract_logging(&mut sources);
+        let call_graph = CallGraph::new(&mut sources);
+        let paths = find_possible_paths(&src_refs[1], &call_graph);
 
-#[test]
-fn test_find_possible_paths() {
-    let code = CodeSource::new(PathBuf::from("in-mem.rs"), Box::new(TEST_SOURCE.as_bytes()));
-    let mut sources = vec![code];
-    let src_refs = extract_logging(&mut sources);
-    let call_graph = CallGraph::new(&mut sources);
-    let paths = find_possible_paths(&src_refs[1], &call_graph);
-
-    let star_regex = Regex::new(".*").unwrap();
-    let main_2_foo = SourceRef {
-        source_path: String::from("in-mem.rs"),
-        line_no: 9,
-        column: 8,
-        name: String::from("main"),
-        text: String::from("foo"),
-        matcher: star_regex,
-        vars: vec![],
-    };
-    let star_regex = Regex::new(".*").unwrap();
-    let foo_2_nope = SourceRef {
-        source_path: String::from("in-mem.rs"),
-        line_no: 14,
-        column: 4,
-        name: String::from("foo"),
-        text: String::from("nope"),
-        matcher: star_regex,
-        vars: vec![],
-    };
-    assert_eq!(paths, vec![vec![foo_2_nope, main_2_foo]])
+        let star_regex = Regex::new(".*").unwrap();
+        let main_2_foo = SourceRef {
+            source_path: String::from("in-mem.rs"),
+            line_no: 9,
+            column: 8,
+            name: String::from("main"),
+            text: String::from("foo"),
+            matcher: star_regex,
+            vars: vec![],
+        };
+        let star_regex = Regex::new(".*").unwrap();
+        let foo_2_nope = SourceRef {
+            source_path: String::from("in-mem.rs"),
+            line_no: 14,
+            column: 4,
+            name: String::from("foo"),
+            text: String::from("nope"),
+            matcher: star_regex,
+            vars: vec![],
+        };
+        assert_eq!(paths, vec![vec![foo_2_nope, main_2_foo]])
+    }
 }

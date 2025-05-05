@@ -82,7 +82,7 @@ fn build_matcher(text: &str) -> Regex {
         let curly_replacer = Regex::new(r#"\\?\{.*?\}"#).unwrap();
         let escaped = curly_replacer
             .split(text)
-            .map(|s| regex::escape(s))
+            .map(regex::escape)
             .collect::<Vec<String>>()
             .join(r#"(\w+)"#);
         // println!("escaped = {}", Regex::new(&escaped).unwrap().as_str());
@@ -90,20 +90,25 @@ fn build_matcher(text: &str) -> Regex {
     }
 }
 
-#[test]
-fn test_build_matcher_needs_escape() {
-    let matcher = build_matcher("{}) {}, {}");
-    assert_eq!(
-        Regex::new(r#"(\w+)\) (\w+), (\w+)"#).unwrap().as_str(),
-        matcher.as_str()
-    );
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-#[test]
-fn test_build_matcher_mix() {
-    let matcher = build_matcher("{}) {:?}, {foo.bar}");
-    assert_eq!(
-        Regex::new(r#"(\w+)\) (\w+), (\w+)"#).unwrap().as_str(),
-        matcher.as_str()
-    );
+    #[test]
+    fn test_build_matcher_needs_escape() {
+        let matcher = build_matcher("{}) {}, {}");
+        assert_eq!(
+            Regex::new(r#"(\w+)\) (\w+), (\w+)"#).unwrap().as_str(),
+            matcher.as_str()
+        );
+    }
+
+    #[test]
+    fn test_build_matcher_mix() {
+        let matcher = build_matcher("{}) {:?}, {foo.bar}");
+        assert_eq!(
+            Regex::new(r#"(\w+)\) (\w+), (\w+)"#).unwrap().as_str(),
+            matcher.as_str()
+        );
+    }
 }

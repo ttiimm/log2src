@@ -44,3 +44,71 @@ impl<'a> CallGraph<'a> {
         symbols
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use regex::Regex;
+    use std::path::PathBuf;
+
+    const TEST_SOURCE: &str = r#"
+#[macro_use]
+extern crate log;
+
+fn main() {
+    env_logger::init();
+    debug!("you're only as funky as your last cut");
+    for i in 0..3 {
+        foo(i);
+    }
+}
+
+fn foo(i: u32) {
+    nope(i);
+}
+
+fn nope(i: u32) {
+    debug!("this won't match i={}", i);
+}
+    "#;
+
+    #[test]
+    fn test_call_graph() {
+        let code = CodeSource::new(PathBuf::from("in-mem.rs"), Box::new(TEST_SOURCE.as_bytes()));
+        let mut sources = vec![code];
+        let call_graph = CallGraph::new(&mut sources);
+        let star_regex = Regex::new(".*").unwrap();
+        let main_2_foo = SourceRef {
+            source_path: String::from("in-mem.rs"),
+            line_no: 9,
+            column: 8,
+            name: String::from("main"),
+            text: String::from("foo"),
+            matcher: star_regex,
+            vars: vec![],
+        };
+        let star_regex = Regex::new(".*").unwrap();
+        let foo_2_nope = SourceRef {
+            source_path: String::from("in-mem.rs"),
+            line_no: 14,
+            column: 4,
+            name: String::from("foo"),
+            text: String::from("nope"),
+            matcher: star_regex,
+            vars: vec![],
+        };
+        assert_eq!(
+            call_graph.edges,
+            vec![
+                Edge {
+                    to: "foo",
+                    via: main_2_foo
+                },
+                Edge {
+                    to: "nope",
+                    via: foo_2_nope
+                }
+            ]
+        )
+    }
+}
