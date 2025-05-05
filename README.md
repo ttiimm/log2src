@@ -26,6 +26,9 @@ The current version is still an early prototype that only works with simple prog
 - Only a subset of the Rust programming language is supported, but intending to try and support most popular languages.
 - A VS Code extension using the debug adapter protocol is implemented.
 ### Build
+
+[![Build Status](https://github.com/ttiimm/log2src/actions/workflows/rust.yml/badge.svg)](https://github.com/ttiimm/log2src/actions/workflows/rust.yml)
+
 You must compile the command line tool using Rust in order to install the product. The log2src command line tool has several options and the API is still quite experimental, so expect changes. See `-h` for the up to date documentation.
 
 You can also build and run the VS Code extension by building the log2src binary and copying it into `editors/code/bin`. The easiest way to run the extension at the moment is from VS Code using the standard run configuration.
