@@ -62,11 +62,11 @@ fn normalize_src_ref(value: &mut Value) {
         }
     }
 
-    if let Some(src_ref) = value.get_mut("srcRef") {
-        if let Some(obj) = src_ref.as_object_mut() {
-            if let Some(stack) = obj.get_mut("stack") {
-                for call_stack in stack.as_array_mut() {
-                    for stack_item in call_stack {
+    if let Some(possible_stacks) = value.get_mut("stack") {
+        if let Some(call_stacks) = possible_stacks.as_array_mut() {
+            for call_stack in call_stacks {
+                if let Some(stack) = call_stack.as_array_mut() {
+                    for stack_item in stack {
                         if let Some(obj) = stack_item.as_object_mut() {
                             if let Some(path) = obj.get_mut("sourcePath") {
                                 norm_src_path(path);
@@ -82,7 +82,7 @@ fn normalize_src_ref(value: &mut Value) {
 fn norm_src_path(src_path: &mut Value) {
     if let Some(path_str) = src_path.as_str() {
         // Convert the path to the platform's format
-        let path_sep = std::path::MAIN_SEPARATOR;
+        let path_sep = '\\';
         let normalized = if path_sep == '/' {
             path_str.to_string()
         } else {

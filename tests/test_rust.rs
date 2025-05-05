@@ -1,8 +1,8 @@
 use assert_cmd::prelude::*;
 use std::{path::Path, process::Command};
 
-mod test_utils;
-use test_utils::assert_source_ref_output;
+mod utils;
+use utils::assert_source_ref_output;
 
 #[test]
 fn basic() -> Result<(), Box<dyn std::error::Error>> {
