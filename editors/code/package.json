@@ -9,7 +9,8 @@
   "license": "MIT",
   "engines": {
     "vscode": "^1.83.0",
-    "node": "^7.9.0"
+    "node": ">=16.0.0",
+    "pnpm": "10.8.0"
   },
   "categories": [
     "Debuggers"
@@ -122,6 +123,7 @@
     "@vscode/debugadapter-testsupport": "^1.56.0",
     "@vscode/debugprotocol": "^1.56.0",
     "@vscode/test-electron": "^2.3.4",
+    "@vscode/vsce": "^3.3.2",
     "eslint": "^9.24.0",
     "typescript": "^5.2.2"
   }
