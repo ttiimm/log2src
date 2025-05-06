@@ -20,11 +20,12 @@ The current version is still an early prototype that only works with simple prog
 3. Production issues: Trying to debug on prod is risky and requires access to the infrastructure where the application is running. With log2src, as long as the logs are accessible to you, you can debug the problem offline without impacting production servers.
 
 ### Features
-- Map a single log file to a single source file to aid debugging and ease cognitive burden. The log and source are statically configured at start up.
-- Provide the value of variables that appear in the log statements.
+- Maps log lines back onto the source code to aid debugging by easing cognitive burden.
+- Tries to reconstruct a portion of the program state by providing values of expressions & variables.
 - Infer the call stack when possible based on an analysis of the source code.
-- Only a subset of the Rust programming language is supported, but intending to try and support most popular languages.
-- A VS Code extension using the debug adapter protocol is implemented.
+- At the moment a subset of the Java & Rust programming languages are supported, but intending to try and work with most popular languages.
+- A VS Code extension using the debug adapter protocol.
+
 ### Build
 
 [![Build Status](https://github.com/ttiimm/log2src/actions/workflows/rust.yml/badge.svg)](https://github.com/ttiimm/log2src/actions/workflows/rust.yml)
