@@ -4,3 +4,4 @@
 out/
 bin/
 editors/code/node_modules
+editors/code/*.vsix
