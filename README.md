@@ -30,7 +30,7 @@ The current version is still an early prototype that only works with simple prog
 
 [![Build Status](https://github.com/ttiimm/log2src/actions/workflows/rust.yml/badge.svg)](https://github.com/ttiimm/log2src/actions/workflows/rust.yml)
 
-You must compile the command line tool using Rust in order to install the product. The log2src command line tool has several options and the API is still quite experimental, so expect changes. See `-h` for the up to date documentation.
+You must compile the command line tool using Rust. The log2src command line tool has several options and the API is still quite experimental, so expect changes. See `-h` for the up to date documentation.
 
 You can also build and run the VS Code extension by building the log2src binary and copying it into `editors/code/bin`. The easiest way to run the extension at the moment is from VS Code using the standard run configuration.
 
@@ -71,6 +71,14 @@ You can run the log2src debugger using this example configuration that shows how
     ]
 }
 ```
+
+In order to package the VS Code extension, run
+
+```
+$ pnpm vsce package --no-dependencies
+```
+
+The vsix package can be installed within the VS Code extensions.
 
 ## Contributing
 This is mostly a hobby project worked on during nights and weekends, so to minimize project management I'm not looking for pull requests at the moment. Feel free to file an issue to discuss bugs, ideas, or other interest in the project.
