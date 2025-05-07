@@ -17,6 +17,9 @@ import { ProviderResult } from 'vscode';
 import { DebugSession } from './debugAdapter';
 
 const runMode: 'external' | 'server' | 'namedPipeServer' | 'inline' = 'inline';
+const outputChannel = vscode.window.createOutputChannel("Log2Src");
+
+export { outputChannel }
 
 export function activate(context: vscode.ExtensionContext) {
 	// The microsoft debug adapter extension had several ways of starting up, but the default inline method

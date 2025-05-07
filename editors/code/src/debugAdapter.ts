@@ -17,6 +17,8 @@ import { DebugProtocol } from '@vscode/debugprotocol';
 import * as vscode from 'vscode';
 import * as path from 'path';
 
+import { outputChannel } from './extension';
+
 
 interface LogMapping {
     srcRef: SourceRef,
@@ -69,6 +71,7 @@ export class DebugSession extends LoggingDebugSession {
 
         const focusColor = new vscode.ThemeColor('editor.focusedStackFrameHighlightBackground');
         this._highlightDecoration = vscode.window.createTextEditorDecorationType({ "backgroundColor": focusColor });
+        outputChannel.appendLine("Starting up...");
     }
 
     protected disconnectRequest(response: DebugProtocol.DisconnectResponse, args: DebugProtocol.DisconnectArguments, request?: DebugProtocol.Request): void {
@@ -83,7 +86,6 @@ export class DebugSession extends LoggingDebugSession {
      */
     protected initializeRequest(response: DebugProtocol.InitializeResponse, args: DebugProtocol.InitializeRequestArguments): void {
         console.log(`initializeRequest: ${JSON.stringify(args)}`);
-        console.log(' ');
 
         response.body = response.body || {};
         response.body.supportsStepBack = true;
@@ -96,7 +98,6 @@ export class DebugSession extends LoggingDebugSession {
 
     protected setBreakPointsRequest(response: DebugProtocol.SetBreakpointsResponse, args: DebugProtocol.SetBreakpointsArguments) {
         console.log(`setBreakPointsRequest ${JSON.stringify(args)}`);
-        console.log(' ');
 
         const bpPath = args.source.path as string;
         // TODO handle lines?
@@ -123,16 +124,14 @@ export class DebugSession extends LoggingDebugSession {
 
     protected attachRequest(response: DebugProtocol.AttachResponse, args: IAttachRequestArguments) {
         console.log(`attachRequest`);
-        console.log(' ');
         return this.launchRequest(response, args);
     }
 
     protected launchRequest(response: DebugProtocol.LaunchResponse, args: ILaunchRequestArguments) {
-        console.log(`launchRequest ${JSON.stringify(args)}`);
-        console.log(' ');
+        outputChannel.appendLine(`launchRequest ${JSON.stringify(args)}`);
 
         // make sure to 'Stop' the buffered logging if 'trace' is not set
-        logger.setup(args.trace ? Logger.LogLevel.Verbose : Logger.LogLevel.Stop, false);
+        logger.setup(args.trace ? Logger.LogLevel.Verbose : Logger.LogLevel.Verbose, false);
 
         this._launchArgs = args;
         var execFile = require('child_process').execFileSync;
@@ -150,7 +149,6 @@ export class DebugSession extends LoggingDebugSession {
 
     protected threadsRequest(response: DebugProtocol.ThreadsResponse): void {
         console.log(`threadsRequest`);
-        console.log(' ');
 
         // just sending back junk for now
         response.body = {
@@ -163,7 +161,6 @@ export class DebugSession extends LoggingDebugSession {
 
     protected continueRequest(response: DebugProtocol.ContinueResponse, args: DebugProtocol.ContinueArguments): void {
         console.log(`continueRequest ${JSON.stringify(args)}`);
-        console.log(' ');
 
         const next = this.findNextLineToStop();
         this._line = next;
@@ -173,7 +170,6 @@ export class DebugSession extends LoggingDebugSession {
 
     protected reverseContinueRequest(response: DebugProtocol.ReverseContinueResponse, args: DebugProtocol.ReverseContinueArguments): void {
         console.log(`reverseContinueRequest ${JSON.stringify(args)}`);
-        console.log(' ');
 
         const next = this.findNextLineToStop(true);
         this._line = next;
@@ -207,7 +203,6 @@ export class DebugSession extends LoggingDebugSession {
 
     protected nextRequest(response: DebugProtocol.NextResponse, args: DebugProtocol.NextArguments): void {
         console.log(`nextRequest ${JSON.stringify(args)} line=${this._line}`);
-        console.log(' ');
         this._line = Math.min(this._logLines, this._line + 1);
         this.sendEvent(new StoppedEvent('step', DebugSession.threadID));
         this.sendResponse(response);
@@ -215,7 +210,6 @@ export class DebugSession extends LoggingDebugSession {
 
     protected stepBackRequest(response: DebugProtocol.StepBackResponse, args: DebugProtocol.StepBackArguments): void {
         console.log(`stepBackRequest ${JSON.stringify(args)} line=${this._line}`);
-        console.log(' ');
         this._line = Math.max(1, this._line - 1);
         this.sendEvent(new StoppedEvent('step', DebugSession.threadID));
         this.sendResponse(response);
@@ -223,7 +217,6 @@ export class DebugSession extends LoggingDebugSession {
 
     protected stackTraceRequest(response: DebugProtocol.StackTraceResponse, args: DebugProtocol.StackTraceArguments): void {
         console.log(`stackTraceRequest ${JSON.stringify(args)}`);
-        console.log(' ');
 
         var log2srcPath = path.resolve(__dirname, '../bin/log2src');
         var execFile = require('child_process').execFileSync;
@@ -248,9 +241,10 @@ export class DebugSession extends LoggingDebugSession {
             l2sArgs.push("-f");
             l2sArgs.push(this._launchArgs.log_format);
         }
+        outputChannel.appendLine(`args ${l2sArgs.join(" ")}`);
         let stdout = execFile(log2srcPath, l2sArgs);
         this._mapping = JSON.parse(stdout);
-        console.log(`mapped ${JSON.stringify(this._mapping)}`)
+        outputChannel.appendLine(`mapped ${JSON.stringify(this._mapping)}`);
 
         let index = 0;
         const currentFrame = this.buildStackFrame(index++, this._mapping?.srcRef);
@@ -277,9 +271,9 @@ export class DebugSession extends LoggingDebugSession {
         let lineNumber = -1;
         let sourceName = "???";
         let sourcePath = "???";
-        
 
-        if (srcRef !== undefined) {
+
+        if (srcRef !== null && srcRef !== undefined) {
             name = srcRef.name;
             lineNumber = srcRef.lineNumber;
             const codeSrcPath = path.parse(srcRef.sourcePath);
@@ -297,7 +291,6 @@ export class DebugSession extends LoggingDebugSession {
 
     protected scopesRequest(response: DebugProtocol.ScopesResponse, args: DebugProtocol.ScopesArguments): void {
         console.log(`scopesRequest ${JSON.stringify(args)}`);
-        console.log(' ');
 
         response.body = {
             scopes: [
@@ -309,7 +302,6 @@ export class DebugSession extends LoggingDebugSession {
 
     protected variablesRequest(response: DebugProtocol.VariablesResponse, args: DebugProtocol.VariablesArguments, request?: DebugProtocol.Request): void {
         console.log(`variablesRequest ${JSON.stringify(args)}`);
-        console.log(' ');
 
         let vs: DebugProtocol.Variable[] = [];
 
