@@ -99,9 +99,10 @@ jobs:
         run: ls -R release
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           name: log2src ${{ github.ref_name }}
+          token: ${{ secrets.L2S_RELEASE }}
           files: release/**/*
           draft: true
           prerelease: ${{ contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') }}
