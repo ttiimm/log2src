@@ -156,6 +156,6 @@ jobs:
       - name: Upload VS Code extension
         uses: actions/upload-artifact@v4
         with:
-          name: ""
-          path: editors/code/log2src-ext-${{ github.ref_name }}.vsix
+          name: log2src-ext-${GITHUB_REF_NAME#v}.vsix
+          path: editors/code/log2src-ext-${GITHUB_REF_NAME#v}.vsix
           if-no-files-found: error
