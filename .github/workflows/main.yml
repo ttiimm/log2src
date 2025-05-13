@@ -151,7 +151,7 @@ jobs:
           VERSION="${VERSION#v}"
           echo "$VERSION" >> $GITHUB_ENV
           # Update version in package.json
-          jq '.version = "'${VERSION#v}'"' package.json > package.json.new
+          jq '.version = "'${VERSION}'"' package.json > package.json.new
           mv package.json.new package.json
           pnpm vsce package --no-dependencies
       
