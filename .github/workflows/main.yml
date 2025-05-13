@@ -148,7 +148,7 @@ jobs:
         run: |
           pnpm install
           REF_NAME="${{ github.ref_name }}"
-          echo "VERSION=${REF_NAME#v}" >> $GITHUB_ENV
+          echo "EXT_VERSION=${REF_NAME#v}" >> $GITHUB_ENV
           # Update version in package.json
           jq '.version = "'${REF_NAME#v}'"' package.json > package.json.new
           mv package.json.new package.json
@@ -157,6 +157,6 @@ jobs:
       - name: Upload VS Code extension
         uses: actions/upload-artifact@v4
         with:
-          name: log2src-ext-${VERSION}.vsix
-          path: editors/code/log2src-ext-${VERSION}.vsix
+          name: log2src-ext-${{ env.EXT_VERSION }}.vsix
+          path: editors/code/log2src-ext-${{ env.EXT_VERSION }}.vsix
           if-no-files-found: error
