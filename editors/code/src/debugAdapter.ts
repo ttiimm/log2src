@@ -49,9 +49,28 @@ interface ILaunchRequestArguments extends DebugProtocol.LaunchRequestArguments {
 interface IAttachRequestArguments extends ILaunchRequestArguments { }
 
 
+const PLATFORM_TO_BINARY = new Map<string, string>([
+    ["darwin-arm64", "../bin/darwin-arm64/log2src"],
+    ["darwin-x64", "../bin/darwin-x64/log2src"],
+    ["linux-x64", "../bin/linux-x64/log2src"],
+    ["win32-x64", "../bin/win-x64/log2src.exe"],
+]);
+
+
+export class BinaryNotFoundError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = "BinaryNotFoundError";
+        if (Error.captureStackTrace) {
+            Error.captureStackTrace(this, BinaryNotFoundError);
+        }
+    }
+}
+
 export class DebugSession extends LoggingDebugSession {
 
-    private static threadID = 1;
+    private static _threadID = 1;
+    private _binaryPath: string;
     private _breakPoints = new Map<string, DebugProtocol.Breakpoint[]>();
     private _variableHandles = new Handles<'locals'>();
     private _line = 1;
@@ -65,6 +84,14 @@ export class DebugSession extends LoggingDebugSession {
      */
     public constructor() {
         super("log2src-dap.txt");
+
+        this._binaryPath = PLATFORM_TO_BINARY.get(`${process.platform}-${process.arch}`)!;
+
+        if (!this._binaryPath) {
+            throw new BinaryNotFoundError(
+                `No binary available for platform: ${process.platform} and architecture: ${process.arch}`
+            );
+        }
 
         this.setDebuggerLinesStartAt1(true);
         this.setDebuggerColumnsStartAt1(true);
@@ -117,7 +144,7 @@ export class DebugSession extends LoggingDebugSession {
         };
 
         if (breakpoints.length > 0) {
-            this.sendEvent(new StoppedEvent('breakpoint', DebugSession.threadID));
+            this.sendEvent(new StoppedEvent('breakpoint', DebugSession._threadID));
         }
         return this.sendResponse(response);
     }
@@ -142,7 +169,7 @@ export class DebugSession extends LoggingDebugSession {
         // wait 1 second until configuration has finished (and configurationDoneRequest has been called)
         // await this._configurationDone.wait(1000);
         if (this._breakPoints.size === 0) {
-            this.sendEvent(new StoppedEvent('entry', DebugSession.threadID));
+            this.sendEvent(new StoppedEvent('entry', DebugSession._threadID));
         }
         this.sendResponse(response);
     }
@@ -153,7 +180,7 @@ export class DebugSession extends LoggingDebugSession {
         // just sending back junk for now
         response.body = {
             threads: [
-                new Thread(DebugSession.threadID, "thread 1"),
+                new Thread(DebugSession._threadID, "thread 1"),
             ]
         };
         this.sendResponse(response);
@@ -164,7 +191,7 @@ export class DebugSession extends LoggingDebugSession {
 
         const next = this.findNextLineToStop();
         this._line = next;
-        this.sendEvent(new StoppedEvent('breakpoint', DebugSession.threadID));
+        this.sendEvent(new StoppedEvent('breakpoint', DebugSession._threadID));
         this.sendResponse(response);
     }
 
@@ -173,7 +200,7 @@ export class DebugSession extends LoggingDebugSession {
 
         const next = this.findNextLineToStop(true);
         this._line = next;
-        this.sendEvent(new StoppedEvent('breakpoint', DebugSession.threadID));
+        this.sendEvent(new StoppedEvent('breakpoint', DebugSession._threadID));
         this.sendResponse(response);
     }
 
@@ -204,24 +231,24 @@ export class DebugSession extends LoggingDebugSession {
     protected nextRequest(response: DebugProtocol.NextResponse, args: DebugProtocol.NextArguments): void {
         console.log(`nextRequest ${JSON.stringify(args)} line=${this._line}`);
         this._line = Math.min(this._logLines, this._line + 1);
-        this.sendEvent(new StoppedEvent('step', DebugSession.threadID));
+        this.sendEvent(new StoppedEvent('step', DebugSession._threadID));
         this.sendResponse(response);
     }
 
     protected stepBackRequest(response: DebugProtocol.StepBackResponse, args: DebugProtocol.StepBackArguments): void {
         console.log(`stepBackRequest ${JSON.stringify(args)} line=${this._line}`);
         this._line = Math.max(1, this._line - 1);
-        this.sendEvent(new StoppedEvent('step', DebugSession.threadID));
+        this.sendEvent(new StoppedEvent('step', DebugSession._threadID));
         this.sendResponse(response);
     }
 
     protected stackTraceRequest(response: DebugProtocol.StackTraceResponse, args: DebugProtocol.StackTraceArguments): void {
         console.log(`stackTraceRequest ${JSON.stringify(args)}`);
 
-        var log2srcPath = path.resolve(__dirname, '../bin/log2src');
-        var execFile = require('child_process').execFileSync;
-        let start = this._line - 1;
-        let end = this._line;
+        const log2srcPath = path.resolve(__dirname, this._binaryPath);
+        const execFile = require('child_process').execFileSync;
+        const start = this._line - 1;
+        const end = this._line;
 
         const editors = vscode.window.visibleTextEditors.filter((editor) => editor.document.fileName === this._launchArgs.log);
         if (editors !== undefined && editors.length >= 1) {

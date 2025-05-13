@@ -14,7 +14,7 @@
 
 import * as vscode from 'vscode';
 import { ProviderResult } from 'vscode';
-import { DebugSession } from './debugAdapter';
+import { BinaryNotFoundError, DebugSession } from './debugAdapter';
 
 const runMode: 'external' | 'server' | 'namedPipeServer' | 'inline' = 'inline';
 const outputChannel = vscode.window.createOutputChannel("Log2Src");
@@ -46,7 +46,18 @@ export function deactivate() {
 class InlineDebugAdapterFactory implements vscode.DebugAdapterDescriptorFactory {
 
 	createDebugAdapterDescriptor(_session: vscode.DebugSession): ProviderResult<vscode.DebugAdapterDescriptor> {
-		return new vscode.DebugAdapterInlineImplementation(new DebugSession());
-	}
+		try {
+			return new vscode.DebugAdapterInlineImplementation(new DebugSession());
+		} catch (error) {
+			if (error instanceof BinaryNotFoundError) {
+				vscode.window.showErrorMessage(`Log2Src Error: ${error.message}`);
+				outputChannel.appendLine(`Error: ${error.message}`);
+				outputChannel.appendLine(`Stack: ${error.stack}`);
+				return undefined;
+			} else {
+				throw error;
+			}
+		}
 
+	}
 }
