@@ -28,7 +28,7 @@ The current version is still an early prototype that only works with simple prog
 
 ### Build
 
-[![Build Status](https://github.com/ttiimm/log2src/actions/workflows/rust.yml/badge.svg)](https://github.com/ttiimm/log2src/actions/workflows/rust.yml)
+[![Build & Release](https://github.com/ttiimm/log2src/actions/workflows/main.yml/badge.svg)](https://github.com/ttiimm/log2src/actions/workflows/main.yml)
 
 You must compile the command line tool using Rust. The log2src command line tool has several options and the API is still quite experimental, so expect changes. See `-h` for the up to date documentation.
 
