@@ -107,3 +107,55 @@ jobs:
           files: release/**/*
           draft: true
           prerelease: ${{ contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') }}
+
+  vscode-extension:
+    name: Build VS Code Extensions
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: 'editors/code/pnpm-lock.yaml'
+      
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Extract binaries for VS Code extension
+        run: |
+          mkdir -p editors/code/bin/{linux-x64,darwin-x64,darwin-arm64,win32-x64}
+          tar -xzf artifacts/log2src-${{ github.ref_name }}-linux-x64/log2src-${{ github.ref_name }}-linux-x64.tar.gz -C editors/code/bin/linux-x64
+          tar -xzf artifacts/log2src-${{ github.ref_name }}-macos-x64/log2src-${{ github.ref_name }}-macos-x64.tar.gz -C editors/code/bin/darwin-x64
+          tar -xzf artifacts/log2src-${{ github.ref_name }}-macos-arm64/log2src-${{ github.ref_name }}-macos-arm64.tar.gz -C editors/code/bin/darwin-arm64
+          unzip -o artifacts/log2src-${{ github.ref_name }}-windows-x64/log2src-${{ github.ref_name }}-windows-x64.zip -d editors/code/bin/win-x64
+
+      - name: Build VS Code extension
+        working-directory: editors/code
+        run: |
+          pnpm install
+          VERSION="${{ github.ref_name }}"
+          # Update version in package.json
+          jq '.version = "'${VERSION#v}'"' package.json > package.json.new
+          mv package.json.new package.json
+          pnpm vsce package --no-dependencies
+      
+      - name: Upload VS Code extension
+        uses: actions/upload-artifact@v4
+        with:
+          name: ""
+          path: editors/code/log2src-ext-${{ github.ref_name }}.vsix
+          if-no-files-found: error
