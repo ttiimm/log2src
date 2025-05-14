@@ -161,6 +161,7 @@ export class DebugSession extends LoggingDebugSession {
         logger.setup(args.trace ? Logger.LogLevel.Verbose : Logger.LogLevel.Verbose, false);
 
         this._launchArgs = args;
+        this.openLogAndFocus();
         var execFile = require('child_process').execFileSync;
         let stdout = execFile('wc', ['-l', this._launchArgs.log]);
         this._logLines = +stdout.toString().trim().split(" ")[0] || Number.MAX_VALUE;
@@ -172,6 +173,23 @@ export class DebugSession extends LoggingDebugSession {
             this.sendEvent(new StoppedEvent('entry', DebugSession._threadID));
         }
         this.sendResponse(response);
+    }
+
+    private openLogAndFocus() {
+        const editors = this.findEditors();
+        if (editors.length >= 1) {
+            this.focusEditor(editors[0]);
+        } else {
+            vscode.workspace
+                .openTextDocument(this._launchArgs.log)
+                .then(doc => {
+                    return vscode.window.showTextDocument(doc, {
+                        viewColumn: vscode.ViewColumn.Beside,
+                        preserveFocus: false
+                    });
+                })
+                .then(editor => this.focusEditor(editor));
+        }
     }
 
     protected threadsRequest(response: DebugProtocol.ThreadsResponse): void {
@@ -250,14 +268,9 @@ export class DebugSession extends LoggingDebugSession {
         const start = this._line - 1;
         const end = this._line;
 
-        const editors = vscode.window.visibleTextEditors.filter((editor) => editor.document.fileName === this._launchArgs.log);
-        if (editors !== undefined && editors.length >= 1) {
-            const editor = editors[0];
-            let range = new vscode.Range(
-                new vscode.Position(start, 0),
-                new vscode.Position(start, Number.MAX_VALUE)
-            );
-            editor.setDecorations(this._highlightDecoration, [range]);
+        const editors = this.findEditors();
+        if (editors.length > 0) {
+            this.focusEditor(editors[0]);
         }
 
         let l2sArgs = ['-d', this._launchArgs.source,
@@ -291,6 +304,23 @@ export class DebugSession extends LoggingDebugSession {
         };
 
         this.sendResponse(response);
+    }
+
+    private findEditors(): vscode.TextEditor[] {
+        return vscode.window.visibleTextEditors.filter((editor) => editor.document.fileName === this._launchArgs.log);
+    }
+
+    private focusEditor(editor: vscode.TextEditor) {
+        const start = this._line - 1;
+        let range = new vscode.Range(
+            new vscode.Position(start, 0),
+            new vscode.Position(start, Number.MAX_VALUE)
+        );
+        editor.setDecorations(this._highlightDecoration, [range]);
+        editor.revealRange(
+            range,
+            vscode.TextEditorRevealType.InCenter
+        );
     }
 
     private buildStackFrame(index: number, srcRef?: SourceRef): StackFrame {
