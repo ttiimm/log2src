@@ -12,7 +12,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  build-rust:
 
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
@@ -82,37 +82,10 @@ jobs:
         path: release/${{ matrix.asset_name }}.${{ matrix.os == 'windows-latest' && 'zip' || 'tar.gz' }}
         if-no-files-found: error
 
-  release:
-    name: Create Release
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/')
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: release
-
-      - name: List files
-        run: ls -R release
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          name: log2src ${{ github.ref_name }}
-          token: ${{ secrets.L2S_RELEASE }}
-          files: release/**/*
-          draft: true
-          prerelease: ${{ contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') }}
-
   vscode-extension:
     name: Build VS Code Extensions
-    needs: build
+    needs: [build-rust]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
 
     steps:
       - name: Checkout repository
@@ -143,10 +116,18 @@ jobs:
           tar -xzf artifacts/log2src-${{ github.ref_name }}-macos-arm64/log2src-${{ github.ref_name }}-macos-arm64.tar.gz -C editors/code/bin/darwin-arm64
           unzip -o artifacts/log2src-${{ github.ref_name }}-windows-x64/log2src-${{ github.ref_name }}-windows-x64.zip -d editors/code/bin/win-x64
 
+      - name: Install Dependencies
+        working-directory: editors/code
+        run: pnpm install
+
+      - name: Run Tests
+        working-directory: editors/code
+        run: pnpm run test
+
       - name: Build VS Code extension
+        if: startsWith(github.ref, 'refs/tags/')
         working-directory: editors/code
         run: |
-          pnpm install
           REF_NAME="${{ github.ref_name }}"
           echo "EXT_VERSION=${REF_NAME#v}" >> $GITHUB_ENV
           # Update version in package.json
@@ -155,8 +136,35 @@ jobs:
           pnpm vsce package --no-dependencies
       
       - name: Upload VS Code extension
+        if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v4
         with:
           name: log2src-ext-${{ env.EXT_VERSION }}.vsix.zip
           path: editors/code/log2src-ext-${{ env.EXT_VERSION }}.vsix
           if-no-files-found: error
+
+  release:
+    name: Create Release
+    needs: [build-rust, vscode-extension]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release
+
+      - name: List files
+        run: ls -R release
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: log2src ${{ github.ref_name }}
+          token: ${{ secrets.L2S_RELEASE }}
+          files: release/**/*
+          draft: true
+          prerelease: ${{ contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') }}
