@@ -116,13 +116,14 @@
     "watch": "tsc -watch -p ./",
     "pretest": "pnpm run compile && pnpm run lint",
     "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js",
     "vscode:prepublish": "pnpm run esbuild-base --minify",
     "esbuild-base": "esbuild ./src/extension.ts ./src/debugAdapter.ts --bundle --outdir=out --external:vscode --format=cjs --platform=node",
     "esbuild": "pnpm run esbuild-base --sourcemap",
     "esbuild-watch": "pnpm run esbuild-base --sourcemap --watch"
   },
   "devDependencies": {
-    "@types/mocha": "^9.1.0",
+    "@types/mocha": "^10.0.2",
     "@types/node": "22.14.1",
     "@types/vscode": "^1.83.0",
     "@typescript-eslint/eslint-plugin": "^8.30.1",
@@ -132,7 +133,8 @@
     "@vscode/vsce": "^3.3.2",
     "esbuild": "^0.25.4",
     "eslint": "^9.24.0",
-    "mocha": "^9.2.1",
+    "glob": "^11.0.2",
+    "mocha": "^10.2.0",
     "typescript": "5.8.3"
   },
   "dependencies": {
