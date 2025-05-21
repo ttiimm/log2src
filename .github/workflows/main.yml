@@ -118,8 +118,16 @@ jobs:
         working-directory: editors/code
         run: pnpm install
 
-      - name: Run Tests
+      - name: Run tests (Linux)
         working-directory: editors/code
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y xvfb
+          pnpm run test:ci
+
+      - name: Run Tests (Osx/Windows)
+        working-directory: editors/code
+        if: runner.os != 'Linux'
         run: pnpm run test
 
       - name: Build VS Code extension

@@ -117,6 +117,7 @@
     "pretest": "pnpm run compile && pnpm run lint",
     "lint": "eslint src --ext ts",
     "test": "node ./out/test/runTest.js",
+    "test:ci": "xvfb-run -a node ./out/test/runTest.js",
     "vscode:prepublish": "pnpm run esbuild-base --minify",
     "esbuild-base": "esbuild ./src/extension.ts ./src/debugAdapter.ts --bundle --outdir=out --external:vscode --format=cjs --platform=node",
     "esbuild": "pnpm run esbuild-base --sourcemap",
