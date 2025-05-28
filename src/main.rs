@@ -43,8 +43,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         end: args.end.unwrap_or(usize::MAX),
     };
 
-    let filtered = filter_log(&buffer, filter);
-    let log_mappings = do_mappings(filtered, &args.sources, args.format);
+    let filtered = filter_log(&buffer, filter, args.format.clone());
+    // TODO: try and remove log format here
+    let log_mappings = do_mappings(filtered, &args.sources, args.format.clone());
 
     for mapping in log_mappings {
         let serialized = serde_json::to_string(&mapping).unwrap();

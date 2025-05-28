@@ -3,7 +3,7 @@ use core::fmt;
 use regex::{Captures, Regex};
 use serde::Serialize;
 
-use crate::{CodeSource, LogRef, QueryResult};
+use crate::{CodeSource, QueryResult};
 
 // TODO: get rid of this clone?
 #[derive(Clone, Debug, Serialize)]
@@ -48,8 +48,8 @@ impl SourceRef {
         }
     }
 
-    pub fn captures<'a>(&self, log_ref: &LogRef<'a>) -> Option<Captures<'a>> {
-        self.matcher.captures(log_ref.line)
+    pub fn captures<'a>(&self, line: &'a str) -> Option<Captures<'a>> {
+        self.matcher.captures(line)
     }
 }
 
@@ -84,7 +84,7 @@ fn build_matcher(text: &str) -> Regex {
             .split(text)
             .map(regex::escape)
             .collect::<Vec<String>>()
-            .join(r#"(\w+)"#);
+            .join(r#"(.+)"#);
         // println!("escaped = {}", Regex::new(&escaped).unwrap().as_str());
         Regex::new(&escaped).unwrap()
     }
@@ -98,7 +98,7 @@ mod tests {
     fn test_build_matcher_needs_escape() {
         let matcher = build_matcher("{}) {}, {}");
         assert_eq!(
-            Regex::new(r#"(\w+)\) (\w+), (\w+)"#).unwrap().as_str(),
+            Regex::new(r#"(.+)\) (.+), (.+)"#).unwrap().as_str(),
             matcher.as_str()
         );
     }
@@ -107,7 +107,7 @@ mod tests {
     fn test_build_matcher_mix() {
         let matcher = build_matcher("{}) {:?}, {foo.bar}");
         assert_eq!(
-            Regex::new(r#"(\w+)\) (\w+), (\w+)"#).unwrap().as_str(),
+            Regex::new(r#"(.+)\) (.+), (.+)"#).unwrap().as_str(),
             matcher.as_str()
         );
     }

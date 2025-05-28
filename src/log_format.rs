@@ -15,7 +15,7 @@ impl LogFormat {
         })
     }
 
-    pub fn has_hints(self: LogFormat) -> bool {
+    pub fn has_src_hint(self: LogFormat) -> bool {
         let mut flatten = self.regex.capture_names().flatten();
         flatten.any(|name| name == "line") && flatten.any(|name| name == "file")
     }
@@ -23,7 +23,7 @@ impl LogFormat {
     pub fn build_src_filter(&self, log_refs: &Vec<LogRef>) -> Vec<String> {
         let mut results = Vec::new();
         for log_ref in log_refs {
-            let captures = self.captures(log_ref);
+            let captures = self.captures(log_ref.line);
             if let Some(file_match) = captures.name("file") {
                 results.push(file_match.as_str().to_string());
             }
@@ -31,10 +31,10 @@ impl LogFormat {
         results
     }
 
-    pub fn captures<'a>(&self, log_ref: &LogRef<'a>) -> Captures<'a> {
+    pub fn captures<'a>(&self, line: &'a str) -> Captures<'a> {
         self.regex
-            .captures(log_ref.line)
-            .unwrap_or_else(|| panic!("Couldn't match `{}` with `{:?}`", log_ref.line, self.regex))
+            .captures(line)
+            .unwrap_or_else(|| panic!("Couldn't match `{}` with `{:?}`", line, self.regex))
     }
 }
 

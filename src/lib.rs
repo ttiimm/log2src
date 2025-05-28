@@ -98,12 +98,42 @@ pub struct LogMapping<'a> {
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct LogRef<'a> {
     pub line: &'a str,
+    details: Option<LogDetails<'a>>,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+struct LogDetails<'a> {
+    file: Option<&'a str>,
+    lineno: Option<u32>,
+    body: Option<&'a str>,
+}
+
+impl<'a> LogRef<'a> {
+    pub fn new(line: &'a str) -> Self {
+        Self {
+            line,
+            details: None,
+        }
+    }
+
+    pub fn with_format(line: &'a str, log_format: LogFormat) -> Self {
+        let captures = log_format.captures(line);
+        let file = captures.name("file").map(|file_match| file_match.as_str());
+        let lineno = captures
+            .name("line")
+            .and_then(|lineno| lineno.as_str().parse::<u32>().ok());
+        let body = captures.name("body").map(|body| body.as_str());
+        Self {
+            line,
+            details: Some(LogDetails { file, lineno, body }),
+        }
+    }
 }
 
 pub fn link_to_source<'a>(log_ref: &LogRef, src_refs: &'a [SourceRef]) -> Option<&'a SourceRef> {
     src_refs
         .iter()
-        .find(|&source_ref| source_ref.captures(log_ref).is_some())
+        .find(|&source_ref| source_ref.captures(log_ref.line).is_some())
 }
 
 pub fn lookup_source<'a>(
@@ -111,7 +141,7 @@ pub fn lookup_source<'a>(
     log_format: &LogFormat,
     src_refs: &'a [SourceRef],
 ) -> Option<&'a SourceRef> {
-    let captures = log_format.captures(log_ref);
+    let captures = log_format.captures(log_ref.line);
     let file_name = captures.name("file").map_or("", |m| m.as_str());
     let line_no: usize = captures
         .name("line")
@@ -125,12 +155,16 @@ pub fn lookup_source<'a>(
 }
 
 pub fn extract_variables<'a>(
-    log_line: LogRef<'a>,
+    log_ref: LogRef<'a>,
     src_ref: &'a SourceRef,
 ) -> HashMap<String, String> {
     let mut variables = HashMap::new();
+    let line = match log_ref.details {
+        Some(details) => details.body.unwrap_or(log_ref.line),
+        None => log_ref.line,
+    };
     if !src_ref.vars.is_empty() {
-        if let Some(captures) = src_ref.captures(&log_line) {
+        if let Some(captures) = src_ref.captures(line) {
             for i in 0..captures.len() - 1 {
                 variables.insert(
                     src_ref.vars[i].to_string(),
@@ -143,19 +177,22 @@ pub fn extract_variables<'a>(
     variables
 }
 
-pub fn filter_log(buffer: &str, filter: Filter) -> Vec<LogRef> {
-    let results = buffer
+pub fn filter_log(buffer: &str, filter: Filter, log_format: Option<String>) -> Vec<LogRef> {
+    let log_format = LogFormat::new(log_format);
+    buffer
         .lines()
         .enumerate()
         .filter_map(|(line_no, line)| {
             if filter.start <= line_no && line_no < filter.end {
-                Some(LogRef { line })
+                match &log_format {
+                    Some(format) => Some(LogRef::with_format(line, format.clone())),
+                    None => Some(LogRef::new(line)),
+                }
             } else {
                 None
             }
         })
-        .collect();
-    results
+        .collect()
 }
 
 pub fn do_mappings<'a>(
@@ -168,7 +205,7 @@ pub fn do_mappings<'a>(
     let mut sources = CodeSource::find_code(sources, source_filter);
     let src_logs = extract_logging(&mut sources);
     let call_graph = CallGraph::new(&mut sources);
-    let use_hints = log_format.clone().is_some_and(|f| f.has_hints());
+    let use_hints = log_format.clone().is_some_and(|f| f.has_src_hint());
 
     log_refs
         .into_iter()
@@ -283,14 +320,14 @@ mod tests {
     #[test]
     fn test_filter_log_defaults() {
         let buffer = String::from("hello\nwarning\nerror\nboom");
-        let result = filter_log(&buffer, Filter::default());
+        let result = filter_log(&buffer, Filter::default(), None);
         assert_eq!(
             result,
             vec![
-                LogRef { line: "hello" },
-                LogRef { line: "warning" },
-                LogRef { line: "error" },
-                LogRef { line: "boom" }
+                LogRef::new("hello"),
+                LogRef::new("warning"),
+                LogRef::new("error"),
+                LogRef::new("boom"),
             ]
         );
     }
@@ -298,8 +335,32 @@ mod tests {
     #[test]
     fn test_filter_log_with_filter() {
         let buffer = String::from("hello\nwarning\nerror\nboom");
-        let result = filter_log(&buffer, Filter { start: 1, end: 2 });
-        assert_eq!(result, vec![LogRef { line: "warning" }]);
+        let result = filter_log(&buffer, Filter { start: 1, end: 2 }, None);
+        assert_eq!(result, vec![LogRef::new("warning")]);
+    }
+
+    #[test]
+    fn test_filter_log_with_format() {
+        let buffer = String::from(
+            "2025-04-10 22:12:52 INFO  JvmPauseMonitor:146 - JvmPauseMonitor-n0: Started",
+        );
+        let regex = String::from(
+            r"^(?<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) (?<level>\w+)\s+ (?<file>[\w$.]+):(?<line>\d+) - (?<body>.*)$",
+        );
+        let log_format = Some(regex);
+        let result = filter_log(&buffer, Filter::default(), log_format);
+        let details = Some(LogDetails {
+            file: Some("JvmPauseMonitor"),
+            lineno: Some(146),
+            body: Some("JvmPauseMonitor-n0: Started"),
+        });
+        assert_eq!(
+            result,
+            vec![LogRef {
+                line: "2025-04-10 22:12:52 INFO  JvmPauseMonitor:146 - JvmPauseMonitor-n0: Started",
+                details
+            }]
+        );
     }
 
     const TEST_SOURCE: &str = r#"
@@ -345,9 +406,8 @@ fn nope(i: u32) {
 
     #[test]
     fn test_link_to_source() {
-        let log_ref = LogRef {
-            line: "[2024-02-15T03:46:44Z DEBUG stack] you're only as funky as your last cut",
-        };
+        let log_ref =
+            LogRef::new("[2024-02-15T03:46:44Z DEBUG stack] you're only as funky as your last cut");
         let code = CodeSource::new(PathBuf::from("in-mem.rs"), Box::new(TEST_SOURCE.as_bytes()));
         let src_refs = extract_logging(&mut [code]);
         assert_eq!(src_refs.len(), 2);
@@ -357,10 +417,7 @@ fn nope(i: u32) {
 
     #[test]
     fn test_link_to_source_no_matches() {
-        let log_ref = LogRef {
-            line: "[2024-02-26T03:44:40Z DEBUG stack] nope!",
-        };
-
+        let log_ref = LogRef::new("[2024-02-26T03:44:40Z DEBUG stack] nope!");
         let code = CodeSource::new(PathBuf::from("in-mem.rs"), Box::new(TEST_SOURCE.as_bytes()));
         let src_refs = extract_logging(&mut [code]);
         assert_eq!(src_refs.len(), 2);
@@ -370,14 +427,48 @@ fn nope(i: u32) {
 
     #[test]
     fn test_extract_variables() {
-        let log_ref = LogRef {
-            line: "[2024-02-15T03:46:44Z DEBUG nope] this won't match i=1",
-        };
+        let log_ref = LogRef::new("[2024-02-15T03:46:44Z DEBUG nope] this won't match i=1");
         let code = CodeSource::new(PathBuf::from("in-mem.rs"), Box::new(TEST_SOURCE.as_bytes()));
         let src_refs = extract_logging(&mut [code]);
         assert_eq!(src_refs.len(), 2);
         let vars = extract_variables(log_ref, &src_refs[1]);
         assert_eq!(vars.get("i").map(|val| val.as_str()), Some("1"));
+    }
+
+    const TEST_PUNC_SRC: &str = r#"""
+  private void run() {
+    LOG.info("{}: Started", this);
+    try {
+      for (; Thread.currentThread().equals(threadRef.get()); ) {
+        detectPause();
+      }
+    } finally {
+      LOG.info("{}: Stopped", this);
+    }
+  }
+"""#;
+    #[test]
+    fn test_extract_var_punctuation() {
+        let regex = String::from(
+            r"^(?<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) (?<level>\w+)\s+ (?<file>[\w$.]+):(?<line>\d+) - (?<body>.*)$",
+        );
+        let log_format = Some(regex);
+        let log_format = LogFormat::new(log_format).unwrap();
+        let log_ref = LogRef::with_format(
+            "2025-04-10 22:12:52 INFO  JvmPauseMonitor:146 - JvmPauseMonitor-n0: Started",
+            log_format,
+        );
+        let code = CodeSource::new(
+            PathBuf::from("in-mem.java"),
+            Box::new(TEST_PUNC_SRC.as_bytes()),
+        );
+        let src_refs = extract_logging(&mut [code]);
+        assert_eq!(src_refs.len(), 2);
+        let vars = extract_variables(log_ref, &src_refs[0]);
+        assert_eq!(
+            vars.get("this").map(|val| val.as_str()),
+            Some("JvmPauseMonitor-n0")
+        );
     }
 
     #[test]
