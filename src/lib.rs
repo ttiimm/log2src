@@ -129,7 +129,7 @@ pub fn extract_variables<'a>(
     src_ref: &'a SourceRef,
 ) -> HashMap<String, String> {
     let mut variables = HashMap::new();
-    if src_ref.vars.len() > 0 {
+    if !src_ref.vars.is_empty() {
         if let Some(captures) = src_ref.captures(&log_line) {
             for i in 0..captures.len() - 1 {
                 variables.insert(
@@ -238,7 +238,7 @@ pub fn find_possible_paths<'a>(
     possible
 }
 
-pub fn extract_logging<'a>(sources: &mut Vec<CodeSource>) -> Vec<SourceRef> {
+pub fn extract_logging(sources: &mut [CodeSource]) -> Vec<SourceRef> {
     let mut matched = Vec::new();
     for code in sources.iter_mut() {
         let src_query = SourceQuery::new(code);
@@ -326,7 +326,7 @@ fn nope(i: u32) {
     #[test]
     fn test_extract_logging() {
         let code = CodeSource::new(PathBuf::from("in-mem.rs"), Box::new(TEST_SOURCE.as_bytes()));
-        let src_refs = extract_logging(&mut vec![code]);
+        let src_refs = extract_logging(&mut [code]);
         assert_eq!(src_refs.len(), 2);
         let first = &src_refs[0];
         assert_eq!(first.line_no, 7);
@@ -349,7 +349,7 @@ fn nope(i: u32) {
             line: "[2024-02-15T03:46:44Z DEBUG stack] you're only as funky as your last cut",
         };
         let code = CodeSource::new(PathBuf::from("in-mem.rs"), Box::new(TEST_SOURCE.as_bytes()));
-        let src_refs = extract_logging(&mut vec![code]);
+        let src_refs = extract_logging(&mut [code]);
         assert_eq!(src_refs.len(), 2);
         let result = link_to_source(&log_ref, &src_refs);
         assert!(ptr::eq(result.unwrap(), &src_refs[0]));
@@ -362,10 +362,10 @@ fn nope(i: u32) {
         };
 
         let code = CodeSource::new(PathBuf::from("in-mem.rs"), Box::new(TEST_SOURCE.as_bytes()));
-        let src_refs = extract_logging(&mut vec![code]);
+        let src_refs = extract_logging(&mut [code]);
         assert_eq!(src_refs.len(), 2);
         let result = link_to_source(&log_ref, &src_refs);
-        assert_eq!(result.is_none(), true);
+        assert!(result.is_none());
     }
 
     #[test]
@@ -374,7 +374,7 @@ fn nope(i: u32) {
             line: "[2024-02-15T03:46:44Z DEBUG nope] this won't match i=1",
         };
         let code = CodeSource::new(PathBuf::from("in-mem.rs"), Box::new(TEST_SOURCE.as_bytes()));
-        let src_refs = extract_logging(&mut vec![code]);
+        let src_refs = extract_logging(&mut [code]);
         assert_eq!(src_refs.len(), 2);
         let vars = extract_variables(log_ref, &src_refs[1]);
         assert_eq!(vars.get("i").map(|val| val.as_str()), Some("1"));

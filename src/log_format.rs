@@ -32,10 +32,9 @@ impl LogFormat {
     }
 
     pub fn captures<'a>(&self, log_ref: &LogRef<'a>) -> Captures<'a> {
-        self.regex.captures(log_ref.line).expect(&format!(
-            "Couldn't match `{}` with `{:?}`",
-            log_ref.line, self.regex
-        ))
+        self.regex
+            .captures(log_ref.line)
+            .unwrap_or_else(|| panic!("Couldn't match `{}` with `{:?}`", log_ref.line, self.regex))
     }
 }
 

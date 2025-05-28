@@ -14,12 +14,12 @@ pub struct Edge<'a> {
 }
 
 impl<'a> CallGraph<'a> {
-    pub fn new(sources: &'a mut Vec<CodeSource>) -> CallGraph<'a> {
+    pub fn new(sources: &'a mut [CodeSource]) -> CallGraph<'a> {
         let edges = Self::find_edges(sources);
         CallGraph { edges }
     }
 
-    pub(crate) fn find_edges(sources: &'a mut Vec<CodeSource>) -> Vec<Edge<'a>> {
+    pub(crate) fn find_edges(sources: &'a mut [CodeSource]) -> Vec<Edge<'a>> {
         let mut symbols = Vec::new();
         let edge_query = r#"
             (call_expression function: (identifier) @fn_name arguments: (arguments (_))*)

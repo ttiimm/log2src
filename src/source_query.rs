@@ -25,7 +25,7 @@ impl<'a> SourceQuery<'a> {
         let language = code.ts_language();
         parser
             .set_language(&language)
-            .expect(format!("Error loading {:?} grammar", language).as_str());
+            .unwrap_or_else(|_| panic!("Error loading {:?} grammar", language));
         let source = code.buffer.as_str();
         let tree = parser.parse(source, None).expect("source is parsable");
         // println!("{:?}", tree.root_node().to_sexp());
@@ -50,7 +50,7 @@ impl<'a> SourceQuery<'a> {
                     results.push(QueryResult {
                         kind: String::from(capture.node.kind()),
                         range: capture.node.range(),
-                        name_range: self.find_fn_range(capture.node),
+                        name_range: Self::find_fn_range(capture.node),
                     });
                 }
             }
@@ -59,7 +59,7 @@ impl<'a> SourceQuery<'a> {
         results
     }
 
-    fn find_fn_range(&self, node: Node) -> Range<usize> {
+    fn find_fn_range(node: Node) -> Range<usize> {
         // println!("node.kind()={:?}", node.kind());
         match node.kind() {
             "function_item" => {
@@ -79,7 +79,7 @@ impl<'a> SourceQuery<'a> {
                 range.start_byte..range.end_byte
             }
             _ => {
-                let r = self.find_fn_range(node.parent().unwrap());
+                let r = Self::find_fn_range(node.parent().unwrap());
                 // println!("*****");
                 r
             }
