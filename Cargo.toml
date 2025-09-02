@@ -21,5 +21,7 @@ cc="*"
 [dev-dependencies]
 assert_cmd = "2.0.16"
 env_logger = "0.11.8"
+insta = { version = "1.43.1", features = ["yaml"] }
+insta-cmd = "0.6.0"
 log = "0.4.27"
 rand = "0.9.0"

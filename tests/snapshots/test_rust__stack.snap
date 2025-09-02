@@ -1,0 +1,18 @@
+---
+source: tests/test_rust.rs
+info:
+  program: log2src
+  args:
+    - "-d"
+    - examples/stack.rs
+    - "-l"
+    - tests/resources/rust/stack.log
+    - "-s"
+    - "1"
+---
+success: true
+exit_code: 0
+----- stdout -----
+{"srcRef":{"sourcePath":"examples/stack.rs","lineNumber":15,"column":11,"name":"b","text":"\"Hello from b\"","vars":[]},"variables":{},"stack":[[{"sourcePath":"examples/stack.rs","lineNumber":11,"column":4,"name":"a","text":"b","vars":[]},{"sourcePath":"examples/stack.rs","lineNumber":7,"column":4,"name":"main","text":"a","vars":[]}]]}
+
+----- stderr -----
