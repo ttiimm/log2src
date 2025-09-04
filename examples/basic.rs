@@ -8,6 +8,7 @@ fn main() {
         foo(i);
     }
     bar(4);
+    baz(5, 6);
 }
 
 fn foo(i: u32) {
@@ -15,3 +16,5 @@ fn foo(i: u32) {
 }
 
 fn bar(j: u32) { debug!("Hello from bar j={j}"); }
+
+fn baz(i: u32, j: u32) { debug!("Hello from baz i={1} j={0}", j, i); }
