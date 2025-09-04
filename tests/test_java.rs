@@ -1,8 +1,6 @@
 use assert_cmd::prelude::*;
 use std::{path::Path, process::Command};
-
-mod utils;
-use utils::assert_source_ref_output;
+use insta_cmd::assert_cmd_snapshot;
 
 #[test]
 fn basic() -> Result<(), Box<dyn std::error::Error>> {
@@ -17,14 +15,7 @@ fn basic() -> Result<(), Box<dyn std::error::Error>> {
         .arg("-l")
         .arg(basic_log.to_str().expect("test case log exists"));
 
-    assert_source_ref_output(
-        &mut cmd,
-        r#"{"srcRef":{"sourcePath":"tests/java/Basic.java","lineNumber":18,"column":16,"name":"main","text":"\"Hello from main\"","vars":[]},"variables":{},"stack":[]}
-{"srcRef":{"sourcePath":"tests/java/Basic.java","lineNumber":25,"column":20,"name":"foo","text":"\"Hello from foo i=\\{i}\"","vars":["i"]},"variables":{"i":"0"},"stack":[]}
-{"srcRef":{"sourcePath":"tests/java/Basic.java","lineNumber":25,"column":20,"name":"foo","text":"\"Hello from foo i=\\{i}\"","vars":["i"]},"variables":{"i":"1"},"stack":[]}
-{"srcRef":{"sourcePath":"tests/java/Basic.java","lineNumber":25,"column":20,"name":"foo","text":"\"Hello from foo i=\\{i}\"","vars":["i"]},"variables":{"i":"2"},"stack":[]}
-"#,
-    )?;
+    assert_cmd_snapshot!(cmd);
     Ok(())
 }
 
@@ -40,14 +31,8 @@ fn basic_with_log() -> Result<(), Box<dyn std::error::Error>> {
         .arg(basic_source.to_str().expect("test case source code exists"))
         .arg("-l")
         .arg(basic_log.to_str().expect("test case log exists"));
-    assert_source_ref_output(
-        &mut cmd,
-        r#"{"srcRef":{"sourcePath":"tests/java/BasicWithLog.java","lineNumber":18,"column":13,"name":"main","text":"\"Hello from main\"","vars":[]},"variables":{},"stack":[]}
-{"srcRef":{"sourcePath":"tests/java/BasicWithLog.java","lineNumber":25,"column":17,"name":"foo","text":"\"Hello from foo i=\\{i}\"","vars":["i"]},"variables":{"i":"0"},"stack":[]}
-{"srcRef":{"sourcePath":"tests/java/BasicWithLog.java","lineNumber":25,"column":17,"name":"foo","text":"\"Hello from foo i=\\{i}\"","vars":["i"]},"variables":{"i":"1"},"stack":[]}
-{"srcRef":{"sourcePath":"tests/java/BasicWithLog.java","lineNumber":25,"column":17,"name":"foo","text":"\"Hello from foo i=\\{i}\"","vars":["i"]},"variables":{"i":"2"},"stack":[]}
-"#,
-    )?;
+
+    assert_cmd_snapshot!(cmd);
     Ok(())
 }
 
@@ -64,14 +49,7 @@ fn basic_with_upper() -> Result<(), Box<dyn std::error::Error>> {
         .arg("-l")
         .arg(basic_log.to_str().expect("test case log exists"));
 
-    assert_source_ref_output(
-        &mut cmd,
-        r#"{"srcRef":{"sourcePath":"tests/java/BasicWithUpper.java","lineNumber":18,"column":16,"name":"main","text":"\"Hello from main\"","vars":[]},"variables":{},"stack":[]}
-{"srcRef":{"sourcePath":"tests/java/BasicWithUpper.java","lineNumber":25,"column":20,"name":"foo","text":"\"Hello from foo i=\\{i}\"","vars":["i"]},"variables":{"i":"0"},"stack":[]}
-{"srcRef":{"sourcePath":"tests/java/BasicWithUpper.java","lineNumber":25,"column":20,"name":"foo","text":"\"Hello from foo i=\\{i}\"","vars":["i"]},"variables":{"i":"1"},"stack":[]}
-{"srcRef":{"sourcePath":"tests/java/BasicWithUpper.java","lineNumber":25,"column":20,"name":"foo","text":"\"Hello from foo i=\\{i}\"","vars":["i"]},"variables":{"i":"2"},"stack":[]}
-"#,
-    )?;
+    assert_cmd_snapshot!(cmd);
     Ok(())
 }
 
@@ -90,13 +68,6 @@ fn basic_with_log_format() -> Result<(), Box<dyn std::error::Error>> {
         .arg("-f")
         .arg("^(?<timestamp>\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}) (?<level>\\w+) (?<file>[\\w$.]+):(?<line>\\d+) (?<method>[\\w$]+): (?<body>.*)$");
 
-    assert_source_ref_output(
-        &mut cmd,
-        r#"{"srcRef":{"sourcePath":"tests/java/BasicWithCustom.java","lineNumber":15,"column":16,"name":"main","text":"\"Hello from main\"","vars":[]},"variables":{},"stack":[]}
-{"srcRef":{"sourcePath":"tests/java/BasicWithCustom.java","lineNumber":22,"column":20,"name":"foo","text":"\"Hello from foo i=\\{i}\"","vars":["i"]},"variables":{"i":"0"},"stack":[]}
-{"srcRef":{"sourcePath":"tests/java/BasicWithCustom.java","lineNumber":22,"column":20,"name":"foo","text":"\"Hello from foo i=\\{i}\"","vars":["i"]},"variables":{"i":"1"},"stack":[]}
-{"srcRef":{"sourcePath":"tests/java/BasicWithCustom.java","lineNumber":22,"column":20,"name":"foo","text":"\"Hello from foo i=\\{i}\"","vars":["i"]},"variables":{"i":"2"},"stack":[]}
-"#,
-    )?;
+    assert_cmd_snapshot!(cmd);
     Ok(())
 }
