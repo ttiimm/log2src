@@ -21,7 +21,9 @@ fn basic() -> Result<(), Box<dyn std::error::Error>> {
     cmd.arg("-d")
         .arg(source.to_str().expect("test case path is valid"))
         .arg("-l")
-        .arg(log.to_str().expect("test case log path is valid"));
+        .arg(log.to_str().expect("test case log path is valid"))
+        .arg("-f")
+        .arg(r#"\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z \w+ \w+\]\s+(?<body>.*)"#);
 
     let snapshot_name = format!("basic_{}", get_platform_suffix());
     assert_cmd_snapshot!(snapshot_name, cmd);
@@ -41,6 +43,8 @@ fn stack() -> Result<(), Box<dyn std::error::Error>> {
         .arg(source.to_str().expect("test case path is valid"))
         .arg("-l")
         .arg(log.to_str().expect("test case log path is valid"))
+        .arg("-f")
+        .arg(r#"\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z \w+ \w+\]\s+(?<body>.*)"#)
         .arg("-s")
         .arg("1");
 

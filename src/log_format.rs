@@ -8,11 +8,11 @@ pub struct LogFormat {
 }
 
 impl LogFormat {
-    pub fn new(format: Option<String>) -> Option<LogFormat> {
-        format.map(|fmt| LogFormat {
+    pub fn new(format: String) -> LogFormat {
+        LogFormat {
             // TODO handle more gracefully if wrong format
-            regex: Regex::new(&fmt).unwrap(),
-        })
+            regex: Regex::new(&format).unwrap(),
+        }
     }
 
     pub fn has_src_hint(self: LogFormat) -> bool {
@@ -20,7 +20,7 @@ impl LogFormat {
         flatten.any(|name| name == "line") && flatten.any(|name| name == "file")
     }
 
-    pub fn build_src_filter(&self, log_refs: &Vec<LogRef>) -> Vec<String> {
+    pub fn build_src_filter(&self, log_refs: &Vec<LogRef>) -> Option<Vec<String>> {
         let mut results = Vec::new();
         for log_ref in log_refs {
             let captures = self.captures(log_ref.line);
@@ -28,7 +28,7 @@ impl LogFormat {
                 results.push(file_match.as_str().to_string());
             }
         }
-        results
+        (!results.is_empty()).then_some(results)
     }
 
     pub fn captures<'a>(&self, line: &'a str) -> Captures<'a> {

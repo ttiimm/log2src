@@ -21,7 +21,9 @@ fn basic() -> Result<(), Box<dyn std::error::Error>> {
     cmd.arg("-d")
         .arg(basic_source.to_str().expect("test case source code exists"))
         .arg("-l")
-        .arg(basic_log.to_str().expect("test case log exists"));
+        .arg(basic_log.to_str().expect("test case log exists"))
+        .arg("-f")
+        .arg(r#"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \w+ \w+ \w+: (?<body>.*)"#);
 
     let snapshot_name = format!("basic_{}", get_platform_suffix());
     assert_cmd_snapshot!(snapshot_name, cmd);
@@ -39,7 +41,9 @@ fn basic_with_log() -> Result<(), Box<dyn std::error::Error>> {
     cmd.arg("-d")
         .arg(basic_source.to_str().expect("test case source code exists"))
         .arg("-l")
-        .arg(basic_log.to_str().expect("test case log exists"));
+        .arg(basic_log.to_str().expect("test case log exists"))
+        .arg("-f")
+        .arg(r#"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \w+ \w+ \w+: (?<body>.*)"#);
 
     let snapshot_name = format!("basic_with_log_{}", get_platform_suffix());
     assert_cmd_snapshot!(snapshot_name, cmd);
@@ -57,7 +61,9 @@ fn basic_with_upper() -> Result<(), Box<dyn std::error::Error>> {
     cmd.arg("-d")
         .arg(basic_source.to_str().expect("test case source code exists"))
         .arg("-l")
-        .arg(basic_log.to_str().expect("test case log exists"));
+        .arg(basic_log.to_str().expect("test case log exists"))
+        .arg("-f")
+        .arg(r#"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \w+ \w+ \w+: (?<body>.*)"#);
 
     let snapshot_name = format!("basic_with_upper_{}", get_platform_suffix());
     assert_cmd_snapshot!(snapshot_name, cmd);

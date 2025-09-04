@@ -360,7 +360,7 @@ dependencies = [
  "serde_json",
  "tree-sitter",
  "tree-sitter-java",
- "tree-sitter-rust",
+ "tree-sitter-rust-orchard",
 ]
 
 [[package]]
@@ -637,10 +637,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c4013970217383f67b18aef68f6fb2e8d409bc5755227092d32efb0422ba24b8"
 
 [[package]]
-name = "tree-sitter-rust"
-version = "0.24.0"
+name = "tree-sitter-rust-orchard"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4b9b18034c684a2420722be8b2a91c9c44f2546b631c039edf575ccba8c61be1"
+checksum = "d4c93e825bc354d93bad272d5bb79bc07ce6324d59bbde01fc3829eabfd8e43f"
 dependencies = [
  "cc",
  "tree-sitter-language",

@@ -85,6 +85,7 @@ fn nope(i: u32) {
             name: String::from("main"),
             text: String::from("foo"),
             matcher: star_regex,
+            args: vec![],
             vars: vec![],
         };
         let star_regex = Regex::new(".*").unwrap();
@@ -95,6 +96,7 @@ fn nope(i: u32) {
             name: String::from("foo"),
             text: String::from("nope"),
             matcher: star_regex,
+            args: vec![],
             vars: vec![],
         };
         assert_eq!(
