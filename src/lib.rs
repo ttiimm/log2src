@@ -1,7 +1,7 @@
 #[cfg(test)]
 use regex::Regex;
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 #[cfg(test)]
 use std::path::PathBuf;
 #[cfg(test)]
@@ -92,7 +92,7 @@ pub struct LogMapping<'a> {
     pub log_ref: LogRef<'a>,
     #[serde(rename(serialize = "srcRef"))]
     pub src_ref: Option<SourceRef>,
-    pub variables: HashMap<String, String>,
+    pub variables: BTreeMap<String, String>,
     pub stack: Vec<Vec<SourceRef>>,
 }
 
@@ -168,8 +168,8 @@ pub fn lookup_source<'a>(
 pub fn extract_variables<'a>(
     log_ref: LogRef<'a>,
     src_ref: &'a SourceRef,
-) -> HashMap<String, String> {
-    let mut variables = HashMap::new();
+) -> BTreeMap<String, String> {
+    let mut variables = BTreeMap::new();
     let line = match log_ref.details {
         Some(details) => details.body.unwrap_or(log_ref.line),
         None => log_ref.line,
@@ -235,7 +235,7 @@ pub fn do_mappings<'a>(
             } else {
                 link_to_source(&log_ref, &src_logs)
             };
-            let variables = src_ref.as_ref().map_or(HashMap::new(), move |src_ref| {
+            let variables = src_ref.as_ref().map_or(BTreeMap::new(), move |src_ref| {
                 extract_variables(log_ref, src_ref)
             });
             let stack = src_ref.as_ref().map_or(Vec::new(), |src_ref| {
