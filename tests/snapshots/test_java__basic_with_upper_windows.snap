@@ -1,0 +1,19 @@
+---
+source: tests\test_java.rs
+info:
+  program: log2src
+  args:
+    - "-d"
+    - tests\java\BasicWithUpper.java
+    - "-l"
+    - tests\resources\java\basic.log
+---
+success: true
+exit_code: 0
+----- stdout -----
+{"srcRef":{"sourcePath":"tests\\java\\BasicWithUpper.java","lineNumber":18,"column":16,"name":"main","text":"\"Hello from main\"","vars":[]},"variables":{},"stack":[]}
+{"srcRef":{"sourcePath":"tests\\java\\BasicWithUpper.java","lineNumber":25,"column":20,"name":"foo","text":"\"Hello from foo i=\\{i}\"","vars":["i"]},"variables":{"i":"0"},"stack":[]}
+{"srcRef":{"sourcePath":"tests\\java\\BasicWithUpper.java","lineNumber":25,"column":20,"name":"foo","text":"\"Hello from foo i=\\{i}\"","vars":["i"]},"variables":{"i":"1"},"stack":[]}
+{"srcRef":{"sourcePath":"tests\\java\\BasicWithUpper.java","lineNumber":25,"column":20,"name":"foo","text":"\"Hello from foo i=\\{i}\"","vars":["i"]},"variables":{"i":"2"},"stack":[]}
+
+----- stderr -----
