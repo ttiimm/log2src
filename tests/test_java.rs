@@ -2,6 +2,14 @@ use assert_cmd::prelude::*;
 use std::{path::Path, process::Command};
 use insta_cmd::assert_cmd_snapshot;
 
+fn get_platform_suffix() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "windows"
+    } else {
+        "unix"
+    }
+}
+
 #[test]
 fn basic() -> Result<(), Box<dyn std::error::Error>> {
     let mut cmd = Command::cargo_bin("log2src")?;
@@ -15,7 +23,8 @@ fn basic() -> Result<(), Box<dyn std::error::Error>> {
         .arg("-l")
         .arg(basic_log.to_str().expect("test case log exists"));
 
-    assert_cmd_snapshot!(cmd);
+    let snapshot_name = format!("basic_{}", get_platform_suffix());
+    assert_cmd_snapshot!(snapshot_name, cmd);
     Ok(())
 }
 
@@ -32,7 +41,8 @@ fn basic_with_log() -> Result<(), Box<dyn std::error::Error>> {
         .arg("-l")
         .arg(basic_log.to_str().expect("test case log exists"));
 
-    assert_cmd_snapshot!(cmd);
+    let snapshot_name = format!("basic_with_log_{}", get_platform_suffix());
+    assert_cmd_snapshot!(snapshot_name, cmd);
     Ok(())
 }
 
@@ -49,7 +59,8 @@ fn basic_with_upper() -> Result<(), Box<dyn std::error::Error>> {
         .arg("-l")
         .arg(basic_log.to_str().expect("test case log exists"));
 
-    assert_cmd_snapshot!(cmd);
+    let snapshot_name = format!("basic_with_upper_{}", get_platform_suffix());
+    assert_cmd_snapshot!(snapshot_name, cmd);
     Ok(())
 }
 
@@ -68,6 +79,7 @@ fn basic_with_log_format() -> Result<(), Box<dyn std::error::Error>> {
         .arg("-f")
         .arg("^(?<timestamp>\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}) (?<level>\\w+) (?<file>[\\w$.]+):(?<line>\\d+) (?<method>[\\w$]+): (?<body>.*)$");
 
-    assert_cmd_snapshot!(cmd);
+    let snapshot_name = format!("basic_with_log_format_{}", get_platform_suffix());
+    assert_cmd_snapshot!(snapshot_name, cmd);
     Ok(())
 }
