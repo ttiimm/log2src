@@ -2,3 +2,4 @@
 [2024-05-09T19:58:53Z DEBUG basic] Hello from foo i=0
 [2024-05-09T19:58:53Z DEBUG basic] Hello from foo i=1
 [2024-05-09T19:58:53Z DEBUG basic] Hello from foo i=2
+[2024-05-09T19:58:53Z DEBUG basic] Hello from bar j=4
