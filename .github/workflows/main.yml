@@ -12,8 +12,8 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build-rust:
-
+  build-and-test:
+    name: Build & Test
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
@@ -56,6 +56,49 @@ jobs:
       run: cargo build --verbose
     - name: Run tests
       run: cargo test --verbose
+
+  build-release:
+    name: Build Release
+    needs: [build-and-test]
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      # ensures each build runs even if one fails
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact_name: log2src
+            asset_name: log2src-${{ github.ref_name }}-linux-x64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact_name: log2src
+            asset_name: log2src-${{ github.ref_name }}-macos-x64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact_name: log2src
+            asset_name: log2src-${{ github.ref_name }}-macos-arm64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact_name: log2src.exe
+            asset_name: log2src-${{ github.ref_name }}-windows-x64
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: ${{ matrix.target }}
+        override: true
+
+    - name: Setup cross-compilation for ARM64
+      if: matrix.target == 'aarch64-apple-darwin'
+      run: rustup target add aarch64-apple-darwin
+
     - name: Build release binary
       run: cargo build --release --target ${{ matrix.target }}
 
@@ -82,7 +125,8 @@ jobs:
 
   vscode-extension:
     name: Build VS Code Extensions
-    needs: [build-rust]
+    needs: [build-release]
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
 
     steps:
@@ -135,9 +179,9 @@ jobs:
         working-directory: editors/code
         run: |
           REF_NAME="${{ github.ref_name }}"
-          echo "EXT_VERSION=${REF_NAME#v}" >> $GITHUB_ENV
+          VERSION=${REF_NAME#v}
           # Update version in package.json
-          jq '.version = "'${REF_NAME#v}'"' package.json > package.json.new
+          jq '.version = "'$VERSION'"' package.json > package.json.new
           mv package.json.new package.json
           pnpm vsce package --no-dependencies
       
@@ -145,13 +189,13 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v4
         with:
-          name: log2src-ext-${{ env.EXT_VERSION }}.vsix.zip
-          path: editors/code/log2src-ext-${{ env.EXT_VERSION }}.vsix
+          name: log2src-ext-${{ github.ref_name }}.vsix
+          path: editors/code/log2src-ext-*.vsix
           if-no-files-found: error
 
   release:
     name: Create Release
-    needs: [build-rust, vscode-extension]
+    needs: [build-release, vscode-extension]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
 
