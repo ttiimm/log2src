@@ -1,9 +1,9 @@
+use crate::{CodeSource, QueryResult, SourceLanguage};
 use core::fmt;
-use std::ops::Deref;
 use regex::{Captures, Regex};
 use serde::Serialize;
+use std::ops::Deref;
 use std::sync::LazyLock;
-use crate::{CodeSource, QueryResult, SourceLanguage};
 
 #[derive(Clone, Debug, Serialize, Eq, PartialEq)]
 pub enum FormatArgument {
@@ -81,8 +81,9 @@ impl PartialEq for SourceRef {
     }
 }
 
-static RUST_PLACEHOLDER_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"\{(?:([a-zA-Z_][a-zA-Z0-9_.]*)|(\d+))?\s*(?::[^}]*)?}"#).unwrap());
+static RUST_PLACEHOLDER_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"\{(?:([a-zA-Z_][a-zA-Z0-9_.]*)|(\d+))?\s*(?::[^}]*)?}"#).unwrap()
+});
 
 static JAVA_PLACEHOLDER_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"\\?\{.*}"#).unwrap());
@@ -156,10 +157,7 @@ mod tests {
     #[test]
     fn test_build_matcher_positional() {
         let (matcher, args) = build_matcher("{2}", SourceLanguage::Rust);
-        assert_eq!(
-            Regex::new(r#"^(.+)$"#).unwrap().as_str(),
-            matcher.as_str()
-        );
+        assert_eq!(Regex::new(r#"^(.+)$"#).unwrap().as_str(), matcher.as_str());
         assert_eq!(args[0], FormatArgument::Positional(2));
     }
 }
