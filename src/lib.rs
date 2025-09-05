@@ -41,10 +41,12 @@ impl Default for Filter {
 enum SourceLanguage {
     Rust,
     Java,
+    Cpp,
 }
 
 const IDENTS_RS: &[&str] = &["debug", "info", "warn"];
 const IDENTS_JAVA: &[&str] = &["logger", "log", "fine", "debug", "info", "warn", "trace"];
+const IDENTS_CPP: &[&str] = &["debug", "info", "warn", "trace"];
 
 impl SourceLanguage {
     fn get_query(&self) -> &str {
@@ -75,6 +77,17 @@ impl SourceLanguage {
                     )
                 "#
             }
+            SourceLanguage::Cpp => {
+                r#"
+                    (compound_statement
+                        (expression_statement
+                            (call_expression
+                                arguments: (argument_list (string_literal) @arguments)
+                            )
+                        )
+                    )
+                "#
+            }
         }
     }
 
@@ -82,6 +95,7 @@ impl SourceLanguage {
         match self {
             SourceLanguage::Rust => IDENTS_RS,
             SourceLanguage::Java => IDENTS_JAVA,
+            SourceLanguage::Cpp => IDENTS_CPP,
         }
     }
 }
@@ -509,6 +523,25 @@ fn namedarg(name: &str) {
             vars.get("this").map(|val| val.as_str()),
             Some("JvmPauseMonitor-n0")
         );
+    }
+
+    const CPP_SOURCE: &str = r#"
+    #include <stdio.h>
+
+    int main(int argc, char* argv[]) {
+        printf("Hello, %s!", argv[1]);
+    }
+    "#;
+
+    #[test]
+    fn test_basic_cpp() {
+        let log_ref = LogRef::new("Hello, Steve!");
+        let code = CodeSource::new(PathBuf::from("in-mem.cc"), Box::new(CPP_SOURCE.as_bytes()));
+        let src_refs = extract_logging(&mut [code]);
+        assert_eq!(src_refs.len(), 1);
+        let vars = extract_variables(log_ref, &src_refs[0]);
+        assert_eq!(vars.len(), 1);
+        assert_eq!(vars.get("argv[1]").map(|val| val.as_str()), Some("Steve"));
     }
 
     #[test]
