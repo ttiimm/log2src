@@ -1,17 +1,12 @@
 use assert_cmd::prelude::*;
-use std::{path::Path, process::Command};
 use insta_cmd::assert_cmd_snapshot;
+use std::{path::Path, process::Command};
 
-fn get_platform_suffix() -> &'static str {
-    if cfg!(target_os = "windows") {
-        "windows"
-    } else {
-        "unix"
-    }
-}
+mod common_settings;
 
 #[test]
 fn basic() -> Result<(), Box<dyn std::error::Error>> {
+    let _guard = common_settings::enable_filters();
     let mut cmd = Command::cargo_bin("log2src")?;
     let basic_source = Path::new("tests").join("java").join("Basic.java");
     let basic_log = Path::new("tests")
@@ -21,15 +16,17 @@ fn basic() -> Result<(), Box<dyn std::error::Error>> {
     cmd.arg("-d")
         .arg(basic_source.to_str().expect("test case source code exists"))
         .arg("-l")
-        .arg(basic_log.to_str().expect("test case log exists"));
+        .arg(basic_log.to_str().expect("test case log exists"))
+        .arg("-f")
+        .arg(r#"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \w+ \w+ \w+: (?<body>.*)"#);
 
-    let snapshot_name = format!("basic_{}", get_platform_suffix());
-    assert_cmd_snapshot!(snapshot_name, cmd);
+    assert_cmd_snapshot!(cmd);
     Ok(())
 }
 
 #[test]
 fn basic_with_log() -> Result<(), Box<dyn std::error::Error>> {
+    let _guard = common_settings::enable_filters();
     let mut cmd = Command::cargo_bin("log2src")?;
     let basic_source = Path::new("tests").join("java").join("BasicWithLog.java");
     let basic_log = Path::new("tests")
@@ -39,15 +36,17 @@ fn basic_with_log() -> Result<(), Box<dyn std::error::Error>> {
     cmd.arg("-d")
         .arg(basic_source.to_str().expect("test case source code exists"))
         .arg("-l")
-        .arg(basic_log.to_str().expect("test case log exists"));
+        .arg(basic_log.to_str().expect("test case log exists"))
+        .arg("-f")
+        .arg(r#"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \w+ \w+ \w+: (?<body>.*)"#);
 
-    let snapshot_name = format!("basic_with_log_{}", get_platform_suffix());
-    assert_cmd_snapshot!(snapshot_name, cmd);
+    assert_cmd_snapshot!(cmd);
     Ok(())
 }
 
 #[test]
 fn basic_with_upper() -> Result<(), Box<dyn std::error::Error>> {
+    let _guard = common_settings::enable_filters();
     let mut cmd = Command::cargo_bin("log2src")?;
     let basic_source = Path::new("tests").join("java").join("BasicWithUpper.java");
     let basic_log = Path::new("tests")
@@ -57,15 +56,17 @@ fn basic_with_upper() -> Result<(), Box<dyn std::error::Error>> {
     cmd.arg("-d")
         .arg(basic_source.to_str().expect("test case source code exists"))
         .arg("-l")
-        .arg(basic_log.to_str().expect("test case log exists"));
+        .arg(basic_log.to_str().expect("test case log exists"))
+        .arg("-f")
+        .arg(r#"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \w+ \w+ \w+: (?<body>.*)"#);
 
-    let snapshot_name = format!("basic_with_upper_{}", get_platform_suffix());
-    assert_cmd_snapshot!(snapshot_name, cmd);
+    assert_cmd_snapshot!(cmd);
     Ok(())
 }
 
 #[test]
 fn basic_with_log_format() -> Result<(), Box<dyn std::error::Error>> {
+    let _guard = common_settings::enable_filters();
     let mut cmd = Command::cargo_bin("log2src")?;
     let source = Path::new("tests").join("java").join("BasicWithCustom.java");
     let log = Path::new("tests")
@@ -79,7 +80,6 @@ fn basic_with_log_format() -> Result<(), Box<dyn std::error::Error>> {
         .arg("-f")
         .arg("^(?<timestamp>\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}) (?<level>\\w+) (?<file>[\\w$.]+):(?<line>\\d+) (?<method>[\\w$]+): (?<body>.*)$");
 
-    let snapshot_name = format!("basic_with_log_format_{}", get_platform_suffix());
-    assert_cmd_snapshot!(snapshot_name, cmd);
+    assert_cmd_snapshot!(cmd);
     Ok(())
 }

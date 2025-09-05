@@ -1,7 +1,7 @@
 #[cfg(test)]
 use regex::Regex;
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 #[cfg(test)]
 use std::path::PathBuf;
 #[cfg(test)]
@@ -14,6 +14,7 @@ mod source_query;
 mod source_ref;
 
 // TODO: doesn't need to be exposed if we can clean up the arguments to do_mapping
+use crate::source_ref::FormatArgument;
 pub use call_graph::CallGraph;
 use call_graph::Edge;
 pub use code_source::CodeSource;
@@ -36,7 +37,7 @@ impl Default for Filter {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 enum SourceLanguage {
     Rust,
     Java,
@@ -51,10 +52,10 @@ impl SourceLanguage {
             SourceLanguage::Rust => {
                 // XXX: assumes it's a debug macro
                 r#"
-                    (macro_invocation macro: (identifier) @macro-name
+                    (macro_invocation macro: (identifier)
                         (token_tree
-                            (string_literal) @log (identifier)* @arguments
-                        ) (#eq? @macro-name "debug")
+                            (string_literal) @log
+                        )
                     )
                 "#
             }
@@ -91,7 +92,7 @@ pub struct LogMapping<'a> {
     pub log_ref: LogRef<'a>,
     #[serde(rename(serialize = "srcRef"))]
     pub src_ref: Option<SourceRef>,
-    pub variables: HashMap<String, String>,
+    pub variables: BTreeMap<String, String>,
     pub stack: Vec<Vec<SourceRef>>,
 }
 
@@ -99,6 +100,16 @@ pub struct LogMapping<'a> {
 pub struct LogRef<'a> {
     pub line: &'a str,
     details: Option<LogDetails<'a>>,
+}
+
+impl<'a> LogRef<'a> {
+    pub fn body(self) -> &'a str {
+        if let Some(LogDetails { body: Some(s), .. }) = self.details {
+            s
+        } else {
+            self.line
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -133,7 +144,7 @@ impl<'a> LogRef<'a> {
 pub fn link_to_source<'a>(log_ref: &LogRef, src_refs: &'a [SourceRef]) -> Option<&'a SourceRef> {
     src_refs
         .iter()
-        .find(|&source_ref| source_ref.captures(log_ref.line).is_some())
+        .find(|&source_ref| source_ref.captures(log_ref.body()).is_some())
 }
 
 pub fn lookup_source<'a>(
@@ -141,7 +152,7 @@ pub fn lookup_source<'a>(
     log_format: &LogFormat,
     src_refs: &'a [SourceRef],
 ) -> Option<&'a SourceRef> {
-    let captures = log_format.captures(log_ref.line);
+    let captures = log_format.captures(log_ref.body());
     let file_name = captures.name("file").map_or("", |m| m.as_str());
     let line_no: usize = captures
         .name("line")
@@ -157,20 +168,27 @@ pub fn lookup_source<'a>(
 pub fn extract_variables<'a>(
     log_ref: LogRef<'a>,
     src_ref: &'a SourceRef,
-) -> HashMap<String, String> {
-    let mut variables = HashMap::new();
+) -> BTreeMap<String, String> {
+    let mut variables = BTreeMap::new();
     let line = match log_ref.details {
         Some(details) => details.body.unwrap_or(log_ref.line),
         None => log_ref.line,
     };
-    if !src_ref.vars.is_empty() {
-        if let Some(captures) = src_ref.captures(line) {
-            for i in 0..captures.len() - 1 {
-                variables.insert(
-                    src_ref.vars[i].to_string(),
-                    captures.get(i + 1).unwrap().as_str().to_string(),
-                );
-            }
+    if let Some(captures) = src_ref.captures(line) {
+        for (index, (cap, placeholder)) in
+            std::iter::zip(captures.iter().skip(1), src_ref.args.iter()).enumerate()
+        {
+            let key = match placeholder {
+                FormatArgument::Named(name) => name.clone(),
+                FormatArgument::Positional(pos) => src_ref
+                    .vars
+                    .get(*pos)
+                    .map(|s| s.as_str())
+                    .unwrap_or("<unknown>")
+                    .to_string(),
+                FormatArgument::Placeholder => src_ref.vars[index].to_string(),
+            };
+            variables.insert(key, cap.unwrap().as_str().to_string());
         }
     }
 
@@ -178,7 +196,7 @@ pub fn extract_variables<'a>(
 }
 
 pub fn filter_log(buffer: &str, filter: Filter, log_format: Option<String>) -> Vec<LogRef> {
-    let log_format = LogFormat::new(log_format);
+    let log_format = log_format.map(LogFormat::new);
     buffer
         .lines()
         .enumerate()
@@ -200,8 +218,10 @@ pub fn do_mappings<'a>(
     sources: &str,
     log_format: Option<String>,
 ) -> Vec<LogMapping<'a>> {
-    let log_format = LogFormat::new(log_format);
-    let source_filter = log_format.clone().map(|f| f.build_src_filter(&log_refs));
+    let log_format = log_format.map(LogFormat::new);
+    let source_filter = log_format
+        .clone()
+        .and_then(|f| f.build_src_filter(&log_refs));
     let mut sources = CodeSource::find_code(sources, source_filter);
     let src_logs = extract_logging(&mut sources);
     let call_graph = CallGraph::new(&mut sources);
@@ -215,7 +235,7 @@ pub fn do_mappings<'a>(
             } else {
                 link_to_source(&log_ref, &src_logs)
             };
-            let variables = src_ref.as_ref().map_or(HashMap::new(), move |src_ref| {
+            let variables = src_ref.as_ref().map_or(BTreeMap::new(), move |src_ref| {
                 extract_variables(log_ref, src_ref)
             });
             let stack = src_ref.as_ref().map_or(Vec::new(), |src_ref| {
@@ -302,7 +322,7 @@ pub fn extract_logging(sources: &mut [CodeSource]) -> Vec<SourceRef> {
                     {
                         let length = matched.len() - 1;
                         let prior_result: &mut SourceRef = matched.get_mut(length).unwrap();
-                        prior_result.vars.push(text);
+                        prior_result.vars.push(text.trim().to_string());
                     }
                 }
                 _ => println!("ignoring {}", result.kind),
@@ -379,8 +399,12 @@ fn foo(i: u32) {
     nope(i);
 }
 
-fn nope(i: u32) {
-    debug!("this won't match i={}", i);
+fn nope(i: u32, j: i32) {
+    debug!("this won't match i={}; j={}", i, j);
+}
+
+fn namedarg(name: &str) {
+    debug!("Hello, {name}!");
 }
     "#;
 
@@ -388,7 +412,7 @@ fn nope(i: u32) {
     fn test_extract_logging() {
         let code = CodeSource::new(PathBuf::from("in-mem.rs"), Box::new(TEST_SOURCE.as_bytes()));
         let src_refs = extract_logging(&mut [code]);
-        assert_eq!(src_refs.len(), 2);
+        assert_eq!(src_refs.len(), 3);
         let first = &src_refs[0];
         assert_eq!(first.line_no, 7);
         assert_eq!(first.column, 11);
@@ -400,39 +424,56 @@ fn nope(i: u32) {
         assert_eq!(second.line_no, 18);
         assert_eq!(second.column, 11);
         assert_eq!(second.name, "nope");
-        assert_eq!(second.text, "\"this won't match i={}\"");
+        assert_eq!(second.text, "\"this won't match i={}; j={}\"");
         assert_eq!(second.vars[0], "i");
     }
 
     #[test]
     fn test_link_to_source() {
-        let log_ref =
-            LogRef::new("[2024-02-15T03:46:44Z DEBUG stack] you're only as funky as your last cut");
+        let lf = LogFormat::new(
+            r#"^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z \w+ \w+\]\s+(?<body>.*)"#.to_string(),
+        );
+        let log_ref = LogRef::with_format(
+            "[2024-05-09T19:58:53Z DEBUG main] you're only as funky as your last cut",
+            lf,
+        );
         let code = CodeSource::new(PathBuf::from("in-mem.rs"), Box::new(TEST_SOURCE.as_bytes()));
         let src_refs = extract_logging(&mut [code]);
-        assert_eq!(src_refs.len(), 2);
+        assert_eq!(src_refs.len(), 3);
         let result = link_to_source(&log_ref, &src_refs);
         assert!(ptr::eq(result.unwrap(), &src_refs[0]));
     }
 
     #[test]
     fn test_link_to_source_no_matches() {
-        let log_ref = LogRef::new("[2024-02-26T03:44:40Z DEBUG stack] nope!");
+        let log_ref = LogRef::new("nope!");
         let code = CodeSource::new(PathBuf::from("in-mem.rs"), Box::new(TEST_SOURCE.as_bytes()));
         let src_refs = extract_logging(&mut [code]);
-        assert_eq!(src_refs.len(), 2);
+        assert_eq!(src_refs.len(), 3);
         let result = link_to_source(&log_ref, &src_refs);
         assert!(result.is_none());
     }
 
     #[test]
     fn test_extract_variables() {
-        let log_ref = LogRef::new("[2024-02-15T03:46:44Z DEBUG nope] this won't match i=1");
+        let log_ref = LogRef::new("this won't match i=1; j=2");
         let code = CodeSource::new(PathBuf::from("in-mem.rs"), Box::new(TEST_SOURCE.as_bytes()));
         let src_refs = extract_logging(&mut [code]);
-        assert_eq!(src_refs.len(), 2);
+        assert_eq!(src_refs.len(), 3);
         let vars = extract_variables(log_ref, &src_refs[1]);
+        assert_eq!(vars.len(), 2);
         assert_eq!(vars.get("i").map(|val| val.as_str()), Some("1"));
+        assert_eq!(vars.get("j").map(|val| val.as_str()), Some("2"));
+    }
+
+    #[test]
+    fn test_extract_named() {
+        let log_ref = LogRef::new("Hello, Tim!");
+        let code = CodeSource::new(PathBuf::from("in-mem.rs"), Box::new(TEST_SOURCE.as_bytes()));
+        let src_refs = extract_logging(&mut [code]);
+        assert_eq!(src_refs.len(), 3);
+        let vars = extract_variables(log_ref, &src_refs[2]);
+        assert_eq!(vars.get("name").map(|val| val.as_str()), Some("Tim"));
     }
 
     const TEST_PUNC_SRC: &str = r#"""
@@ -452,8 +493,7 @@ fn nope(i: u32) {
         let regex = String::from(
             r"^(?<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) (?<level>\w+)\s+ (?<file>[\w$.]+):(?<line>\d+) - (?<body>.*)$",
         );
-        let log_format = Some(regex);
-        let log_format = LogFormat::new(log_format).unwrap();
+        let log_format = LogFormat::new(regex);
         let log_ref = LogRef::with_format(
             "2025-04-10 22:12:52 INFO  JvmPauseMonitor:146 - JvmPauseMonitor-n0: Started",
             log_format,
@@ -487,6 +527,7 @@ fn nope(i: u32) {
             name: String::from("main"),
             text: String::from("foo"),
             matcher: star_regex,
+            args: vec![],
             vars: vec![],
         };
         let star_regex = Regex::new(".*").unwrap();
@@ -497,6 +538,7 @@ fn nope(i: u32) {
             name: String::from("foo"),
             text: String::from("nope"),
             matcher: star_regex,
+            args: vec![],
             vars: vec![],
         };
         assert_eq!(paths, vec![vec![foo_2_nope, main_2_foo]])

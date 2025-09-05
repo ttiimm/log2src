@@ -1,0 +1,20 @@
+---
+source: tests/test_rust.rs
+info:
+  program: log2src
+  args:
+    - "-d"
+    - examples/stack.rs
+    - "-l"
+    - tests/resources/rust/stack.log
+    - "-f"
+    - "\\[\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z \\w+ \\w+\\]\\s+(?<body>.*)"
+    - "-s"
+    - "1"
+---
+success: true
+exit_code: 0
+----- stdout -----
+{"srcRef":{"sourcePath":"{example_dir}/stack.rs","lineNumber":15,"column":11,"name":"b","text":"\"Hello from b\"","args":[],"vars":[]},"variables":{},"stack":[[{"sourcePath":"{example_dir}/stack.rs","lineNumber":11,"column":4,"name":"a","text":"b","args":[],"vars":[]},{"sourcePath":"{example_dir}/stack.rs","lineNumber":7,"column":4,"name":"main","text":"a","args":[],"vars":[]}]]}
+
+----- stderr -----

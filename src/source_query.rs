@@ -1,7 +1,7 @@
 use std::ops::Range;
 
 use tree_sitter::{
-    Language, Node, Parser, Query, QueryCursor, Range as TSRange, StreamingIterator, Tree,
+    Language, Node, Parser, Point, Query, QueryCursor, Range as TSRange, StreamingIterator, Tree,
 };
 
 use crate::CodeSource;
@@ -28,7 +28,6 @@ impl<'a> SourceQuery<'a> {
             .unwrap_or_else(|_| panic!("Error loading {:?} grammar", language));
         let source = code.buffer.as_str();
         let tree = parser.parse(source, None).expect("source is parsable");
-        // println!("{:?}", tree.root_node().to_sexp());
         SourceQuery {
             source,
             tree,
@@ -44,14 +43,33 @@ impl<'a> SourceQuery<'a> {
         let matches = cursor.matches(&query, self.tree.root_node(), self.source.as_bytes());
         matches.for_each(|m| {
             for capture in m.captures {
-                if filter_idx.is_none()
-                    || (filter_idx.is_some() && filter_idx.unwrap() == capture.index)
-                {
+                let mut child = capture.node;
+                let mut arg_start: Option<(usize, Point)> = None;
+
+                if filter_idx.is_none() || filter_idx.is_some_and(|f| f == capture.index) {
                     results.push(QueryResult {
-                        kind: String::from(capture.node.kind()),
+                        kind: capture.node.kind().to_string(),
                         range: capture.node.range(),
-                        name_range: Self::find_fn_range(capture.node),
+                        name_range: Self::find_fn_range(child),
                     });
+                }
+                while let Some(next_child) = child.next_sibling() {
+                    if matches!(next_child.kind(), "," | ")") {
+                        if let Some(start) = arg_start {
+                            results.push(QueryResult {
+                                kind: "identifier".to_string(),
+                                range: TSRange {
+                                    start_byte: start.0,
+                                    start_point: start.1,
+                                    end_byte: next_child.start_byte(),
+                                    end_point: next_child.start_position(),
+                                },
+                                name_range: Self::find_fn_range(child),
+                            });
+                        }
+                        arg_start = Some((next_child.end_byte(), next_child.end_position()));
+                    }
+                    child = next_child;
                 }
             }
         });
@@ -76,6 +94,10 @@ impl<'a> SourceQuery<'a> {
             }
             "class_declaration" => {
                 let range = node.child_by_field_name("name").unwrap().range();
+                range.start_byte..range.end_byte
+            }
+            "declaration_list" | "static_item" | "attribute_item" => {
+                let range = node.range();
                 range.start_byte..range.end_byte
             }
             _ => {
