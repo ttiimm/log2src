@@ -21,6 +21,7 @@ impl CodeSource {
             Some(ext) => match ext.to_str().unwrap() {
                 "rs" => SourceLanguage::Rust,
                 "java" => SourceLanguage::Java,
+                "h"|"hh"|"hpp"|"cc"|"cpp" => SourceLanguage::Cpp,
                 _ => panic!("Unsupported language"),
             },
             None => panic!("No extension"),
@@ -38,6 +39,7 @@ impl CodeSource {
         match self.language {
             SourceLanguage::Rust => tree_sitter_rust_orchard::LANGUAGE.into(),
             SourceLanguage::Java => tree_sitter_java::LANGUAGE.into(),
+            SourceLanguage::Cpp => tree_sitter_cpp::LANGUAGE.into(),
         }
     }
 
@@ -54,7 +56,7 @@ impl CodeSource {
     }
 }
 
-const SUPPORTED_EXTS: &[&str] = &["java", "rs"];
+const SUPPORTED_EXTS: &[&str] = &["java", "rs", "h", "hh", "hpp", "cc", "cpp"];
 
 fn try_add_file(path: PathBuf, srcs: &mut Vec<CodeSource>, filter: &Option<Vec<String>>) {
     if let Some(filter_list) = filter {

@@ -84,6 +84,10 @@ impl<'a> SourceQuery<'a> {
                 let range = node.child_by_field_name("name").unwrap().range();
                 range.start_byte..range.end_byte
             }
+            "function_definition" => {
+                let range = node.child_by_field_name("declarator").unwrap().range();
+                range.start_byte..range.end_byte
+            }
             "method_declaration" => {
                 let range = node.child_by_field_name("name").unwrap().range();
                 range.start_byte..range.end_byte
@@ -101,9 +105,17 @@ impl<'a> SourceQuery<'a> {
                 range.start_byte..range.end_byte
             }
             _ => {
-                let r = Self::find_fn_range(node.parent().unwrap());
-                // println!("*****");
-                r
+                if let Some(parent) = node.parent() {
+                    if parent.kind() == "translation_unit" {
+                        let range = parent.range();
+                        return range.start_byte..range.end_byte;
+                    }
+                    Self::find_fn_range(parent)
+                } else {
+                    let range = node.range();
+
+                    range.start_byte..range.end_byte
+                }
             }
         }
     }

@@ -88,10 +88,14 @@ static RUST_PLACEHOLDER_REGEX: LazyLock<Regex> = LazyLock::new(|| {
 static JAVA_PLACEHOLDER_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"\\?\{.*}"#).unwrap());
 
+static CPP_PLACEHOLDER_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"%[-+ #0]*\d*(\.\d+)?[hlLzjt]*[diuoxXfFeEgGaAcspn%]"#).unwrap());
+
 fn placeholder_regex_for(language: SourceLanguage) -> &'static Regex {
     match language {
         SourceLanguage::Rust => RUST_PLACEHOLDER_REGEX.deref(),
         SourceLanguage::Java => JAVA_PLACEHOLDER_REGEX.deref(),
+        SourceLanguage::Cpp => CPP_PLACEHOLDER_REGEX.deref(),
     }
 }
 
@@ -159,5 +163,12 @@ mod tests {
         let (matcher, args) = build_matcher("{2}", SourceLanguage::Rust);
         assert_eq!(Regex::new(r#"^(.+)$"#).unwrap().as_str(), matcher.as_str());
         assert_eq!(args[0], FormatArgument::Positional(2));
+    }
+
+    #[test]
+    fn test_build_matcher_cpp() {
+        let (matcher, args) = build_matcher("they are %d years old", SourceLanguage::Cpp);
+        assert_eq!(Regex::new(r#"^they are (.+) years old$"#).unwrap().as_str(), matcher.as_str());
+        assert_eq!(args[0], FormatArgument::Placeholder);
     }
 }
