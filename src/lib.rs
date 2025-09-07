@@ -1,3 +1,4 @@
+use rayon::prelude::*;
 #[cfg(test)]
 use regex::Regex;
 use serde::Serialize;
@@ -6,12 +7,12 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 #[cfg(test)]
 use std::ptr;
-
 mod call_graph;
 mod code_source;
 mod log_format;
 mod source_query;
 mod source_ref;
+mod progress;
 
 // TODO: doesn't need to be exposed if we can clean up the arguments to do_mapping
 use crate::source_ref::FormatArgument;
@@ -19,6 +20,8 @@ pub use call_graph::CallGraph;
 use call_graph::Edge;
 pub use code_source::CodeSource;
 use log_format::LogFormat;
+pub use progress::ProgressTracker;
+pub use progress::ProgressUpdate;
 use source_query::QueryResult;
 pub use source_query::SourceQuery;
 pub use source_ref::SourceRef;
@@ -231,13 +234,17 @@ pub fn do_mappings<'a>(
     log_refs: Vec<LogRef<'a>>,
     sources: &str,
     log_format: Option<String>,
+    tracker: &ProgressTracker,
 ) -> Vec<LogMapping<'a>> {
     let log_format = log_format.map(LogFormat::new);
     let source_filter = log_format
         .clone()
         .and_then(|f| f.build_src_filter(&log_refs));
+    tracker.step("Finding source code".to_string());
     let mut sources = CodeSource::find_code(sources, source_filter);
-    let src_logs = extract_logging(&mut sources);
+    tracker.step(format!("Found {} files", sources.len()));
+    let src_logs = extract_logging(&mut sources, tracker);
+    tracker.step(format!("Found {} patterns", src_logs.len()));
     let call_graph = CallGraph::new(&mut sources);
     let use_hints = log_format.clone().is_some_and(|f| f.has_src_hint());
 
@@ -309,42 +316,47 @@ pub fn find_possible_paths<'a>(
     possible
 }
 
-pub fn extract_logging(sources: &mut [CodeSource]) -> Vec<SourceRef> {
-    let mut matched = Vec::new();
-    for code in sources.iter_mut() {
-        let src_query = SourceQuery::new(code);
-        let query = code.language.get_query();
-        let results = src_query.query(query, None);
-        for result in results {
-            // println!("node.kind()={:?} range={:?}", result.kind, result.range);
-            match result.kind.as_str() {
-                "string_literal" => {
-                    let src_ref = SourceRef::new(code, result);
-                    matched.push(src_ref);
-                }
-                "identifier" | "this" => {
-                    let range = result.range;
-                    let source = code.buffer.as_str();
-                    let text = source[range.start_byte..range.end_byte].to_string();
-                    // println!("text={} matched.len()={}", text, matched.len());
-                    // check the text doesn't match any of the logging related identifiers
-                    if code
-                        .language
-                        .get_identifiers()
-                        .iter()
-                        .all(|&s| s != text.to_lowercase())
-                    {
-                        let length = matched.len() - 1;
-                        let prior_result: &mut SourceRef = matched.get_mut(length).unwrap();
-                        prior_result.vars.push(text.trim().to_string());
+pub fn extract_logging(sources: &mut [CodeSource], tracker: &ProgressTracker) -> Vec<SourceRef> {
+    let guard = tracker.doing_work(sources.len() as u64, "files".to_string());
+    sources
+        .par_iter_mut()
+        .flat_map(|code| {
+            let mut matched = vec![];
+            let src_query = SourceQuery::new(code);
+            let query = code.language.get_query();
+            let results = src_query.query(query, None);
+            for result in results {
+                // println!("node.kind()={:?} range={:?}", result.kind, result.range);
+                match result.kind.as_str() {
+                    "string_literal" => {
+                        let src_ref = SourceRef::new(code, result);
+                        matched.push(src_ref);
                     }
+                    "identifier" | "this" => {
+                        let range = result.range;
+                        let source = code.buffer.as_str();
+                        let text = source[range.start_byte..range.end_byte].to_string();
+                        // println!("text={} matched.len()={}", text, matched.len());
+                        // check the text doesn't match any of the logging related identifiers
+                        if code
+                            .language
+                            .get_identifiers()
+                            .iter()
+                            .all(|&s| s != text.to_lowercase())
+                        {
+                            let length = matched.len() - 1;
+                            let prior_result: &mut SourceRef = matched.get_mut(length).unwrap();
+                            prior_result.vars.push(text.trim().to_string());
+                        }
+                    }
+                    _ => println!("ignoring {}", result.kind),
                 }
-                _ => println!("ignoring {}", result.kind),
+                // println!("*****");
             }
-            // println!("*****");
-        }
-    }
-    matched
+            guard.inc(1);
+            matched
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -425,7 +437,7 @@ fn namedarg(name: &str) {
     #[test]
     fn test_extract_logging() {
         let code = CodeSource::new(PathBuf::from("in-mem.rs"), Box::new(TEST_SOURCE.as_bytes()));
-        let src_refs = extract_logging(&mut [code]);
+        let src_refs = extract_logging(&mut [code], &ProgressTracker::new());
         assert_eq!(src_refs.len(), 3);
         let first = &src_refs[0];
         assert_eq!(first.line_no, 7);
@@ -452,7 +464,7 @@ fn namedarg(name: &str) {
             lf,
         );
         let code = CodeSource::new(PathBuf::from("in-mem.rs"), Box::new(TEST_SOURCE.as_bytes()));
-        let src_refs = extract_logging(&mut [code]);
+        let src_refs = extract_logging(&mut [code], &ProgressTracker::new());
         assert_eq!(src_refs.len(), 3);
         let result = link_to_source(&log_ref, &src_refs);
         assert!(ptr::eq(result.unwrap(), &src_refs[0]));
@@ -462,7 +474,7 @@ fn namedarg(name: &str) {
     fn test_link_to_source_no_matches() {
         let log_ref = LogRef::new("nope!");
         let code = CodeSource::new(PathBuf::from("in-mem.rs"), Box::new(TEST_SOURCE.as_bytes()));
-        let src_refs = extract_logging(&mut [code]);
+        let src_refs = extract_logging(&mut [code], &ProgressTracker::new());
         assert_eq!(src_refs.len(), 3);
         let result = link_to_source(&log_ref, &src_refs);
         assert!(result.is_none());
@@ -472,7 +484,7 @@ fn namedarg(name: &str) {
     fn test_extract_variables() {
         let log_ref = LogRef::new("this won't match i=1; j=2");
         let code = CodeSource::new(PathBuf::from("in-mem.rs"), Box::new(TEST_SOURCE.as_bytes()));
-        let src_refs = extract_logging(&mut [code]);
+        let src_refs = extract_logging(&mut [code], &ProgressTracker::new());
         assert_eq!(src_refs.len(), 3);
         let vars = extract_variables(log_ref, &src_refs[1]);
         assert_eq!(vars.len(), 2);
@@ -484,7 +496,7 @@ fn namedarg(name: &str) {
     fn test_extract_named() {
         let log_ref = LogRef::new("Hello, Tim!");
         let code = CodeSource::new(PathBuf::from("in-mem.rs"), Box::new(TEST_SOURCE.as_bytes()));
-        let src_refs = extract_logging(&mut [code]);
+        let src_refs = extract_logging(&mut [code], &ProgressTracker::new());
         assert_eq!(src_refs.len(), 3);
         let vars = extract_variables(log_ref, &src_refs[2]);
         assert_eq!(vars.get("name").map(|val| val.as_str()), Some("Tim"));
@@ -516,7 +528,7 @@ fn namedarg(name: &str) {
             PathBuf::from("in-mem.java"),
             Box::new(TEST_PUNC_SRC.as_bytes()),
         );
-        let src_refs = extract_logging(&mut [code]);
+        let src_refs = extract_logging(&mut [code], &ProgressTracker::new());
         assert_eq!(src_refs.len(), 2);
         let vars = extract_variables(log_ref, &src_refs[0]);
         assert_eq!(
@@ -537,7 +549,7 @@ fn namedarg(name: &str) {
     fn test_basic_cpp() {
         let log_ref = LogRef::new("Hello, Steve!");
         let code = CodeSource::new(PathBuf::from("in-mem.cc"), Box::new(CPP_SOURCE.as_bytes()));
-        let src_refs = extract_logging(&mut [code]);
+        let src_refs = extract_logging(&mut [code], &ProgressTracker::new());
         assert_eq!(src_refs.len(), 1);
         let vars = extract_variables(log_ref, &src_refs[0]);
         assert_eq!(vars.len(), 1);
@@ -548,7 +560,7 @@ fn namedarg(name: &str) {
     fn test_find_possible_paths() {
         let code = CodeSource::new(PathBuf::from("in-mem.rs"), Box::new(TEST_SOURCE.as_bytes()));
         let mut sources = vec![code];
-        let src_refs = extract_logging(&mut sources);
+        let src_refs = extract_logging(&mut sources, &ProgressTracker::new());
         let call_graph = CallGraph::new(&mut sources);
         let paths = find_possible_paths(&src_refs[1], &call_graph);
 
