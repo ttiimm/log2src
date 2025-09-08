@@ -1,6 +1,6 @@
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::Arc;
 
 pub struct WorkInfo {
     pub completed: AtomicU64,
@@ -19,6 +19,10 @@ impl WorkInfo {
 pub enum ProgressUpdate {
     /// A description of a large amount of work.
     Step(String),
+    /// The start of a batch of work.
+    BeginStep(String),
+    /// The end of a batch of work.
+    EndStep(String),
     /// A deterministic amount of work.
     Work(Arc<WorkInfo>),
 }
@@ -45,12 +49,14 @@ impl WorkGuard {
 
 impl Drop for WorkGuard {
     fn drop(&mut self) {
-        self.info.completed.store(self.info.total, Ordering::Relaxed);
+        self.info
+            .completed
+            .store(self.info.total, Ordering::Relaxed);
     }
 }
 
 impl ProgressTracker {
-    /// Create a empty tracker.
+    /// Create an empty tracker.
     pub fn new() -> ProgressTracker {
         ProgressTracker {
             subscribers: vec![],
@@ -64,15 +70,35 @@ impl ProgressTracker {
         });
     }
 
+    /// Notify subscribers of the beginning of a step in a process.
+    pub fn begin_step(&self, message: String)
+    {
+        self.subscribers.iter().for_each(|sender| {
+            let _ = sender.send(ProgressUpdate::BeginStep(message.clone()));
+        });
+    }
+
+    pub fn end_step(&self, message: String) {
+        self.subscribers.iter().for_each(|sender| {
+            let _ = sender.send(ProgressUpdate::EndStep(message.clone()));
+        });
+    }
+
     /// Notify subscribers that some deterministic amount of work is about to be done.
     pub fn doing_work(&self, total: u64, units: String) -> WorkGuard {
-        let info = Arc::new(WorkInfo{completed: AtomicU64::new(0), total, units});
-
-        self.subscribers.iter().for_each(|sender| {
-           let _ = sender.send(ProgressUpdate::Work(Arc::clone(&info)));
+        let info = Arc::new(WorkInfo {
+            completed: AtomicU64::new(0),
+            total,
+            units,
         });
 
-        WorkGuard{info: Arc::clone(&info)}
+        self.subscribers.iter().for_each(|sender| {
+            let _ = sender.send(ProgressUpdate::Work(Arc::clone(&info)));
+        });
+
+        WorkGuard {
+            info: Arc::clone(&info),
+        }
     }
 
     /// Subscribe to notifications of work for this tracker.

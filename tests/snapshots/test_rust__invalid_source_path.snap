@@ -1,0 +1,25 @@
+---
+source: tests/test_rust.rs
+info:
+  program: log2src
+  args:
+    - "-d"
+    - examples/stack.r
+    - "-l"
+    - tests/resources/rust/stack.log
+    - "-f"
+    - "\\[\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z \\w+ \\w+\\]\\s+(?<body>.*)"
+    - "-s"
+    - "1"
+---
+success: false
+exit_code: 1
+----- stdout -----
+
+----- stderr -----
+  ⚠ cannot read source file "{example_dir}/stack.r"
+  ╰─▶ No such file or directory (os error 2)
+
+Error:   × no log statements found
+  help: Make sure the source path is valid and refers to a tree with supported
+        source code and logging statements

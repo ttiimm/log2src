@@ -1,12 +1,11 @@
+use std::path::{Path, PathBuf};
 use std::{
     fs::{self, File},
     io,
-    path::PathBuf,
 };
-
 use tree_sitter::Language;
 
-use crate::SourceLanguage;
+use crate::{LogError, SourceLanguage};
 
 pub struct CodeSource {
     pub(crate) filename: String,
@@ -15,22 +14,27 @@ pub struct CodeSource {
 }
 
 impl CodeSource {
-    pub fn new(path: PathBuf, mut input: Box<dyn io::Read>) -> CodeSource {
+    pub fn new(path: &Path, mut input: Box<dyn io::Read>) -> Result<CodeSource, LogError> {
         let language = match path.extension() {
             Some(ext) => match ext.to_str().unwrap() {
                 "rs" => SourceLanguage::Rust,
                 "java" => SourceLanguage::Java,
-                "h"|"hh"|"hpp"|"cc"|"cpp" => SourceLanguage::Cpp,
+                "h" | "hh" | "hpp" | "cc" | "cpp" => SourceLanguage::Cpp,
                 _ => panic!("Unsupported language"),
             },
             None => panic!("No extension"),
         };
         let mut buffer = String::new();
-        input.read_to_string(&mut buffer).expect("can read source");
-        CodeSource {
-            language,
-            filename: path.to_string_lossy().to_string(),
-            buffer,
+        match input.read_to_string(&mut buffer) {
+            Ok(_) => Ok(CodeSource {
+                language,
+                filename: path.to_string_lossy().to_string(),
+                buffer,
+            }),
+            Err(err) => Err(LogError::CannotReadSourceFile {
+                path: PathBuf::from(path),
+                source: err,
+            }),
         }
     }
 
@@ -42,22 +46,36 @@ impl CodeSource {
         }
     }
 
-    pub fn find_code(sources: &str, filter: Option<Vec<String>>) -> Vec<CodeSource> {
+    pub fn find_code(path: &Path, filter: Option<Vec<String>>) -> (Vec<CodeSource>, Vec<LogError>) {
         let mut srcs = vec![];
-        let meta = fs::metadata(sources).expect("can read file metadata");
-        if meta.is_file() {
-            let path = PathBuf::from(sources);
-            try_add_file(path, &mut srcs, &filter);
-        } else {
-            walk_dir(PathBuf::from(sources), &mut srcs, &filter).expect("can traverse directory");
+        let mut errs = vec![];
+        match fs::metadata(path) {
+            Ok(meta) => {
+                if meta.is_file() {
+                    try_add_file(path, &mut srcs, &mut errs, &filter);
+                } else {
+                    if let Err(err) = walk_dir(path, &mut srcs, &mut errs, &filter) {
+                        errs.push(err);
+                    }
+                }
+            }
+            Err(err) => errs.push(LogError::CannotReadSourceFile {
+                path: PathBuf::from(path),
+                source: err,
+            }),
         }
-        srcs
+        (srcs, errs)
     }
 }
 
 const SUPPORTED_EXTS: &[&str] = &["java", "rs", "h", "hh", "hpp", "cc", "cpp"];
 
-fn try_add_file(path: PathBuf, srcs: &mut Vec<CodeSource>, filter: &Option<Vec<String>>) {
+fn try_add_file(
+    path: &Path,
+    srcs: &mut Vec<CodeSource>,
+    errs: &mut Vec<LogError>,
+    filter: &Option<Vec<String>>,
+) {
     if let Some(filter_list) = filter {
         if let Some(file_name) = path.file_name() {
             if !filter_list
@@ -71,27 +89,51 @@ fn try_add_file(path: PathBuf, srcs: &mut Vec<CodeSource>, filter: &Option<Vec<S
 
     if let Some(ext) = path.extension() {
         if SUPPORTED_EXTS.iter().any(|&supported| supported == ext) {
-            let input = Box::new(File::open(PathBuf::from(&path)).expect("can open file"));
-            let code = CodeSource::new(path, input);
-            srcs.push(code);
+            match File::open(path) {
+                Ok(file) => {
+                    let input = Box::new(file);
+                    match CodeSource::new(path, input) {
+                        Ok(code) => srcs.push(code),
+                        Err(err) => errs.push(err),
+                    }
+                }
+                Err(err) => errs.push(LogError::CannotReadSourceFile {
+                    path: PathBuf::from(path),
+                    source: err,
+                })
+            }
         }
     }
 }
 
 fn walk_dir(
-    dir: PathBuf,
+    dir: &Path,
     srcs: &mut Vec<CodeSource>,
+    errs: &mut Vec<LogError>,
     filter: &Option<Vec<String>>,
-) -> io::Result<()> {
-    for entry in fs::read_dir(dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        let metadata = fs::metadata(&path)?;
-        if metadata.is_file() {
-            try_add_file(path, srcs, filter);
-        } else if metadata.is_dir() {
-            walk_dir(path, srcs, filter).expect("can traverse directory");
+) -> Result<(), LogError> {
+    match fs::read_dir(dir) {
+        Ok(entries) => {
+            for entry in entries {
+                let entry = entry.map_err(|source| LogError::CannotAccessPath {
+                    path: PathBuf::from(dir),
+                    source,
+                })?;
+                let path = entry.path();
+                let metadata = fs::metadata(&path).map_err(|source| LogError::CannotAccessPath {
+                    path: PathBuf::from(dir),
+                    source,
+                })?;
+                if metadata.is_file() {
+                    try_add_file(&path, srcs, errs, filter);
+                } else if metadata.is_dir() {
+                    if let Err(err) = walk_dir(&path, srcs, errs, filter) {
+                        errs.push(err);
+                    }
+                }
+            }
         }
+        Err(_) => {}
     }
     Ok(())
 }
