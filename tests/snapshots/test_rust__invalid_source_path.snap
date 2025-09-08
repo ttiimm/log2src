@@ -18,7 +18,7 @@ exit_code: 1
 
 ----- stderr -----
   ⚠ cannot read source file "{example_dir}/stack.r"
-  ╰─▶ No such file or directory (os error 2)
+  ╰─▶ {errmsg} (os error 2)
 
 Error:   × no log statements found
   help: Make sure the source path is valid and refers to a tree with supported
