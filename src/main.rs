@@ -1,6 +1,10 @@
 use clap::Parser as ClapParser;
-use log2src::{do_mappings, filter_log, Filter};
+use indicatif::ProgressBar;
+use log2src::{do_mappings, filter_log, Filter, ProgressTracker, ProgressUpdate};
 use serde_json::{self};
+use std::sync::atomic::Ordering;
+use std::thread::sleep;
+use std::time::Duration;
 use std::{error::Error, fs, io, path::PathBuf};
 
 /// The log2src command maps log statements back to the source code that emitted them.
@@ -26,10 +30,35 @@ struct Cli {
     /// The last line of the log to use (0 based)
     #[arg(short, long, value_name = "END")]
     end: Option<usize>,
+
+    /// Print progress information to standard error
+    #[arg(short, long)]
+    verbose: bool,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    let mut tracker = ProgressTracker::new();
+
     let args = Cli::parse();
+
+    if args.verbose {
+        let listener = tracker.subscribe();
+        std::thread::spawn(move || {
+            for update in listener {
+                match update {
+                    ProgressUpdate::Step(msg) => eprintln!("{}", msg),
+                    ProgressUpdate::Work(info) => {
+                        let bar = ProgressBar::new(info.total);
+                        while info.is_in_progress() {
+                            bar.set_position(info.completed.load(Ordering::Relaxed));
+                            sleep(Duration::from_millis(33));
+                        }
+                    },
+                }
+            }
+        });
+    }
+
     let input = args.log;
     let mut reader: Box<dyn io::Read> = match input {
         None => Box::new(io::stdin()),
@@ -45,7 +74,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let filtered = filter_log(&buffer, filter, args.format.clone());
     // TODO: try and remove log format here
-    let log_mappings = do_mappings(filtered, &args.sources, args.format.clone());
+    let log_mappings = do_mappings(filtered, &args.sources, args.format.clone(), &tracker);
 
     for mapping in log_mappings {
         let serialized = serde_json::to_string(&mapping).unwrap();

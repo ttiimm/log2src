@@ -1,5 +1,4 @@
 use std::{
-    ffi::OsStr,
     fs::{self, File},
     io,
     path::PathBuf,
@@ -70,11 +69,12 @@ fn try_add_file(path: PathBuf, srcs: &mut Vec<CodeSource>, filter: &Option<Vec<S
         }
     };
 
-    let ext = path.extension().unwrap_or(OsStr::new(""));
-    if SUPPORTED_EXTS.iter().any(|&supported| supported == ext) {
-        let input = Box::new(File::open(PathBuf::from(&path)).expect("can open file"));
-        let code = CodeSource::new(path, input);
-        srcs.push(code);
+    if let Some(ext) = path.extension() {
+        if SUPPORTED_EXTS.iter().any(|&supported| supported == ext) {
+            let input = Box::new(File::open(PathBuf::from(&path)).expect("can open file"));
+            let code = CodeSource::new(path, input);
+            srcs.push(code);
+        }
     }
 }
 
