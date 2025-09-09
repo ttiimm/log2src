@@ -13,9 +13,9 @@ info:
 success: true
 exit_code: 0
 ----- stdout -----
-{"srcRef":{"sourcePath":"{java_dir}/Basic.java","lineNumber":18,"column":16,"name":"main","text":"\"Hello from main\"","args":[],"vars":[]},"variables":{},"stack":[]}
-{"srcRef":{"sourcePath":"{java_dir}/Basic.java","lineNumber":25,"column":20,"name":"foo","text":"\"Hello from foo i=\\{i}\"","args":["Placeholder"],"vars":["i"]},"variables":{"i":"0"},"stack":[]}
-{"srcRef":{"sourcePath":"{java_dir}/Basic.java","lineNumber":25,"column":20,"name":"foo","text":"\"Hello from foo i=\\{i}\"","args":["Placeholder"],"vars":["i"]},"variables":{"i":"1"},"stack":[]}
-{"srcRef":{"sourcePath":"{java_dir}/Basic.java","lineNumber":25,"column":20,"name":"foo","text":"\"Hello from foo i=\\{i}\"","args":["Placeholder"],"vars":["i"]},"variables":{"i":"2"},"stack":[]}
+{"srcRef":{"sourcePath":"{java_dir}/Basic.java","lineNumber":18,"column":16,"name":"main","text":"\"Hello from main\"","pattern":"^Hello from main$","args":[],"vars":[]},"variables":{}}
+{"srcRef":{"sourcePath":"{java_dir}/Basic.java","lineNumber":25,"column":20,"name":"foo","text":"\"Hello from foo i=\\{i}\"","pattern":"^Hello from foo i=(.+)$","args":["Placeholder"],"vars":["i"]},"variables":{"i":"0"}}
+{"srcRef":{"sourcePath":"{java_dir}/Basic.java","lineNumber":25,"column":20,"name":"foo","text":"\"Hello from foo i=\\{i}\"","pattern":"^Hello from foo i=(.+)$","args":["Placeholder"],"vars":["i"]},"variables":{"i":"1"}}
+{"srcRef":{"sourcePath":"{java_dir}/Basic.java","lineNumber":25,"column":20,"name":"foo","text":"\"Hello from foo i=\\{i}\"","pattern":"^Hello from foo i=(.+)$","args":["Placeholder"],"vars":["i"]},"variables":{"i":"2"}}
 
 ----- stderr -----

@@ -1,23 +1,23 @@
+use miette::Diagnostic;
 use rayon::prelude::*;
-#[cfg(test)]
-use regex::Regex;
+use regex::RegexSet;
 use serde::Serialize;
-use std::collections::BTreeMap;
-#[cfg(test)]
-use std::path::PathBuf;
+use std::collections::{BTreeMap, HashMap};
+use std::io;
+use std::ops::RangeBounds;
+use std::path::{Path, PathBuf};
 #[cfg(test)]
 use std::ptr;
-mod call_graph;
+use thiserror::Error;
+
 mod code_source;
 mod log_format;
+mod progress;
 mod source_query;
 mod source_ref;
-mod progress;
 
 // TODO: doesn't need to be exposed if we can clean up the arguments to do_mapping
 use crate::source_ref::FormatArgument;
-pub use call_graph::CallGraph;
-use call_graph::Edge;
 pub use code_source::CodeSource;
 use log_format::LogFormat;
 pub use progress::ProgressTracker;
@@ -26,17 +26,166 @@ use source_query::QueryResult;
 pub use source_query::SourceQuery;
 pub use source_ref::SourceRef;
 
-pub struct Filter {
-    pub start: usize,
-    pub end: usize,
+#[derive(Error, Debug, Diagnostic)]
+pub enum LogError {
+    #[error("\"{path}\" is already covered by \"{root}\"")]
+    PathExists { path: PathBuf, root: PathBuf },
+    #[error("cannot read source file \"{path}\"")]
+    #[diagnostic(severity(warning))]
+    CannotReadSourceFile { path: PathBuf, source: io::Error },
+    #[error("no log statements found")]
+    #[diagnostic(help(
+        "\
+    Make sure the source path is valid and refers to a tree with \
+    supported source code and logging statements"
+    ))]
+    NoLogStatements,
+    #[error("cannot access path \"{path}\"")]
+    #[diagnostic(severity(warning))]
+    CannotAccessPath { path: PathBuf, source: io::Error },
 }
 
-impl Default for Filter {
-    fn default() -> Self {
+/// Collection of log statements in a single source file
+#[derive(Debug)]
+pub struct StatementsInFile {
+    pub log_statements: Vec<SourceRef>,
+    /// A single matcher for all log statements.
+    /// XXX If there are too many in the file, the RegexSet constructor
+    /// will fail with CompiledTooBig. We should probably fall back to
+    /// manually trying each one at that point...
+    pub matcher: RegexSet,
+}
+
+/// Collection of individual source files under a root path
+pub struct SourceTree {
+    pub sources: Vec<CodeSource>,
+    pub statements: Vec<StatementsInFile>,
+}
+
+/// Collection of root paths to their tree of source files
+/// that contain log statements.
+pub struct LogMatcher {
+    roots: HashMap<PathBuf, SourceTree>,
+}
+
+impl LogMatcher {
+    /// Create an empty LogMatcher
+    pub fn new() -> Self {
         Self {
-            start: 0,
-            end: usize::MAX,
+            roots: HashMap::new(),
         }
+    }
+
+    /// True if no log statements are recognized by this matcher.
+    pub fn is_empty(&self) -> bool {
+        self.roots
+            .iter()
+            .all(|(_path, coll)| coll.statements.is_empty())
+    }
+
+    pub fn len(&self) -> usize {
+        self.roots
+            .iter()
+            .map(|(_path, coll)| coll.sources.len())
+            .sum()
+    }
+
+    /// Add a source root path
+    pub fn add_root(&mut self, path: &Path) -> Result<(), LogError> {
+        if let Some(existing_path) = self.match_path(path) {
+            Err(LogError::PathExists {
+                path: PathBuf::from(path),
+                root: existing_path,
+            })
+        } else {
+            self.roots
+                .entry(path.to_owned())
+                .or_insert_with(|| SourceTree {
+                    sources: vec![],
+                    statements: vec![],
+                });
+            Ok(())
+        }
+    }
+
+    /// Check if the given path is covered by any of the roots in this matcher.
+    pub fn match_path(&self, path: &Path) -> Option<PathBuf> {
+        self.roots
+            .iter()
+            .filter(|(existing_path, _coll)| path.starts_with(existing_path))
+            .map(|(path, _coll)| path.clone())
+            .next()
+    }
+
+    /// Traverse the roots looking for supported source files.
+    #[must_use]
+    pub fn discover_sources(&mut self, tracker: &ProgressTracker) -> Vec<LogError> {
+        tracker.begin_step("Finding source code".to_string());
+        let pguard = tracker.doing_work(self.roots.len() as u64, "paths".to_string());
+        let retval = self
+            .roots
+            .par_iter_mut()
+            .filter(|(_path, coll)| coll.sources.is_empty())
+            .flat_map(|(path, coll)| {
+                let (srcs, errs) = CodeSource::find_code(path, None);
+                coll.sources = srcs;
+                pguard.inc(1);
+                errs
+            })
+            .collect();
+        tracker.end_step(format!(
+            "{} files found",
+            self.roots
+                .iter()
+                .map(|(_path, coll)| coll.sources.len())
+                .sum::<usize>()
+        ));
+
+        retval
+    }
+
+    /// Scan the source files looking for potential log statements.
+    pub fn extract_log_statements(&mut self, tracker: &ProgressTracker) {
+        tracker.begin_step("Extracting log statements".to_string());
+        self.roots.iter_mut().for_each(|(_path, coll)| {
+            if coll.statements.is_empty() {
+                coll.statements = extract_logging(&coll.sources, tracker);
+            }
+        });
+        tracker.end_step(format!(
+            "{} found",
+            self.roots
+                .iter()
+                .flat_map(|(_path, coll)| coll.statements.iter())
+                .map(|stmts| stmts.log_statements.len())
+                .sum::<usize>()
+        ));
+    }
+
+    /// Attempt to match the given log message.
+    pub fn match_log_statement<'a>(&self, log_ref: &LogRef<'a>) -> Option<LogMapping<'a>> {
+        for (_path, coll) in &self.roots {
+            let matches = coll
+                .statements
+                .par_iter()
+                .flat_map(|src_ref_coll| {
+                    let file_matches = src_ref_coll.matcher.matches(log_ref.body());
+                    match file_matches.iter().next() {
+                        None => None,
+                        Some(index) => src_ref_coll.log_statements.get(index),
+                    }
+                })
+                .collect::<Vec<&SourceRef>>();
+            if let Some(src_ref) = matches.first() {
+                let variables = extract_variables(log_ref, src_ref);
+                return Some(LogMapping {
+                    log_ref: log_ref.clone(),
+                    src_ref: Some((*src_ref).clone()),
+                    variables,
+                });
+            }
+        }
+        None
     }
 }
 
@@ -82,12 +231,16 @@ impl SourceLanguage {
             }
             SourceLanguage::Cpp => {
                 r#"
-                    (compound_statement
-                        (expression_statement
-                            (call_expression
-                                arguments: (argument_list (string_literal) @arguments)
+                    (
+                        (compound_statement
+                            (expression_statement
+                                (call_expression
+                                    function: (identifier) @fname
+                                    arguments: (argument_list (string_literal) @arguments)
+                                )
                             )
                         )
+                        (#not-match? @fname "snprintf|sprintf")
                     )
                 "#
             }
@@ -110,7 +263,6 @@ pub struct LogMapping<'a> {
     #[serde(rename(serialize = "srcRef"))]
     pub src_ref: Option<SourceRef>,
     pub variables: BTreeMap<String, String>,
-    pub stack: Vec<Vec<SourceRef>>,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -183,7 +335,7 @@ pub fn lookup_source<'a>(
 }
 
 pub fn extract_variables<'a>(
-    log_ref: LogRef<'a>,
+    log_ref: &LogRef<'a>,
     src_ref: &'a SourceRef,
 ) -> BTreeMap<String, String> {
     let mut variables = BTreeMap::new();
@@ -212,13 +364,16 @@ pub fn extract_variables<'a>(
     variables
 }
 
-pub fn filter_log(buffer: &str, filter: Filter, log_format: Option<String>) -> Vec<LogRef> {
+pub fn filter_log<R>(buffer: &str, filter: R, log_format: Option<String>) -> Vec<LogRef>
+where
+    R: RangeBounds<usize>,
+{
     let log_format = log_format.map(LogFormat::new);
     buffer
         .lines()
         .enumerate()
         .filter_map(|(line_no, line)| {
-            if filter.start <= line_no && line_no < filter.end {
+            if filter.contains(&line_no) {
                 match &log_format {
                     Some(format) => Some(LogRef::with_format(line, format.clone())),
                     None => Some(LogRef::new(line)),
@@ -230,98 +385,13 @@ pub fn filter_log(buffer: &str, filter: Filter, log_format: Option<String>) -> V
         .collect()
 }
 
-pub fn do_mappings<'a>(
-    log_refs: Vec<LogRef<'a>>,
-    sources: &str,
-    log_format: Option<String>,
-    tracker: &ProgressTracker,
-) -> Vec<LogMapping<'a>> {
-    let log_format = log_format.map(LogFormat::new);
-    let source_filter = log_format
-        .clone()
-        .and_then(|f| f.build_src_filter(&log_refs));
-    tracker.step("Finding source code".to_string());
-    let mut sources = CodeSource::find_code(sources, source_filter);
-    tracker.step(format!("Found {} files", sources.len()));
-    let src_logs = extract_logging(&mut sources, tracker);
-    tracker.step(format!("Found {} patterns", src_logs.len()));
-    let call_graph = CallGraph::new(&mut sources);
-    let use_hints = log_format.clone().is_some_and(|f| f.has_src_hint());
-
-    log_refs
-        .into_iter()
-        .map(|log_ref| {
-            let src_ref = if use_hints {
-                lookup_source(&log_ref, log_format.as_ref().unwrap(), &src_logs)
-            } else {
-                link_to_source(&log_ref, &src_logs)
-            };
-            let variables = src_ref.as_ref().map_or(BTreeMap::new(), move |src_ref| {
-                extract_variables(log_ref, src_ref)
-            });
-            let stack = src_ref.as_ref().map_or(Vec::new(), |src_ref| {
-                find_possible_paths(src_ref, &call_graph)
-            });
-            LogMapping {
-                log_ref,
-                src_ref: src_ref.cloned(),
-                variables,
-                stack,
-            }
-        })
-        .collect::<Vec<LogMapping>>()
-}
-
-pub fn find_possible_paths<'a>(
-    src_ref: &'a SourceRef,
-    call_graph: &'a CallGraph,
-) -> Vec<Vec<SourceRef>> {
-    let mut possible = Vec::new();
-    let mains = call_graph
-        .edges
-        .iter()
-        .filter(|edge| edge.via.name == "main")
-        .collect::<Vec<&Edge>>();
-    for main in mains.into_iter() {
-        let mut stack = vec![main];
-        let mut visited = vec![main];
-        while let Some(next) = stack.pop() {
-            if next.to == src_ref.name {
-                break;
-            }
-
-            let candidates = call_graph
-                .edges
-                .iter()
-                .filter(|edge| next.to == edge.via.name)
-                .collect::<Vec<&Edge>>();
-
-            for edge in candidates {
-                if !visited.contains(&edge) {
-                    stack.push(edge);
-                    visited.push(edge);
-                }
-            }
-        }
-        possible.push(
-            visited
-                .iter()
-                .rev()
-                .map(|edge| &edge.via)
-                .cloned()
-                .collect::<Vec<SourceRef>>(),
-        );
-    }
-
-    possible
-}
-
-pub fn extract_logging(sources: &mut [CodeSource], tracker: &ProgressTracker) -> Vec<SourceRef> {
+pub fn extract_logging(sources: &[CodeSource], tracker: &ProgressTracker) -> Vec<StatementsInFile> {
     let guard = tracker.doing_work(sources.len() as u64, "files".to_string());
     sources
-        .par_iter_mut()
+        .par_iter()
         .flat_map(|code| {
             let mut matched = vec![];
+            let mut patterns = vec![];
             let src_query = SourceQuery::new(code);
             let query = code.language.get_query();
             let results = src_query.query(query, None);
@@ -329,24 +399,28 @@ pub fn extract_logging(sources: &mut [CodeSource], tracker: &ProgressTracker) ->
                 // println!("node.kind()={:?} range={:?}", result.kind, result.range);
                 match result.kind.as_str() {
                     "string_literal" => {
-                        let src_ref = SourceRef::new(code, result);
-                        matched.push(src_ref);
+                        if let Some(src_ref) = SourceRef::new(code, result) {
+                            patterns.push(src_ref.pattern.clone());
+                            matched.push(src_ref);
+                        }
                     }
                     "identifier" | "this" => {
-                        let range = result.range;
-                        let source = code.buffer.as_str();
-                        let text = source[range.start_byte..range.end_byte].to_string();
-                        // println!("text={} matched.len()={}", text, matched.len());
-                        // check the text doesn't match any of the logging related identifiers
-                        if code
-                            .language
-                            .get_identifiers()
-                            .iter()
-                            .all(|&s| s != text.to_lowercase())
-                        {
-                            let length = matched.len() - 1;
-                            let prior_result: &mut SourceRef = matched.get_mut(length).unwrap();
-                            prior_result.vars.push(text.trim().to_string());
+                        if !matched.is_empty() {
+                            let range = result.range;
+                            let source = code.buffer.as_str();
+                            let text = source[range.start_byte..range.end_byte].to_string();
+                            // println!("text={} matched.len()={}", text, matched.len());
+                            // check the text doesn't match any of the logging related identifiers
+                            if code
+                                .language
+                                .get_identifiers()
+                                .iter()
+                                .all(|&s| s != text.to_lowercase())
+                            {
+                                let length = matched.len() - 1;
+                                let prior_result: &mut SourceRef = matched.get_mut(length).unwrap();
+                                prior_result.vars.push(text.trim().to_string());
+                            }
                         }
                     }
                     _ => println!("ignoring {}", result.kind),
@@ -354,7 +428,14 @@ pub fn extract_logging(sources: &mut [CodeSource], tracker: &ProgressTracker) ->
                 // println!("*****");
             }
             guard.inc(1);
-            matched
+            if matched.is_empty() {
+                None
+            } else {
+                Some(StatementsInFile {
+                    log_statements: matched,
+                    matcher: RegexSet::new(patterns).expect("To combine patterns"),
+                })
+            }
         })
         .collect()
 }
@@ -366,7 +447,7 @@ mod tests {
     #[test]
     fn test_filter_log_defaults() {
         let buffer = String::from("hello\nwarning\nerror\nboom");
-        let result = filter_log(&buffer, Filter::default(), None);
+        let result = filter_log(&buffer, .., None);
         assert_eq!(
             result,
             vec![
@@ -381,7 +462,7 @@ mod tests {
     #[test]
     fn test_filter_log_with_filter() {
         let buffer = String::from("hello\nwarning\nerror\nboom");
-        let result = filter_log(&buffer, Filter { start: 1, end: 2 }, None);
+        let result = filter_log(&buffer, 1..2, None);
         assert_eq!(result, vec![LogRef::new("warning")]);
     }
 
@@ -394,7 +475,7 @@ mod tests {
             r"^(?<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) (?<level>\w+)\s+ (?<file>[\w$.]+):(?<line>\d+) - (?<body>.*)$",
         );
         let log_format = Some(regex);
-        let result = filter_log(&buffer, Filter::default(), log_format);
+        let result = filter_log(&buffer, .., log_format);
         let details = Some(LogDetails {
             file: Some("JvmPauseMonitor"),
             lineno: Some(146),
@@ -436,8 +517,15 @@ fn namedarg(name: &str) {
 
     #[test]
     fn test_extract_logging() {
-        let code = CodeSource::new(PathBuf::from("in-mem.rs"), Box::new(TEST_SOURCE.as_bytes()));
-        let src_refs = extract_logging(&mut [code], &ProgressTracker::new());
+        let code = CodeSource::new(
+            &PathBuf::from("in-mem.rs"),
+            Box::new(TEST_SOURCE.as_bytes()),
+        )
+        .unwrap();
+        let src_refs = extract_logging(&mut [code], &ProgressTracker::new())
+            .pop()
+            .unwrap()
+            .log_statements;
         assert_eq!(src_refs.len(), 3);
         let first = &src_refs[0];
         assert_eq!(first.line_no, 7);
@@ -463,8 +551,15 @@ fn namedarg(name: &str) {
             "[2024-05-09T19:58:53Z DEBUG main] you're only as funky as your last cut",
             lf,
         );
-        let code = CodeSource::new(PathBuf::from("in-mem.rs"), Box::new(TEST_SOURCE.as_bytes()));
-        let src_refs = extract_logging(&mut [code], &ProgressTracker::new());
+        let code = CodeSource::new(
+            &PathBuf::from("in-mem.rs"),
+            Box::new(TEST_SOURCE.as_bytes()),
+        )
+        .unwrap();
+        let src_refs = extract_logging(&mut [code], &ProgressTracker::new())
+            .pop()
+            .unwrap()
+            .log_statements;
         assert_eq!(src_refs.len(), 3);
         let result = link_to_source(&log_ref, &src_refs);
         assert!(ptr::eq(result.unwrap(), &src_refs[0]));
@@ -473,8 +568,15 @@ fn namedarg(name: &str) {
     #[test]
     fn test_link_to_source_no_matches() {
         let log_ref = LogRef::new("nope!");
-        let code = CodeSource::new(PathBuf::from("in-mem.rs"), Box::new(TEST_SOURCE.as_bytes()));
-        let src_refs = extract_logging(&mut [code], &ProgressTracker::new());
+        let code = CodeSource::new(
+            &PathBuf::from("in-mem.rs"),
+            Box::new(TEST_SOURCE.as_bytes()),
+        )
+        .unwrap();
+        let src_refs = extract_logging(&mut [code], &ProgressTracker::new())
+            .pop()
+            .unwrap()
+            .log_statements;
         assert_eq!(src_refs.len(), 3);
         let result = link_to_source(&log_ref, &src_refs);
         assert!(result.is_none());
@@ -483,10 +585,17 @@ fn namedarg(name: &str) {
     #[test]
     fn test_extract_variables() {
         let log_ref = LogRef::new("this won't match i=1; j=2");
-        let code = CodeSource::new(PathBuf::from("in-mem.rs"), Box::new(TEST_SOURCE.as_bytes()));
-        let src_refs = extract_logging(&mut [code], &ProgressTracker::new());
+        let code = CodeSource::new(
+            &PathBuf::from("in-mem.rs"),
+            Box::new(TEST_SOURCE.as_bytes()),
+        )
+        .unwrap();
+        let src_refs = extract_logging(&mut [code], &ProgressTracker::new())
+            .pop()
+            .unwrap()
+            .log_statements;
         assert_eq!(src_refs.len(), 3);
-        let vars = extract_variables(log_ref, &src_refs[1]);
+        let vars = extract_variables(&log_ref, &src_refs[1]);
         assert_eq!(vars.len(), 2);
         assert_eq!(vars.get("i").map(|val| val.as_str()), Some("1"));
         assert_eq!(vars.get("j").map(|val| val.as_str()), Some("2"));
@@ -495,10 +604,17 @@ fn namedarg(name: &str) {
     #[test]
     fn test_extract_named() {
         let log_ref = LogRef::new("Hello, Tim!");
-        let code = CodeSource::new(PathBuf::from("in-mem.rs"), Box::new(TEST_SOURCE.as_bytes()));
-        let src_refs = extract_logging(&mut [code], &ProgressTracker::new());
+        let code = CodeSource::new(
+            &PathBuf::from("in-mem.rs"),
+            Box::new(TEST_SOURCE.as_bytes()),
+        )
+        .unwrap();
+        let src_refs = extract_logging(&mut [code], &ProgressTracker::new())
+            .pop()
+            .unwrap()
+            .log_statements;
         assert_eq!(src_refs.len(), 3);
-        let vars = extract_variables(log_ref, &src_refs[2]);
+        let vars = extract_variables(&log_ref, &src_refs[2]);
         assert_eq!(vars.get("name").map(|val| val.as_str()), Some("Tim"));
     }
 
@@ -525,12 +641,16 @@ fn namedarg(name: &str) {
             log_format,
         );
         let code = CodeSource::new(
-            PathBuf::from("in-mem.java"),
+            &PathBuf::from("in-mem.java"),
             Box::new(TEST_PUNC_SRC.as_bytes()),
-        );
-        let src_refs = extract_logging(&mut [code], &ProgressTracker::new());
+        )
+        .unwrap();
+        let src_refs = extract_logging(&mut [code], &ProgressTracker::new())
+            .pop()
+            .unwrap()
+            .log_statements;
         assert_eq!(src_refs.len(), 2);
-        let vars = extract_variables(log_ref, &src_refs[0]);
+        let vars = extract_variables(&log_ref, &src_refs[0]);
         assert_eq!(
             vars.get("this").map(|val| val.as_str()),
             Some("JvmPauseMonitor-n0")
@@ -548,44 +668,15 @@ fn namedarg(name: &str) {
     #[test]
     fn test_basic_cpp() {
         let log_ref = LogRef::new("Hello, Steve!");
-        let code = CodeSource::new(PathBuf::from("in-mem.cc"), Box::new(CPP_SOURCE.as_bytes()));
-        let src_refs = extract_logging(&mut [code], &ProgressTracker::new());
+        let code =
+            CodeSource::new(&PathBuf::from("in-mem.cc"), Box::new(CPP_SOURCE.as_bytes())).unwrap();
+        let src_refs = extract_logging(&mut [code], &ProgressTracker::new())
+            .pop()
+            .unwrap()
+            .log_statements;
         assert_eq!(src_refs.len(), 1);
-        let vars = extract_variables(log_ref, &src_refs[0]);
+        let vars = extract_variables(&log_ref, &src_refs[0]);
         assert_eq!(vars.len(), 1);
         assert_eq!(vars.get("argv[1]").map(|val| val.as_str()), Some("Steve"));
-    }
-
-    #[test]
-    fn test_find_possible_paths() {
-        let code = CodeSource::new(PathBuf::from("in-mem.rs"), Box::new(TEST_SOURCE.as_bytes()));
-        let mut sources = vec![code];
-        let src_refs = extract_logging(&mut sources, &ProgressTracker::new());
-        let call_graph = CallGraph::new(&mut sources);
-        let paths = find_possible_paths(&src_refs[1], &call_graph);
-
-        let star_regex = Regex::new(".*").unwrap();
-        let main_2_foo = SourceRef {
-            source_path: String::from("in-mem.rs"),
-            line_no: 9,
-            column: 8,
-            name: String::from("main"),
-            text: String::from("foo"),
-            matcher: star_regex,
-            args: vec![],
-            vars: vec![],
-        };
-        let star_regex = Regex::new(".*").unwrap();
-        let foo_2_nope = SourceRef {
-            source_path: String::from("in-mem.rs"),
-            line_no: 14,
-            column: 4,
-            name: String::from("foo"),
-            text: String::from("nope"),
-            matcher: star_regex,
-            args: vec![],
-            vars: vec![],
-        };
-        assert_eq!(paths, vec![vec![foo_2_nope, main_2_foo]])
     }
 }
