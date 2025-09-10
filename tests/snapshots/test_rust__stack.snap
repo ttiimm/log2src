@@ -15,6 +15,6 @@ info:
 success: true
 exit_code: 0
 ----- stdout -----
-{"srcRef":{"sourcePath":"{example_dir}/stack.rs","lineNumber":15,"column":11,"name":"b","text":"\"Hello from b\"","pattern":"^Hello from b$","args":[],"vars":[]},"variables":{}}
+{"srcRef":{"sourcePath":"{example_dir}/stack.rs","language":"Rust","lineNumber":15,"column":11,"name":"b","text":"\"Hello from b\"","pattern":"^Hello from b$","args":[],"vars":[]},"variables":[]}
 
 ----- stderr -----
