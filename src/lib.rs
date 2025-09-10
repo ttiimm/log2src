@@ -48,6 +48,7 @@ pub enum LogError {
 /// Collection of log statements in a single source file
 #[derive(Debug)]
 pub struct StatementsInFile {
+    pub filename: String,
     pub log_statements: Vec<SourceRef>,
     /// A single matcher for all log statements.
     /// XXX If there are too many in the file, the RegexSet constructor
@@ -165,17 +166,36 @@ impl LogMatcher {
     /// Attempt to match the given log message.
     pub fn match_log_statement<'a>(&self, log_ref: &LogRef<'a>) -> Option<LogMapping<'a>> {
         for (_path, coll) in &self.roots {
-            let matches = coll
-                .statements
-                .par_iter()
-                .flat_map(|src_ref_coll| {
-                    let file_matches = src_ref_coll.matcher.matches(log_ref.body());
-                    match file_matches.iter().next() {
-                        None => None,
-                        Some(index) => src_ref_coll.log_statements.get(index),
-                    }
-                })
-                .collect::<Vec<&SourceRef>>();
+            let matches = if let Some(LogDetails {
+                file: Some(filename),
+                body: Some(body),
+                ..
+            }) = log_ref.details
+            {
+                // XXX this block and the else are basically the same, try to refactor
+                coll.statements
+                    .iter()
+                    .filter(|stmts| stmts.filename.contains(filename))
+                    .flat_map(|stmts| {
+                        let file_matches = stmts.matcher.matches(body);
+                        match file_matches.iter().next() {
+                            None => None,
+                            Some(index) => stmts.log_statements.get(index),
+                        }
+                    })
+                    .collect::<Vec<&SourceRef>>()
+            } else {
+                coll.statements
+                    .par_iter()
+                    .flat_map(|src_ref_coll| {
+                        let file_matches = src_ref_coll.matcher.matches(log_ref.body());
+                        match file_matches.iter().next() {
+                            None => None,
+                            Some(index) => src_ref_coll.log_statements.get(index),
+                        }
+                    })
+                    .collect::<Vec<&SourceRef>>()
+            };
             if let Some(src_ref) = matches.first() {
                 let variables = extract_variables(log_ref, src_ref);
                 return Some(LogMapping {
@@ -268,24 +288,14 @@ pub struct LogMapping<'a> {
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct LogRef<'a> {
     pub line: &'a str,
-    details: Option<LogDetails<'a>>,
-}
-
-impl<'a> LogRef<'a> {
-    pub fn body(self) -> &'a str {
-        if let Some(LogDetails { body: Some(s), .. }) = self.details {
-            s
-        } else {
-            self.line
-        }
-    }
+    pub details: Option<LogDetails<'a>>,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
-struct LogDetails<'a> {
-    file: Option<&'a str>,
-    lineno: Option<u32>,
-    body: Option<&'a str>,
+pub struct LogDetails<'a> {
+    pub file: Option<&'a str>,
+    pub lineno: Option<u32>,
+    pub body: Option<&'a str>,
 }
 
 impl<'a> LogRef<'a> {
@@ -293,6 +303,18 @@ impl<'a> LogRef<'a> {
         Self {
             line,
             details: None,
+        }
+    }
+
+    pub fn from_parsed(file: Option<&'a str>, lineno: Option<u32>, body: &'a str) -> Self {
+        let details = Some(LogDetails {
+            file,
+            lineno,
+            body: Some(body),
+        });
+        Self {
+            line: body,
+            details,
         }
     }
 
@@ -306,6 +328,14 @@ impl<'a> LogRef<'a> {
         Self {
             line,
             details: Some(LogDetails { file, lineno, body }),
+        }
+    }
+
+    pub fn body(self) -> &'a str {
+        if let Some(LogDetails { body: Some(s), .. }) = self.details {
+            s
+        } else {
+            self.line
         }
     }
 }
@@ -364,7 +394,7 @@ pub fn extract_variables<'a>(
     variables
 }
 
-pub fn filter_log<R>(buffer: &str, filter: R, log_format: Option<String>) -> Vec<LogRef>
+pub fn filter_log<R>(buffer: &str, filter: R, log_format: Option<String>) -> Vec<LogRef<'_>>
 where
     R: RangeBounds<usize>,
 {
@@ -432,6 +462,7 @@ pub fn extract_logging(sources: &[CodeSource], tracker: &ProgressTracker) -> Vec
                 None
             } else {
                 Some(StatementsInFile {
+                    filename: matched.first().unwrap().source_path.clone(),
                     log_statements: matched,
                     matcher: RegexSet::new(patterns).expect("To combine patterns"),
                 })

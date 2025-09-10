@@ -16,15 +16,15 @@ pub enum FormatArgument {
 #[derive(Clone, Debug, Serialize)]
 pub struct SourceRef {
     #[serde(rename(serialize = "sourcePath"))]
-    pub(crate) source_path: String,
+    pub source_path: String,
     #[serde(rename(serialize = "lineNumber"))]
     pub line_no: usize,
-    pub(crate) column: usize,
-    pub(crate) name: String,
-    pub(crate) text: String,
+    pub column: usize,
+    pub name: String,
+    pub text: String,
     #[serde(skip_serializing)]
     pub(crate) matcher: Regex,
-    pub(crate) pattern: String,
+    pub pattern: String,
     pub(crate) args: Vec<FormatArgument>,
     pub(crate) vars: Vec<String>,
 }
