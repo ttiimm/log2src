@@ -2,7 +2,7 @@ use miette::Diagnostic;
 use rayon::prelude::*;
 use regex::RegexSet;
 use serde::Serialize;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::io;
 use std::ops::RangeBounds;
 use std::path::{Path, PathBuf};
@@ -209,10 +209,11 @@ impl LogMatcher {
     }
 }
 
-#[derive(Debug, PartialEq, Copy, Clone)]
-enum SourceLanguage {
+#[derive(Debug, PartialEq, Copy, Clone, Serialize)]
+pub enum SourceLanguage {
     Rust,
     Java,
+    #[serde(rename = "C++")]
     Cpp,
 }
 
@@ -276,13 +277,19 @@ impl SourceLanguage {
     }
 }
 
+#[derive(PartialEq, Clone, Debug, Serialize)]
+pub struct VariablePair {
+    pub expr: String,
+    pub value: String,
+}
+
 #[derive(Serialize)]
 pub struct LogMapping<'a> {
     #[serde(skip_serializing)]
     pub log_ref: LogRef<'a>,
     #[serde(rename(serialize = "srcRef"))]
     pub src_ref: Option<SourceRef>,
-    pub variables: BTreeMap<String, String>,
+    pub variables: Vec<VariablePair>,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -364,11 +371,8 @@ pub fn lookup_source<'a>(
     })
 }
 
-pub fn extract_variables<'a>(
-    log_ref: &LogRef<'a>,
-    src_ref: &'a SourceRef,
-) -> BTreeMap<String, String> {
-    let mut variables = BTreeMap::new();
+pub fn extract_variables<'a>(log_ref: &LogRef<'a>, src_ref: &'a SourceRef) -> Vec<VariablePair> {
+    let mut variables = Vec::new();
     let line = match log_ref.details {
         Some(details) => details.body.unwrap_or(log_ref.line),
         None => log_ref.line,
@@ -377,7 +381,7 @@ pub fn extract_variables<'a>(
         for (index, (cap, placeholder)) in
             std::iter::zip(captures.iter().skip(1), src_ref.args.iter()).enumerate()
         {
-            let key = match placeholder {
+            let expr = match placeholder {
                 FormatArgument::Named(name) => name.clone(),
                 FormatArgument::Positional(pos) => src_ref
                     .vars
@@ -387,7 +391,10 @@ pub fn extract_variables<'a>(
                     .to_string(),
                 FormatArgument::Placeholder => src_ref.vars[index].to_string(),
             };
-            variables.insert(key, cap.unwrap().as_str().to_string());
+            variables.push(VariablePair {
+                expr,
+                value: cap.unwrap().as_str().to_string(),
+            });
         }
     }
 
@@ -627,9 +634,19 @@ fn namedarg(name: &str) {
             .log_statements;
         assert_eq!(src_refs.len(), 3);
         let vars = extract_variables(&log_ref, &src_refs[1]);
-        assert_eq!(vars.len(), 2);
-        assert_eq!(vars.get("i").map(|val| val.as_str()), Some("1"));
-        assert_eq!(vars.get("j").map(|val| val.as_str()), Some("2"));
+        assert_eq!(
+            vars,
+            vec![
+                VariablePair {
+                    expr: "i".to_string(),
+                    value: "1".to_string()
+                },
+                VariablePair {
+                    expr: "j".to_string(),
+                    value: "2".to_string()
+                }
+            ]
+        );
     }
 
     #[test]
@@ -646,7 +663,13 @@ fn namedarg(name: &str) {
             .log_statements;
         assert_eq!(src_refs.len(), 3);
         let vars = extract_variables(&log_ref, &src_refs[2]);
-        assert_eq!(vars.get("name").map(|val| val.as_str()), Some("Tim"));
+        assert_eq!(
+            vars,
+            vec![VariablePair {
+                expr: "name".to_string(),
+                value: "Tim".to_string()
+            },]
+        );
     }
 
     const TEST_PUNC_SRC: &str = r#"""
@@ -683,8 +706,11 @@ fn namedarg(name: &str) {
         assert_eq!(src_refs.len(), 2);
         let vars = extract_variables(&log_ref, &src_refs[0]);
         assert_eq!(
-            vars.get("this").map(|val| val.as_str()),
-            Some("JvmPauseMonitor-n0")
+            vars,
+            vec![VariablePair {
+                expr: "this".to_string(),
+                value: "JvmPauseMonitor-n0".to_string()
+            },]
         );
     }
 
@@ -707,7 +733,12 @@ fn namedarg(name: &str) {
             .log_statements;
         assert_eq!(src_refs.len(), 1);
         let vars = extract_variables(&log_ref, &src_refs[0]);
-        assert_eq!(vars.len(), 1);
-        assert_eq!(vars.get("argv[1]").map(|val| val.as_str()), Some("Steve"));
+        assert_eq!(
+            vars,
+            vec![VariablePair {
+                expr: "argv[1]".to_string(),
+                value: "Steve".to_string()
+            },]
+        );
     }
 }

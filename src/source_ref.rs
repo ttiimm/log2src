@@ -17,6 +17,7 @@ pub enum FormatArgument {
 pub struct SourceRef {
     #[serde(rename(serialize = "sourcePath"))]
     pub source_path: String,
+    pub language: SourceLanguage,
     #[serde(rename(serialize = "lineNumber"))]
     pub line_no: usize,
     pub column: usize,
@@ -47,6 +48,7 @@ impl SourceRef {
             let name = source[result.name_range].to_string();
             Some(SourceRef {
                 source_path: code.filename.clone(),
+                language: code.language,
                 line_no: line,
                 column: col,
                 name,
