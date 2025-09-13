@@ -256,7 +256,7 @@ impl SourceLanguage {
                         (compound_statement
                             (expression_statement
                                 (call_expression
-                                    function: (identifier) @fname
+                                    function: (_) @fname
                                     arguments: (argument_list (string_literal) @arguments)
                                 )
                             )
@@ -460,7 +460,7 @@ pub fn extract_logging(sources: &[CodeSource], tracker: &ProgressTracker) -> Vec
                             }
                         }
                     }
-                    _ => println!("ignoring {}", result.kind),
+                    _ => eprintln!("ignoring {}", result.kind),
                 }
                 // println!("*****");
             }

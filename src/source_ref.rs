@@ -96,7 +96,7 @@ static JAVA_PLACEHOLDER_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"\\?\{.*}"#).unwrap());
 
 static CPP_PLACEHOLDER_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"%[-+ #0]*\d*(\.\d+)?[hlLzjt]*[diuoxXfFeEgGaAcspn%]"#).unwrap());
+    LazyLock::new(|| Regex::new(r#"%[-+ #0]*\d*(?:\.\d+)?[hlLzjt]*[diuoxXfFeEgGaAcspn%]|\{(?:([a-zA-Z_][a-zA-Z0-9_.]*)|(\d+))?\s*(?::[^}]*)?}"#).unwrap());
 
 fn placeholder_regex_for(language: SourceLanguage) -> &'static Regex {
     match language {
@@ -189,6 +189,17 @@ mod tests {
             matcher.as_str()
         );
         assert_eq!(args[0], FormatArgument::Placeholder);
+    }
+
+    #[test]
+    fn test_build_matcher_cpp_spdlog() {
+        let (matcher, _pat, args) =
+            build_matcher("they are {0:d} years old", SourceLanguage::Cpp).unwrap();
+        assert_eq!(
+            Regex::new(r#"^they are (.+) years old$"#).unwrap().as_str(),
+            matcher.as_str()
+        );
+        assert_eq!(args[0], FormatArgument::Positional(0));
     }
 
     #[test]
