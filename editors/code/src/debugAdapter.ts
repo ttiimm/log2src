@@ -22,8 +22,12 @@ import { outputChannel } from './extension';
 
 interface LogMapping {
     srcRef: SourceRef,
-    variables: Map<string, string>,
-    stack: Array<Array<SourceRef>>
+    variables: Array<VariablePair>
+}
+
+interface VariablePair {
+    expr: string,
+    value: string,
 }
 
 interface SourceRef {
@@ -277,7 +281,7 @@ export class DebugSession extends LoggingDebugSession {
             '--log', this._launchArgs.log,
             '--start', start,
             '--end', end]
-        if (this._launchArgs.log_format !== "") {
+        if (this._launchArgs.log_format !== undefined && this._launchArgs.log_format !== "") {
             l2sArgs.push("-f");
             l2sArgs.push(this._launchArgs.log_format);
         }
@@ -290,13 +294,6 @@ export class DebugSession extends LoggingDebugSession {
         const currentFrame = this.buildStackFrame(index++, this._mapping?.srcRef);
         const stack: StackFrame[] = [];
         stack.push(currentFrame);
-
-        if (this._mapping?.stack.length === 1 && this._mapping?.stack[0].length > 0) {
-            this._mapping?.stack[0].forEach((srcRef) => {
-                const frame = this.buildStackFrame(index++, srcRef);
-                stack.push(frame);
-            });
-        }
 
         response.body = {
             stackFrames: stack,
@@ -364,12 +361,12 @@ export class DebugSession extends LoggingDebugSession {
 
         const v = this._variableHandles.get(args.variablesReference);
         if (v === 'locals' && this._mapping !== undefined) {
-            for (let [key, value] of Object.entries(this._mapping.variables)) {
-                vs.push({
-                    name: key,
-                    value: value,
-                    variablesReference: 0
-                });
+            for (let pair of this._mapping.variables) {
+                    vs.push({
+                        name: pair.expr,
+                        value: pair.value,
+                        variablesReference: 0
+                    });
             }
         }
 
