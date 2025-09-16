@@ -6,8 +6,6 @@ use std::collections::HashMap;
 use std::io;
 use std::ops::RangeBounds;
 use std::path::{Path, PathBuf};
-#[cfg(test)]
-use std::ptr;
 use thiserror::Error;
 
 mod code_source;
@@ -481,6 +479,7 @@ pub fn extract_logging(sources: &[CodeSource], tracker: &ProgressTracker) -> Vec
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ptr;
 
     #[test]
     fn test_filter_log_defaults() {
@@ -560,7 +559,7 @@ fn namedarg(name: &str) {
             Box::new(TEST_SOURCE.as_bytes()),
         )
         .unwrap();
-        let src_refs = extract_logging(&mut [code], &ProgressTracker::new())
+        let src_refs = extract_logging(&[code], &ProgressTracker::new())
             .pop()
             .unwrap()
             .log_statements;
@@ -594,7 +593,7 @@ fn namedarg(name: &str) {
             Box::new(TEST_SOURCE.as_bytes()),
         )
         .unwrap();
-        let src_refs = extract_logging(&mut [code], &ProgressTracker::new())
+        let src_refs = extract_logging(&[code], &ProgressTracker::new())
             .pop()
             .unwrap()
             .log_statements;
@@ -611,7 +610,7 @@ fn namedarg(name: &str) {
             Box::new(TEST_SOURCE.as_bytes()),
         )
         .unwrap();
-        let src_refs = extract_logging(&mut [code], &ProgressTracker::new())
+        let src_refs = extract_logging(&[code], &ProgressTracker::new())
             .pop()
             .unwrap()
             .log_statements;
@@ -628,7 +627,7 @@ fn namedarg(name: &str) {
             Box::new(TEST_SOURCE.as_bytes()),
         )
         .unwrap();
-        let src_refs = extract_logging(&mut [code], &ProgressTracker::new())
+        let src_refs = extract_logging(&[code], &ProgressTracker::new())
             .pop()
             .unwrap()
             .log_statements;
@@ -657,7 +656,7 @@ fn namedarg(name: &str) {
             Box::new(TEST_SOURCE.as_bytes()),
         )
         .unwrap();
-        let src_refs = extract_logging(&mut [code], &ProgressTracker::new())
+        let src_refs = extract_logging(&[code], &ProgressTracker::new())
             .pop()
             .unwrap()
             .log_statements;
@@ -699,7 +698,7 @@ fn namedarg(name: &str) {
             Box::new(TEST_PUNC_SRC.as_bytes()),
         )
         .unwrap();
-        let src_refs = extract_logging(&mut [code], &ProgressTracker::new())
+        let src_refs = extract_logging(&[code], &ProgressTracker::new())
             .pop()
             .unwrap()
             .log_statements;
@@ -727,7 +726,7 @@ fn namedarg(name: &str) {
         let log_ref = LogRef::new("Hello, Steve!");
         let code =
             CodeSource::new(&PathBuf::from("in-mem.cc"), Box::new(CPP_SOURCE.as_bytes())).unwrap();
-        let src_refs = extract_logging(&mut [code], &ProgressTracker::new())
+        let src_refs = extract_logging(&[code], &ProgressTracker::new())
             .pop()
             .unwrap()
             .log_statements;
