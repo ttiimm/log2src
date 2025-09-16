@@ -602,6 +602,40 @@ fn namedarg(name: &str) {
         assert!(ptr::eq(result.unwrap(), &src_refs[0]));
     }
 
+    const MULTILINE_SOURCE: &str = r#"
+#[macro_use]
+extern crate log;
+
+fn main() {
+    env_logger::init();
+    debug!("you're only as funky\n as your last cut");
+}
+"#;
+    #[test]
+    fn test_link_multiline() {
+        let lf = LogFormat::new(
+            r#"^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z \w+ \w+\]\s+(?<body>.*)"#.to_string(),
+        );
+        let log_ref = LogRef::with_format(
+            "[2024-05-09T19:58:53Z DEBUG main] you're only as funky\n as your last cut",
+            lf,
+        );
+        let code = CodeSource::new(
+            &PathBuf::from("in-mem.rs"),
+            Box::new(MULTILINE_SOURCE.as_bytes()),
+        )
+        .unwrap();
+        let src_refs = extract_logging(&[code], &ProgressTracker::new())
+            .pop()
+            .unwrap()
+            .log_statements;
+        assert_eq!(src_refs.len(), 1);
+        println!("`{}`", log_ref.body());
+        println!("`{}`", src_refs[0].matcher);
+        let result = link_to_source(&log_ref, &src_refs);
+        assert!(ptr::eq(result.unwrap(), &src_refs[0]));
+    }
+
     #[test]
     fn test_link_to_source_no_matches() {
         let log_ref = LogRef::new("nope!");

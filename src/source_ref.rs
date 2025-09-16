@@ -116,7 +116,7 @@ fn build_matcher(
     let mut exact_len = 0;
     for cap in placeholder_regex_for(language).captures_iter(text) {
         let placeholder = cap.get(0).unwrap();
-        let text = regex::escape(&text[last_end..placeholder.start()]);
+        let text = escape_ignore_newlines(&text[last_end..placeholder.start()]);
         exact_len += text.len();
         pattern.push_str(text.as_str());
         last_end = placeholder.end();
@@ -128,7 +128,7 @@ fn build_matcher(
             (None, None) => FormatArgument::Placeholder,
         });
     }
-    let text = regex::escape(&text[last_end..]);
+    let text = escape_ignore_newlines(&text[last_end..]);
     exact_len += text.len();
     if exact_len == 0 {
         None
@@ -137,6 +137,24 @@ fn build_matcher(
         pattern.push('$');
         Some((Regex::new(pattern.as_str()).unwrap(), pattern, args))
     }
+}
+
+/// Escape special chars except newlines and carriage returns in order to support multiline strings
+fn escape_ignore_newlines(segment: &str) -> String {
+    let mut result = String::with_capacity(segment.len() * 2);
+    for c in segment.chars() {
+        match c {
+            '\n' => result.push_str(r"\n"), // Use actual newline in regex
+            '\r' => result.push_str(r"\r"), // Handle carriage returns too
+            // Escape regex special chars
+            '.' | '+' | '*' | '?' | '^' | '$' | '(' | ')' | '[' | ']' | '{' | '}' | '|' => {
+                result.push('\\');
+                result.push(c);
+            }
+            _ => result.push(c),
+        }
+    }
+    result
 }
 
 #[cfg(test)]
@@ -176,7 +194,10 @@ mod tests {
     #[test]
     fn test_build_matcher_positional() {
         let (matcher, _pat, args) = build_matcher("second={2}", SourceLanguage::Rust).unwrap();
-        assert_eq!(Regex::new(r#"^second=(.+)$"#).unwrap().as_str(), matcher.as_str());
+        assert_eq!(
+            Regex::new(r#"^second=(.+)$"#).unwrap().as_str(),
+            matcher.as_str()
+        );
         assert_eq!(args[0], FormatArgument::Positional(2));
     }
 
@@ -193,8 +214,22 @@ mod tests {
 
     #[test]
     fn test_build_matcher_none() {
-        let build_res =
-            build_matcher("%s", SourceLanguage::Cpp);
+        let build_res = build_matcher("%s", SourceLanguage::Cpp);
         assert!(build_res.is_none());
+    }
+
+    #[test]
+    fn test_build_matcher_multiline() {
+        let (matcher, _pat, _args) = build_matcher(
+            "you're only as funky\n as your last cut",
+            SourceLanguage::Rust,
+        )
+        .unwrap();
+        assert_eq!(
+            Regex::new(r#"^you're only as funky\n as your last cut$"#)
+                .unwrap()
+                .as_str(),
+            matcher.as_str()
+        );
     }
 }
