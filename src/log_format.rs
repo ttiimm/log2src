@@ -1,4 +1,4 @@
-use regex::{Captures, Regex};
+use regex::{Captures, Regex, RegexBuilder};
 
 use crate::LogRef;
 
@@ -11,7 +11,13 @@ impl LogFormat {
     pub fn new(format: String) -> LogFormat {
         LogFormat {
             // TODO handle more gracefully if wrong format
-            regex: Regex::new(&format).unwrap(),
+            regex: RegexBuilder::new(&format)
+                // XXX: This is kinda a hack to support multiline matching in lnav, but
+                // not really useful for log2src atm because its still filtering line-by-line,
+                // so this case would never come up
+                .dot_matches_new_line(true)
+                .build()
+                .unwrap(),
         }
     }
 

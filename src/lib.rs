@@ -6,8 +6,6 @@ use std::collections::HashMap;
 use std::io;
 use std::ops::RangeBounds;
 use std::path::{Path, PathBuf};
-#[cfg(test)]
-use std::ptr;
 use thiserror::Error;
 
 mod code_source;
@@ -481,6 +479,7 @@ pub fn extract_logging(sources: &[CodeSource], tracker: &ProgressTracker) -> Vec
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ptr;
 
     #[test]
     fn test_filter_log_defaults() {
@@ -560,7 +559,7 @@ fn namedarg(name: &str) {
             Box::new(TEST_SOURCE.as_bytes()),
         )
         .unwrap();
-        let src_refs = extract_logging(&mut [code], &ProgressTracker::new())
+        let src_refs = extract_logging(&[code], &ProgressTracker::new())
             .pop()
             .unwrap()
             .log_statements;
@@ -594,13 +593,54 @@ fn namedarg(name: &str) {
             Box::new(TEST_SOURCE.as_bytes()),
         )
         .unwrap();
-        let src_refs = extract_logging(&mut [code], &ProgressTracker::new())
+        let src_refs = extract_logging(&[code], &ProgressTracker::new())
             .pop()
             .unwrap()
             .log_statements;
         assert_eq!(src_refs.len(), 3);
         let result = link_to_source(&log_ref, &src_refs);
         assert!(ptr::eq(result.unwrap(), &src_refs[0]));
+    }
+
+    const MULTILINE_SOURCE: &str = r#"
+#[macro_use]
+extern crate log;
+
+fn main() {
+    env_logger::init();
+    let adjective = "funky";
+    debug!("you're only as {}\n as your last cut", adjective);
+}
+"#;
+    #[test]
+    fn test_link_multiline() {
+        let lf = LogFormat::new(
+            r#"^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z \w+ \w+\]\s+(?<body>.*)"#.to_string(),
+        );
+        let log_ref = LogRef::with_format(
+            "[2024-05-09T19:58:53Z DEBUG main] you're only as funky\n as your last cut",
+            lf,
+        );
+        let code = CodeSource::new(
+            &PathBuf::from("in-mem.rs"),
+            Box::new(MULTILINE_SOURCE.as_bytes()),
+        )
+        .unwrap();
+        let src_refs = extract_logging(&[code], &ProgressTracker::new())
+            .pop()
+            .unwrap()
+            .log_statements;
+        assert_eq!(src_refs.len(), 1);
+        let result = link_to_source(&log_ref, &src_refs);
+        assert!(ptr::eq(result.unwrap(), &src_refs[0]));
+        let vars = extract_variables(&log_ref, &src_refs[0]);
+        assert_eq!(
+            vars,
+            [VariablePair {
+                expr: "adjective".to_string(),
+                value: "funky".to_string()
+            }]
+        );
     }
 
     #[test]
@@ -611,7 +651,7 @@ fn namedarg(name: &str) {
             Box::new(TEST_SOURCE.as_bytes()),
         )
         .unwrap();
-        let src_refs = extract_logging(&mut [code], &ProgressTracker::new())
+        let src_refs = extract_logging(&[code], &ProgressTracker::new())
             .pop()
             .unwrap()
             .log_statements;
@@ -628,7 +668,7 @@ fn namedarg(name: &str) {
             Box::new(TEST_SOURCE.as_bytes()),
         )
         .unwrap();
-        let src_refs = extract_logging(&mut [code], &ProgressTracker::new())
+        let src_refs = extract_logging(&[code], &ProgressTracker::new())
             .pop()
             .unwrap()
             .log_statements;
@@ -657,7 +697,7 @@ fn namedarg(name: &str) {
             Box::new(TEST_SOURCE.as_bytes()),
         )
         .unwrap();
-        let src_refs = extract_logging(&mut [code], &ProgressTracker::new())
+        let src_refs = extract_logging(&[code], &ProgressTracker::new())
             .pop()
             .unwrap()
             .log_statements;
@@ -699,7 +739,7 @@ fn namedarg(name: &str) {
             Box::new(TEST_PUNC_SRC.as_bytes()),
         )
         .unwrap();
-        let src_refs = extract_logging(&mut [code], &ProgressTracker::new())
+        let src_refs = extract_logging(&[code], &ProgressTracker::new())
             .pop()
             .unwrap()
             .log_statements;
@@ -727,7 +767,7 @@ fn namedarg(name: &str) {
         let log_ref = LogRef::new("Hello, Steve!");
         let code =
             CodeSource::new(&PathBuf::from("in-mem.cc"), Box::new(CPP_SOURCE.as_bytes())).unwrap();
-        let src_refs = extract_logging(&mut [code], &ProgressTracker::new())
+        let src_refs = extract_logging(&[code], &ProgressTracker::new())
             .pop()
             .unwrap()
             .log_statements;
