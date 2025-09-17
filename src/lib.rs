@@ -608,7 +608,8 @@ extern crate log;
 
 fn main() {
     env_logger::init();
-    debug!("you're only as funky\n as your last cut");
+    let adjective = "funky";
+    debug!("you're only as {}\n as your last cut", adjective);
 }
 "#;
     #[test]
@@ -630,10 +631,16 @@ fn main() {
             .unwrap()
             .log_statements;
         assert_eq!(src_refs.len(), 1);
-        println!("`{}`", log_ref.body());
-        println!("`{}`", src_refs[0].matcher);
         let result = link_to_source(&log_ref, &src_refs);
         assert!(ptr::eq(result.unwrap(), &src_refs[0]));
+        let vars = extract_variables(&log_ref, &src_refs[0]);
+        assert_eq!(
+            vars,
+            [VariablePair {
+                expr: "adjective".to_string(),
+                value: "funky".to_string()
+            }]
+        );
     }
 
     #[test]
