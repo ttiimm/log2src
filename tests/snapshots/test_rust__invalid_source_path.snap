@@ -17,7 +17,7 @@ exit_code: 1
 ----- stdout -----
 
 ----- stderr -----
-  ⚠ cannot read source file "{example_dir}/stack.r"
+  ⚠ cannot access path "{example_dir}/stack.r"
   ╰─▶ {errmsg} (os error 2)
 
 Error:   × no log statements found

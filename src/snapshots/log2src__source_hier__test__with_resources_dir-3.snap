@@ -1,0 +1,18 @@
+---
+source: src/source_hier.rs
+expression: new_and_updated_events
+---
+- DeletedFile:
+    - Basic.java
+    - 1
+- DeletedFile:
+    - test_java.rs
+    - 5
+- NewFile:
+    - Basic.java
+    - language: Java
+      id: 7
+- NewFile:
+    - new.rs
+    - language: Rust
+      id: 8

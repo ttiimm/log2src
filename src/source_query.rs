@@ -22,7 +22,7 @@ impl<'a> SourceQuery<'a> {
     pub fn new(code: &'a CodeSource) -> SourceQuery<'a> {
         // println!("{}", code.filename);
         let mut parser = Parser::new();
-        let language = code.ts_language();
+        let language = code.info.language.into();
         parser
             .set_language(&language)
             .unwrap_or_else(|_| panic!("Error loading {:?} grammar", language));

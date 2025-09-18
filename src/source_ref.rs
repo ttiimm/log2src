@@ -44,11 +44,11 @@ impl SourceRef {
         }
         let unquoted = &source[start..end].to_string();
         // println!("{} line {}", code.filename, line);
-        if let Some((matcher, pattern, args)) = build_matcher(unquoted, code.language) {
+        if let Some((matcher, pattern, args)) = build_matcher(unquoted, code.info.language) {
             let name = source[result.name_range].to_string();
             Some(SourceRef {
                 source_path: code.filename.clone(),
-                language: code.language,
+                language: code.info.language,
                 line_no: line,
                 column: col,
                 name,
