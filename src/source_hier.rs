@@ -517,10 +517,6 @@ mod test {
             let mut perms = metadata.permissions();
             perms.set_readonly(false);
             fs::set_permissions(&basic_path, perms).unwrap();
-            let basic_file = File::open(&basic_path).unwrap();
-            basic_file
-                .set_modified(SystemTime::now().sub(Duration::from_secs(10)))
-                .unwrap();
         }
         let mut tree = SourceHierTree::from(temp_test_dir.path());
         tree.sync();
