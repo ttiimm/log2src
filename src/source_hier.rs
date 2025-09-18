@@ -511,10 +511,16 @@ mod test {
     fn test_with_resources_dir() {
         let tests_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests");
         let temp_test_dir = setup_test_environment(&tests_path);
-        let _ = File::open(temp_test_dir.path().join("tests/java/Basic.java"))
-            .unwrap()
-            .set_modified(SystemTime::now().sub(Duration::from_secs(10)))
+        {
+            let basic_file = File::open(temp_test_dir.path().join("tests/java/Basic.java"))
+                .unwrap();
+            let metadata = basic_file.metadata().unwrap();
+            let mut perms = metadata.permissions();
+            perms.set_readonly(false);
+            basic_file.set_permissions(perms).unwrap();
+            basic_file.set_modified(SystemTime::now().sub(Duration::from_secs(10)))
             .unwrap();
+        }
         let mut tree = SourceHierTree::from(temp_test_dir.path());
         tree.sync();
         let events: Vec<ScanEvent> = tree.scan().map(redact_event).collect();
