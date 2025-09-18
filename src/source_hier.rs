@@ -513,24 +513,29 @@ mod test {
         let temp_test_dir = setup_test_environment(&tests_path);
         let _ = File::open(temp_test_dir.path().join("tests/java/Basic.java"))
             .unwrap()
-            .set_modified(SystemTime::now().sub(Duration::from_secs(10)));
+            .set_modified(SystemTime::now().sub(Duration::from_secs(10)))
+            .unwrap();
         let mut tree = SourceHierTree::from(temp_test_dir.path());
         tree.sync();
         let events: Vec<ScanEvent> = tree.scan().map(redact_event).collect();
         assert_yaml_snapshot!(events);
         let no_events: Vec<ScanEvent> = tree.scan().map(redact_event).collect();
         assert_yaml_snapshot!(no_events);
-        let _ = fs::remove_file(temp_test_dir.path().join("tests/test_java.rs"));
+        let _ = fs::remove_file(temp_test_dir.path().join("tests/test_java.rs")).unwrap();
         let _ = File::create(temp_test_dir.path().join("new.rs"))
             .unwrap()
-            .write("abc".as_bytes());
-        let _ = File::open(temp_test_dir.path().join("tests/java/Basic.java"))
+            .write("abc".as_bytes())
+            .unwrap();
+        let _ = File::options()
+            .append(true)
+            .open(temp_test_dir.path().join("tests/java/Basic.java"))
             .unwrap()
-            .set_modified(SystemTime::now());
+            .write("def".as_bytes())
+            .unwrap();
         tree.sync();
         let new_and_updated_events: Vec<ScanEvent> = tree.scan().map(redact_event).collect();
         assert_yaml_snapshot!(new_and_updated_events);
-        let _ = fs::remove_dir_all(temp_test_dir.path().join("tests/java"));
+        let _ = fs::remove_dir_all(temp_test_dir.path().join("tests/java")).unwrap();
         tree.sync();
         let deleted_dir_events: Vec<ScanEvent> = tree.scan().map(redact_event).collect();
         assert_yaml_snapshot!(deleted_dir_events);
