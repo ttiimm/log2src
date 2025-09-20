@@ -1,0 +1,16 @@
+---
+source: src/source_hier.rs
+expression: deleted_dir_events
+---
+- DeletedFile:
+    - BasicWithUpper.java
+    - 4
+- DeletedFile:
+    - BasicWithLog.java
+    - 3
+- DeletedFile:
+    - BasicWithCustom.java
+    - 2
+- DeletedFile:
+    - Basic.java
+    - 7

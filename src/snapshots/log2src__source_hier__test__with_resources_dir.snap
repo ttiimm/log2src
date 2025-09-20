@@ -1,0 +1,32 @@
+---
+source: src/source_hier.rs
+expression: events
+---
+- NewFile:
+    - test_rust.rs
+    - language: Rust
+      id: 6
+- NewFile:
+    - test_java.rs
+    - language: Rust
+      id: 5
+- NewFile:
+    - BasicWithUpper.java
+    - language: Java
+      id: 4
+- NewFile:
+    - BasicWithLog.java
+    - language: Java
+      id: 3
+- NewFile:
+    - BasicWithCustom.java
+    - language: Java
+      id: 2
+- NewFile:
+    - Basic.java
+    - language: Java
+      id: 1
+- NewFile:
+    - common_settings.rs
+    - language: Rust
+      id: 0

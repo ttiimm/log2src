@@ -1,20 +1,27 @@
+use itertools::Itertools;
 use miette::Diagnostic;
 use rayon::prelude::*;
 use regex::RegexSet;
 use serde::Serialize;
 use std::collections::HashMap;
+use std::ffi::OsStr;
+use std::fs::File;
 use std::io;
 use std::ops::RangeBounds;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use thiserror::Error;
+use tree_sitter::Language;
 
 mod code_source;
 mod log_format;
 mod progress;
+mod source_hier;
 mod source_query;
 mod source_ref;
 
 // TODO: doesn't need to be exposed if we can clean up the arguments to do_mapping
+use crate::source_hier::{ScanEvent, SourceFileID, SourceHierContent, SourceHierTree};
 use crate::source_ref::FormatArgument;
 pub use code_source::CodeSource;
 use log_format::LogFormat;
@@ -24,13 +31,16 @@ use source_query::QueryResult;
 pub use source_query::SourceQuery;
 pub use source_ref::SourceRef;
 
-#[derive(Error, Debug, Diagnostic)]
+#[derive(Error, Debug, Diagnostic, Clone)]
 pub enum LogError {
     #[error("\"{path}\" is already covered by \"{root}\"")]
     PathExists { path: PathBuf, root: PathBuf },
     #[error("cannot read source file \"{path}\"")]
     #[diagnostic(severity(warning))]
-    CannotReadSourceFile { path: PathBuf, source: io::Error },
+    CannotReadSourceFile {
+        path: PathBuf,
+        source: Arc<io::Error>,
+    },
     #[error("no log statements found")]
     #[diagnostic(help(
         "\
@@ -40,13 +50,19 @@ pub enum LogError {
     NoLogStatements,
     #[error("cannot access path \"{path}\"")]
     #[diagnostic(severity(warning))]
-    CannotAccessPath { path: PathBuf, source: io::Error },
+    CannotAccessPath {
+        path: PathBuf,
+        source: Arc<io::Error>,
+    },
+    #[error("unsupported file type \"{name}\"")]
+    UnsupportedFileType { name: String },
 }
 
 /// Collection of log statements in a single source file
 #[derive(Debug)]
 pub struct StatementsInFile {
     pub filename: String,
+    id: SourceFileID,
     pub log_statements: Vec<SourceRef>,
     /// A single matcher for all log statements.
     /// XXX If there are too many in the file, the RegexSet constructor
@@ -57,8 +73,8 @@ pub struct StatementsInFile {
 
 /// Collection of individual source files under a root path
 pub struct SourceTree {
-    pub sources: Vec<CodeSource>,
-    pub statements: Vec<StatementsInFile>,
+    pub tree: SourceHierTree,
+    pub files_with_statements: HashMap<SourceFileID, StatementsInFile>,
 }
 
 /// Collection of root paths to their tree of source files
@@ -79,32 +95,21 @@ impl LogMatcher {
     pub fn is_empty(&self) -> bool {
         self.roots
             .iter()
-            .all(|(_path, coll)| coll.statements.is_empty())
-    }
-
-    pub fn len(&self) -> usize {
-        self.roots
-            .iter()
-            .map(|(_path, coll)| coll.sources.len())
-            .sum()
+            .all(|(_path, coll)| coll.files_with_statements.is_empty())
     }
 
     /// Add a source root path
     pub fn add_root(&mut self, path: &Path) -> Result<(), LogError> {
-        if let Some(existing_path) = self.match_path(path) {
-            Err(LogError::PathExists {
-                path: PathBuf::from(path),
-                root: existing_path,
-            })
+        if let Some(_existing_path) = self.match_path(path) {
         } else {
             self.roots
                 .entry(path.to_owned())
                 .or_insert_with(|| SourceTree {
-                    sources: vec![],
-                    statements: vec![],
+                    tree: SourceHierTree::from(&path),
+                    files_with_statements: HashMap::new(),
                 });
-            Ok(())
         }
+        Ok(())
     }
 
     /// Check if the given path is covered by any of the roots in this matcher.
@@ -121,24 +126,22 @@ impl LogMatcher {
     pub fn discover_sources(&mut self, tracker: &ProgressTracker) -> Vec<LogError> {
         tracker.begin_step("Finding source code".to_string());
         let pguard = tracker.doing_work(self.roots.len() as u64, "paths".to_string());
-        let retval = self
-            .roots
-            .par_iter_mut()
-            .filter(|(_path, coll)| coll.sources.is_empty())
-            .flat_map(|(path, coll)| {
-                let (srcs, errs) = CodeSource::find_code(path, None);
-                coll.sources = srcs;
-                pguard.inc(1);
-                errs
-            })
-            .collect();
-        tracker.end_step(format!(
-            "{} files found",
-            self.roots
-                .iter()
-                .map(|(_path, coll)| coll.sources.len())
-                .sum::<usize>()
-        ));
+        self.roots.par_iter_mut().for_each(|(_path, coll)| {
+            coll.tree.sync();
+            pguard.inc(1);
+        });
+        let mut retval: Vec<LogError> = Vec::new();
+        let mut file_count: usize = 0;
+        self.roots.values().for_each(|coll| {
+            coll.tree.visit(|node| match &node.content {
+                SourceHierContent::File { .. } => file_count += 1,
+                SourceHierContent::UnsupportedFile { .. } => {}
+                SourceHierContent::Directory { .. } => {}
+                SourceHierContent::Error { ref source } => retval.push(source.clone()),
+                SourceHierContent::Unknown { .. } => {}
+            });
+        });
+        tracker.end_step(format!("{} files found", file_count));
 
         retval
     }
@@ -147,15 +150,36 @@ impl LogMatcher {
     pub fn extract_log_statements(&mut self, tracker: &ProgressTracker) {
         tracker.begin_step("Extracting log statements".to_string());
         self.roots.iter_mut().for_each(|(_path, coll)| {
-            if coll.statements.is_empty() {
-                coll.statements = extract_logging(&coll.sources, tracker);
+            for event_chunk in &coll.tree.scan().chunks(10) {
+                let sources = event_chunk
+                    .flat_map(|event| match event {
+                        ScanEvent::NewFile(path, info) => match File::open(&path) {
+                            Ok(file) => match CodeSource::new(&path, info, file) {
+                                Ok(cs) => Some(cs),
+                                Err(_) => todo!(),
+                            },
+                            Err(_) => {
+                                todo!()
+                            }
+                        },
+                        ScanEvent::DeletedFile(_path, id) => {
+                            coll.files_with_statements.remove(&id);
+                            None
+                        }
+                    })
+                    .collect::<Vec<CodeSource>>();
+                extract_logging(&sources, tracker)
+                    .into_iter()
+                    .for_each(|sif| {
+                        coll.files_with_statements.insert(sif.id, sif);
+                    });
             }
         });
         tracker.end_step(format!(
             "{} found",
             self.roots
                 .iter()
-                .flat_map(|(_path, coll)| coll.statements.iter())
+                .flat_map(|(_path, coll)| coll.files_with_statements.values())
                 .map(|stmts| stmts.log_statements.len())
                 .sum::<usize>()
         ));
@@ -171,8 +195,8 @@ impl LogMatcher {
             }) = log_ref.details
             {
                 // XXX this block and the else are basically the same, try to refactor
-                coll.statements
-                    .iter()
+                coll.files_with_statements
+                    .values()
                     .filter(|stmts| stmts.filename.contains(filename))
                     .flat_map(|stmts| {
                         let file_matches = stmts.matcher.matches(body);
@@ -183,13 +207,13 @@ impl LogMatcher {
                     })
                     .collect::<Vec<&SourceRef>>()
             } else {
-                coll.statements
+                coll.files_with_statements
                     .par_iter()
                     .flat_map(|src_ref_coll| {
-                        let file_matches = src_ref_coll.matcher.matches(log_ref.body());
+                        let file_matches = src_ref_coll.1.matcher.matches(log_ref.body());
                         match file_matches.iter().next() {
                             None => None,
-                            Some(index) => src_ref_coll.log_statements.get(index),
+                            Some(index) => src_ref_coll.1.log_statements.get(index),
                         }
                     })
                     .collect::<Vec<&SourceRef>>()
@@ -215,11 +239,38 @@ pub enum SourceLanguage {
     Cpp,
 }
 
+impl From<SourceLanguage> for Language {
+    fn from(value: SourceLanguage) -> Self {
+        match value {
+            SourceLanguage::Rust => tree_sitter_rust_orchard::LANGUAGE.into(),
+            SourceLanguage::Java => tree_sitter_java::LANGUAGE.into(),
+            SourceLanguage::Cpp => tree_sitter_cpp::LANGUAGE.into(),
+        }
+    }
+}
+
 const IDENTS_RS: &[&str] = &["debug", "info", "warn"];
 const IDENTS_JAVA: &[&str] = &["logger", "log", "fine", "debug", "info", "warn", "trace"];
 const IDENTS_CPP: &[&str] = &["debug", "info", "warn", "trace"];
 
 impl SourceLanguage {
+    fn from_extension(extension: &OsStr) -> Option<Self> {
+        match extension.to_str() {
+            Some("rs") => Some(Self::Rust),
+            Some("java") => Some(Self::Java),
+            Some("h" | "hh" | "hpp" | "hxx" | "tpp" | "cc" | "cpp" | "cxx") => Some(Self::Cpp),
+            None | Some(_) => None,
+        }
+    }
+
+    fn from_path(path: &Path) -> Option<Self> {
+        match path.extension() {
+            Some(extension) => Self::from_extension(extension),
+            // Some languages might have well-known file names without an extension
+            None => None,
+        }
+    }
+
     fn get_query(&self) -> &str {
         match self {
             SourceLanguage::Rust => {
@@ -428,7 +479,7 @@ pub fn extract_logging(sources: &[CodeSource], tracker: &ProgressTracker) -> Vec
             let mut matched = vec![];
             let mut patterns = vec![];
             let src_query = SourceQuery::new(code);
-            let query = code.language.get_query();
+            let query = code.info.language.get_query();
             let results = src_query.query(query, None);
             for result in results {
                 // println!("node.kind()={:?} range={:?}", result.kind, result.range);
@@ -447,6 +498,7 @@ pub fn extract_logging(sources: &[CodeSource], tracker: &ProgressTracker) -> Vec
                             // println!("text={} matched.len()={}", text, matched.len());
                             // check the text doesn't match any of the logging related identifiers
                             if code
+                                .info
                                 .language
                                 .get_identifiers()
                                 .iter()
@@ -458,7 +510,7 @@ pub fn extract_logging(sources: &[CodeSource], tracker: &ProgressTracker) -> Vec
                             }
                         }
                     }
-                    _ => eprintln!("ignoring {}", result.kind),
+                    _ => {} // eprintln!("ignoring {}", result.kind),
                 }
                 // println!("*****");
             }
@@ -468,6 +520,7 @@ pub fn extract_logging(sources: &[CodeSource], tracker: &ProgressTracker) -> Vec
             } else {
                 Some(StatementsInFile {
                     filename: matched.first().unwrap().source_path.clone(),
+                    id: code.info.id,
                     log_statements: matched,
                     matcher: RegexSet::new(patterns).expect("To combine patterns"),
                 })
@@ -554,11 +607,7 @@ fn namedarg(name: &str) {
 
     #[test]
     fn test_extract_logging() {
-        let code = CodeSource::new(
-            &PathBuf::from("in-mem.rs"),
-            Box::new(TEST_SOURCE.as_bytes()),
-        )
-        .unwrap();
+        let code = CodeSource::from_string(&Path::new("in-mem.rs"), TEST_SOURCE);
         let src_refs = extract_logging(&[code], &ProgressTracker::new())
             .pop()
             .unwrap()
@@ -588,11 +637,7 @@ fn namedarg(name: &str) {
             "[2024-05-09T19:58:53Z DEBUG main] you're only as funky as your last cut",
             lf,
         );
-        let code = CodeSource::new(
-            &PathBuf::from("in-mem.rs"),
-            Box::new(TEST_SOURCE.as_bytes()),
-        )
-        .unwrap();
+        let code = CodeSource::from_string(&Path::new("in-mem.rs"), TEST_SOURCE);
         let src_refs = extract_logging(&[code], &ProgressTracker::new())
             .pop()
             .unwrap()
@@ -621,11 +666,7 @@ fn main() {
             "[2024-05-09T19:58:53Z DEBUG main] you're only as funky\n as your last cut",
             lf,
         );
-        let code = CodeSource::new(
-            &PathBuf::from("in-mem.rs"),
-            Box::new(MULTILINE_SOURCE.as_bytes()),
-        )
-        .unwrap();
+        let code = CodeSource::from_string(&Path::new("in-mem.rs"), MULTILINE_SOURCE);
         let src_refs = extract_logging(&[code], &ProgressTracker::new())
             .pop()
             .unwrap()
@@ -646,11 +687,7 @@ fn main() {
     #[test]
     fn test_link_to_source_no_matches() {
         let log_ref = LogRef::new("nope!");
-        let code = CodeSource::new(
-            &PathBuf::from("in-mem.rs"),
-            Box::new(TEST_SOURCE.as_bytes()),
-        )
-        .unwrap();
+        let code = CodeSource::from_string(&Path::new("in-mem.rs"), TEST_SOURCE);
         let src_refs = extract_logging(&[code], &ProgressTracker::new())
             .pop()
             .unwrap()
@@ -663,11 +700,7 @@ fn main() {
     #[test]
     fn test_extract_variables() {
         let log_ref = LogRef::new("this won't match i=1; j=2");
-        let code = CodeSource::new(
-            &PathBuf::from("in-mem.rs"),
-            Box::new(TEST_SOURCE.as_bytes()),
-        )
-        .unwrap();
+        let code = CodeSource::from_string(&Path::new("in-mem.rs"), TEST_SOURCE);
         let src_refs = extract_logging(&[code], &ProgressTracker::new())
             .pop()
             .unwrap()
@@ -692,11 +725,7 @@ fn main() {
     #[test]
     fn test_extract_named() {
         let log_ref = LogRef::new("Hello, Tim!");
-        let code = CodeSource::new(
-            &PathBuf::from("in-mem.rs"),
-            Box::new(TEST_SOURCE.as_bytes()),
-        )
-        .unwrap();
+        let code = CodeSource::from_string(&Path::new("in-mem.rs"), TEST_SOURCE);
         let src_refs = extract_logging(&[code], &ProgressTracker::new())
             .pop()
             .unwrap()
@@ -734,11 +763,7 @@ fn main() {
             "2025-04-10 22:12:52 INFO  JvmPauseMonitor:146 - JvmPauseMonitor-n0: Started",
             log_format,
         );
-        let code = CodeSource::new(
-            &PathBuf::from("in-mem.java"),
-            Box::new(TEST_PUNC_SRC.as_bytes()),
-        )
-        .unwrap();
+        let code = CodeSource::from_string(&PathBuf::from("in-mem.java"), TEST_PUNC_SRC);
         let src_refs = extract_logging(&[code], &ProgressTracker::new())
             .pop()
             .unwrap()
@@ -765,8 +790,7 @@ fn main() {
     #[test]
     fn test_basic_cpp() {
         let log_ref = LogRef::new("Hello, Steve!");
-        let code =
-            CodeSource::new(&PathBuf::from("in-mem.cc"), Box::new(CPP_SOURCE.as_bytes())).unwrap();
+        let code = CodeSource::from_string(&Path::new("in-mem.cc"), CPP_SOURCE);
         let src_refs = extract_logging(&[code], &ProgressTracker::new())
             .pop()
             .unwrap()
