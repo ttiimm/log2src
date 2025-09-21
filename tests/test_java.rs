@@ -83,3 +83,23 @@ fn basic_with_log_format() -> Result<(), Box<dyn std::error::Error>> {
     assert_cmd_snapshot!(cmd);
     Ok(())
 }
+
+#[test]
+fn basic_slf4j() -> Result<(), Box<dyn std::error::Error>> {
+    let _guard = common_settings::enable_filters();
+    let mut cmd = Command::cargo_bin("log2src")?;
+    let source = Path::new("tests").join("java").join("BasicSlf4j.java");
+    let log = Path::new("tests")
+        .join("resources")
+        .join("java")
+        .join("basic-slf4j.log");
+    cmd.arg("-d")
+        .arg(source.to_str().expect("test case source code exists"))
+        .arg("-l")
+        .arg(log.to_str().expect("test case log exists"))
+        .arg("-f")
+        .arg("^(?<timestamp>\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}) (?<body>.*)$");
+
+    assert_cmd_snapshot!(cmd);
+    Ok(())
+}

@@ -61,7 +61,7 @@ pub enum LogError {
 /// Collection of log statements in a single source file
 #[derive(Debug)]
 pub struct StatementsInFile {
-    pub filename: String,
+    pub path: String,
     id: SourceFileID,
     pub log_statements: Vec<SourceRef>,
     /// A single matcher for all log statements.
@@ -113,12 +113,22 @@ impl LogMatcher {
     }
 
     /// Check if the given path is covered by any of the roots in this matcher.
-    pub fn match_path(&self, path: &Path) -> Option<PathBuf> {
+    pub fn match_path(&self, path: &Path) -> Option<(&PathBuf, &SourceTree)> {
         self.roots
             .iter()
             .filter(|(existing_path, _coll)| path.starts_with(existing_path))
-            .map(|(path, _coll)| path.clone())
             .next()
+    }
+
+    pub fn find_source_file_statements(&self, path: &Path) -> Option<&StatementsInFile> {
+        if let Some((_root_path, src_tree)) = self.match_path(path) {
+            src_tree
+                .tree
+                .find_file(path)
+                .and_then(|info| src_tree.files_with_statements.get(&info.id))
+        } else {
+            None
+        }
     }
 
     /// Traverse the roots looking for supported source files.
@@ -197,7 +207,7 @@ impl LogMatcher {
                 // XXX this block and the else are basically the same, try to refactor
                 coll.files_with_statements
                     .values()
-                    .filter(|stmts| stmts.filename.contains(filename))
+                    .filter(|stmts| stmts.path.contains(filename))
                     .flat_map(|stmts| {
                         let file_matches = stmts.matcher.matches(body);
                         match file_matches.iter().next() {
@@ -231,7 +241,7 @@ impl LogMatcher {
     }
 }
 
-#[derive(Debug, PartialEq, Copy, Clone, Serialize)]
+#[derive(Debug, Eq, PartialEq, Copy, Clone, Serialize)]
 pub enum SourceLanguage {
     Rust,
     Java,
@@ -254,6 +264,14 @@ const IDENTS_JAVA: &[&str] = &["logger", "log", "fine", "debug", "info", "warn",
 const IDENTS_CPP: &[&str] = &["debug", "info", "warn", "trace"];
 
 impl SourceLanguage {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            SourceLanguage::Rust => "Rust",
+            SourceLanguage::Java => "Java",
+            SourceLanguage::Cpp => "C++",
+        }
+    }
+
     fn from_extension(extension: &OsStr) -> Option<Self> {
         match extension.to_str() {
             Some("rs") => Some(Self::Rust),
@@ -288,12 +306,11 @@ impl SourceLanguage {
                     (method_invocation 
                         object: (identifier) @object-name
                         name: (identifier) @method-name
-                        arguments: (argument_list [
-                            (_ (string_literal) @log  (_ (this)? @this (identifier) @arguments))
-                            (_ (string_literal (_ (this)? @this (identifier) @arguments)) @log)
-                            (string_literal) @log (this)? @this (identifier) @arguments
-                            (string_literal) @log (this)? @this
-                        ])
+                        arguments: [
+                            (argument_list (template_expression
+                                template_argument: (string_literal) @arguments))
+                            (argument_list (string_literal) @arguments)
+                        ]
                         (#match? @object-name "log(ger)?|LOG(GER)?")
                         (#match? @method-name "fine|debug|info|warn|trace")
                     )
@@ -490,7 +507,7 @@ pub fn extract_logging(sources: &[CodeSource], tracker: &ProgressTracker) -> Vec
                             matched.push(src_ref);
                         }
                     }
-                    "identifier" | "this" => {
+                    "args" | "this" => {
                         if !matched.is_empty() {
                             let range = result.range;
                             let source = code.buffer.as_str();
@@ -506,6 +523,7 @@ pub fn extract_logging(sources: &[CodeSource], tracker: &ProgressTracker) -> Vec
                             {
                                 let length = matched.len() - 1;
                                 let prior_result: &mut SourceRef = matched.get_mut(length).unwrap();
+                                prior_result.end_line_no = result.range.end_point.row + 1;
                                 prior_result.vars.push(text.trim().to_string());
                             }
                         }
@@ -519,7 +537,7 @@ pub fn extract_logging(sources: &[CodeSource], tracker: &ProgressTracker) -> Vec
                 None
             } else {
                 Some(StatementsInFile {
-                    filename: matched.first().unwrap().source_path.clone(),
+                    path: matched.first().unwrap().source_path.clone(),
                     id: code.info.id,
                     log_statements: matched,
                     matcher: RegexSet::new(patterns).expect("To combine patterns"),

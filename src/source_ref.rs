@@ -20,6 +20,8 @@ pub struct SourceRef {
     pub language: SourceLanguage,
     #[serde(rename(serialize = "lineNumber"))]
     pub line_no: usize,
+    #[serde(rename(serialize = "endLineNumber"))]
+    pub end_line_no: usize,
     pub column: usize,
     pub name: String,
     pub text: String,
@@ -35,7 +37,8 @@ impl SourceRef {
         let range = result.range;
         let source = code.buffer.as_str();
         let text = source[range.start_byte..range.end_byte].to_string();
-        let line = range.start_point.row + 1;
+        let line_no = range.start_point.row + 1;
+        let end_line_no = range.end_point.row + 1;
         let col = range.start_point.column;
         let start = range.start_byte + 1;
         let mut end = range.end_byte - 1;
@@ -49,7 +52,8 @@ impl SourceRef {
             Some(SourceRef {
                 source_path: code.filename.clone(),
                 language: code.info.language,
-                line_no: line,
+                line_no,
+                end_line_no,
                 column: col,
                 name,
                 text,
@@ -93,7 +97,7 @@ static RUST_PLACEHOLDER_REGEX: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 static JAVA_PLACEHOLDER_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"\\?\{.*}"#).unwrap());
+    LazyLock::new(|| Regex::new(r#"\{.*}|\\\{(.*)}"#).unwrap());
 
 static CPP_PLACEHOLDER_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"%[-+ #0]*\d*(?:\.\d+)?[hlLzjt]*[diuoxXfFeEgGaAcspn%]|\{(?:([a-zA-Z_][a-zA-Z0-9_.]*)|(\d+))?\s*(?::[^}]*)?}"#).unwrap());

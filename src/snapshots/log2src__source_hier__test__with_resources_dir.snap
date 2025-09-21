@@ -5,21 +5,25 @@ expression: events
 - NewFile:
     - test_rust.rs
     - language: Rust
-      id: 6
+      id: 7
 - NewFile:
     - test_java.rs
     - language: Rust
-      id: 5
+      id: 6
 - NewFile:
     - BasicWithUpper.java
     - language: Java
-      id: 4
+      id: 5
 - NewFile:
     - BasicWithLog.java
     - language: Java
-      id: 3
+      id: 4
 - NewFile:
     - BasicWithCustom.java
+    - language: Java
+      id: 3
+- NewFile:
+    - BasicSlf4j.java
     - language: Java
       id: 2
 - NewFile:
