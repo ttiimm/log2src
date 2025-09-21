@@ -13,11 +13,11 @@ info:
 success: true
 exit_code: 0
 ----- stdout -----
-{"srcRef":{"sourcePath":"{example_dir}/basic.rs","language":"Rust","lineNumber":6,"endLineNumber":6,"column":11,"name":"main","text":"\"Hello from main\"","pattern":"^Hello from main$","args":[],"vars":[]},"variables":[]}
-{"srcRef":{"sourcePath":"{example_dir}/basic.rs","language":"Rust","lineNumber":15,"endLineNumber":15,"column":11,"name":"foo","text":"\"Hello from foo i={}\"","pattern":"^Hello from foo i=(.+)$","args":["Placeholder"],"vars":["i"]},"variables":[{"expr":"i","value":"0"}]}
-{"srcRef":{"sourcePath":"{example_dir}/basic.rs","language":"Rust","lineNumber":15,"endLineNumber":15,"column":11,"name":"foo","text":"\"Hello from foo i={}\"","pattern":"^Hello from foo i=(.+)$","args":["Placeholder"],"vars":["i"]},"variables":[{"expr":"i","value":"1"}]}
-{"srcRef":{"sourcePath":"{example_dir}/basic.rs","language":"Rust","lineNumber":15,"endLineNumber":15,"column":11,"name":"foo","text":"\"Hello from foo i={}\"","pattern":"^Hello from foo i=(.+)$","args":["Placeholder"],"vars":["i"]},"variables":[{"expr":"i","value":"2"}]}
-{"srcRef":{"sourcePath":"{example_dir}/basic.rs","language":"Rust","lineNumber":18,"endLineNumber":18,"column":24,"name":"bar","text":"\"Hello from bar j={j}\"","pattern":"^Hello from bar j=(.+)$","args":[{"Named":"j"}],"vars":[]},"variables":[{"expr":"j","value":"4"}]}
-{"srcRef":{"sourcePath":"{example_dir}/basic.rs","language":"Rust","lineNumber":20,"endLineNumber":20,"column":32,"name":"baz","text":"\"Hello from baz i={1} j={0}\"","pattern":"^Hello from baz i=(.+) j=(.+)$","args":[{"Positional":1},{"Positional":0}],"vars":["j","i"]},"variables":[{"expr":"i","value":"5"},{"expr":"j","value":"6"}]}
+{"srcRef":{"sourcePath":"{example_dir}/basic.rs","language":"Rust","lineNumber":6,"endLineNumber":6,"column":11,"name":"main","text":"\"Hello from main\"","pattern":"(?s)^Hello from main$","args":[],"vars":[]},"variables":[]}
+{"srcRef":{"sourcePath":"{example_dir}/basic.rs","language":"Rust","lineNumber":15,"endLineNumber":15,"column":11,"name":"foo","text":"\"Hello from foo i={}\"","pattern":"(?s)^Hello from foo i=(.+)$","args":["Placeholder"],"vars":["i"]},"variables":[{"expr":"i","value":"0"}]}
+{"srcRef":{"sourcePath":"{example_dir}/basic.rs","language":"Rust","lineNumber":15,"endLineNumber":15,"column":11,"name":"foo","text":"\"Hello from foo i={}\"","pattern":"(?s)^Hello from foo i=(.+)$","args":["Placeholder"],"vars":["i"]},"variables":[{"expr":"i","value":"1"}]}
+{"srcRef":{"sourcePath":"{example_dir}/basic.rs","language":"Rust","lineNumber":15,"endLineNumber":15,"column":11,"name":"foo","text":"\"Hello from foo i={}\"","pattern":"(?s)^Hello from foo i=(.+)$","args":["Placeholder"],"vars":["i"]},"variables":[{"expr":"i","value":"2"}]}
+{"srcRef":{"sourcePath":"{example_dir}/basic.rs","language":"Rust","lineNumber":18,"endLineNumber":18,"column":24,"name":"bar","text":"\"Hello from bar j={j}\"","pattern":"(?s)^Hello from bar j=(.+)$","args":[{"Named":"j"}],"vars":[]},"variables":[{"expr":"j","value":"4"}]}
+{"srcRef":{"sourcePath":"{example_dir}/basic.rs","language":"Rust","lineNumber":20,"endLineNumber":20,"column":32,"name":"baz","text":"\"Hello from baz i={1} j={0}\"","pattern":"(?s)^Hello from baz i=(.+) j=(.+)$","args":[{"Positional":1},{"Positional":0}],"vars":["j","i"]},"variables":[{"expr":"i","value":"5"},{"expr":"j","value":"6"}]}
 
 ----- stderr -----

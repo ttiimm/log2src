@@ -116,7 +116,7 @@ fn build_matcher(
 ) -> Option<(Regex, String, Vec<FormatArgument>)> {
     let mut args = Vec::new();
     let mut last_end = 0;
-    let mut pattern = "^".to_string();
+    let mut pattern = "(?s)^".to_string();
     let mut exact_len = 0;
     for cap in placeholder_regex_for(language).captures_iter(text) {
         let placeholder = cap.get(0).unwrap();
@@ -169,7 +169,7 @@ mod tests {
     fn test_build_matcher_needs_escape() {
         let (matcher, _pat, _args) = build_matcher("{}) {}, {}", SourceLanguage::Rust).unwrap();
         assert_eq!(
-            Regex::new(r#"^(.+)\) (.+), (.+)$"#).unwrap().as_str(),
+            Regex::new(r#"(?s)^(.+)\) (.+), (.+)$"#).unwrap().as_str(),
             matcher.as_str()
         );
     }
@@ -179,7 +179,7 @@ mod tests {
         let (matcher, _pat, _args) =
             build_matcher("abc {main_path:?} def", SourceLanguage::Rust).unwrap();
         assert_eq!(
-            Regex::new(r#"^abc (.+) def$"#).unwrap().as_str(),
+            Regex::new(r#"(?s)^abc (.+) def$"#).unwrap().as_str(),
             matcher.as_str()
         );
     }
@@ -189,7 +189,7 @@ mod tests {
         let (matcher, _pat, args) =
             build_matcher("{}) {:?}, {foo.bar}", SourceLanguage::Rust).unwrap();
         assert_eq!(
-            Regex::new(r#"^(.+)\) (.+), (.+)$"#).unwrap().as_str(),
+            Regex::new(r#"(?s)^(.+)\) (.+), (.+)$"#).unwrap().as_str(),
             matcher.as_str()
         );
         assert_eq!(args[2], FormatArgument::Named("foo.bar".to_string()));
@@ -199,7 +199,7 @@ mod tests {
     fn test_build_matcher_positional() {
         let (matcher, _pat, args) = build_matcher("second={2}", SourceLanguage::Rust).unwrap();
         assert_eq!(
-            Regex::new(r#"^second=(.+)$"#).unwrap().as_str(),
+            Regex::new(r#"(?s)^second=(.+)$"#).unwrap().as_str(),
             matcher.as_str()
         );
         assert_eq!(args[0], FormatArgument::Positional(2));
@@ -210,7 +210,7 @@ mod tests {
         let (matcher, _pat, args) =
             build_matcher("they are %d years old", SourceLanguage::Cpp).unwrap();
         assert_eq!(
-            Regex::new(r#"^they are (.+) years old$"#).unwrap().as_str(),
+            Regex::new(r#"(?s)^they are (.+) years old$"#).unwrap().as_str(),
             matcher.as_str()
         );
         assert_eq!(args[0], FormatArgument::Placeholder);
@@ -221,7 +221,7 @@ mod tests {
         let (matcher, _pat, args) =
             build_matcher("they are {0:d} years old", SourceLanguage::Cpp).unwrap();
         assert_eq!(
-            Regex::new(r#"^they are (.+) years old$"#).unwrap().as_str(),
+            Regex::new(r#"(?s)^they are (.+) years old$"#).unwrap().as_str(),
             matcher.as_str()
         );
         assert_eq!(args[0], FormatArgument::Positional(0));
@@ -241,7 +241,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            Regex::new(r#"^you're only as funky\n as your last cut$"#)
+            Regex::new(r#"(?s)^you're only as funky\n as your last cut$"#)
                 .unwrap()
                 .as_str(),
             matcher.as_str()
