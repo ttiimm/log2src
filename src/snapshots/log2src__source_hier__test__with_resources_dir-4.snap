@@ -4,13 +4,16 @@ expression: deleted_dir_events
 ---
 - DeletedFile:
     - BasicWithUpper.java
-    - 4
+    - 5
 - DeletedFile:
     - BasicWithLog.java
-    - 3
+    - 4
 - DeletedFile:
     - BasicWithCustom.java
+    - 3
+- DeletedFile:
+    - BasicSlf4j.java
     - 2
 - DeletedFile:
     - Basic.java
-    - 7
+    - 8

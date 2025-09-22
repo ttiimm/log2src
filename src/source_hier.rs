@@ -3,9 +3,13 @@ use serde::Serialize;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::ffi::{OsStr, OsString};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::time::SystemTime;
 use std::{fs, io};
+
+fn is_ignored_dir(name: &OsStr) -> bool {
+    name == ".git" || name == ".hg" || name == ".svn" || name == ".vscode"
+}
 
 /// Result of a shallow check of a file system path.  Mainly interested in getting a directory
 /// listing without descending into the child trees.
@@ -24,7 +28,7 @@ enum ShallowCheckResult {
 pub struct SourceFileID(usize);
 
 /// A summary of a source code file
-#[derive(Copy, Clone, Debug, Serialize)]
+#[derive(Copy, Clone, Debug, Serialize, Eq, PartialEq)]
 pub struct SourceFileInfo {
     pub language: SourceLanguage,
     pub id: SourceFileID,
@@ -80,6 +84,7 @@ impl SourceHierContent {
             Ok(entries) => Self::Directory {
                 entries: entries
                     .into_iter()
+                    .filter(|entry| !is_ignored_dir(&entry.0))
                     .map(|(entry_name, meta)| {
                         (
                             entry_name.to_os_string(),
@@ -210,7 +215,8 @@ impl SourceHierContent {
                     let mut new_entries: Vec<(OsString, Result<fs::Metadata, io::Error>)> =
                         Vec::new();
                     for (name, meta) in latest_entries {
-                        if let Some(existing_entry) = entries.get_mut(&name) {
+                        if is_ignored_dir(&name.as_os_str()) {
+                        } else if let Some(existing_entry) = entries.get_mut(&name) {
                             existing_entry.sync(&path.join(&name), meta, deleted_events)
                         } else {
                             new_entries.push((name, meta));
@@ -228,6 +234,24 @@ impl SourceHierContent {
             _ => Self::from(path, latest_meta),
         };
         true
+    }
+
+    pub fn find_file(&self, self_path: &Path, desired_path: &Path) -> Option<SourceFileInfo> {
+        match self {
+            SourceHierContent::File { info, .. } if desired_path == Path::new("") => Some(*info),
+            SourceHierContent::Directory { ref entries } => {
+                let mut components = desired_path.components();
+                if let Some(Component::Normal(name)) = components.next() {
+                    if let Some(node) = entries.get(name) {
+                        return node
+                            .content
+                            .find_file(&self_path.join(name), components.as_path());
+                    }
+                }
+                None
+            }
+            _ => None,
+        }
     }
 }
 
@@ -432,6 +456,13 @@ impl SourceHierTree {
         }
     }
 
+    pub fn find_file(&self, path: &Path) -> Option<SourceFileInfo> {
+        match path.strip_prefix(&self.root_path) {
+            Ok(sub_path) => self.root_node.content.find_file(&self.root_path, sub_path),
+            Err(_) => None,
+        }
+    }
+
     /// Visit every node in the hierarchy, depth-first, calling `f` on each.
     pub fn visit<F>(&self, mut f: F)
     where
@@ -468,17 +499,16 @@ impl SourceHierTree {
 
 #[cfg(test)]
 mod test {
-    use crate::source_hier::{ScanEvent, SourceHierTree};
+    use crate::source_hier::{ScanEvent, SourceFileID, SourceFileInfo, SourceHierTree};
+    use crate::SourceLanguage;
     use fs_extra::dir::copy;
     use fs_extra::dir::CopyOptions;
     use insta::assert_yaml_snapshot;
     use std::fs;
     use std::fs::File;
     use std::io::Write;
-    use std::ops::Sub;
     use std::path::Path;
     use std::path::PathBuf;
-    use std::time::{Duration, SystemTime};
     use tempfile::{tempdir, TempDir};
 
     fn setup_test_environment(source_dir: &Path) -> TempDir {
@@ -511,6 +541,10 @@ mod test {
     fn test_with_resources_dir() {
         let tests_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests");
         let temp_test_dir = setup_test_environment(&tests_path);
+        let _ = fs::create_dir(temp_test_dir.path().join(".git")).unwrap();
+        let _ = File::create_new(temp_test_dir.path().join(".git/config"))
+            .unwrap().write("abc".as_bytes())
+            .unwrap();
         let basic_path = temp_test_dir.path().join("tests/java/Basic.java");
         {
             let metadata = fs::metadata(&basic_path).unwrap();
@@ -522,6 +556,14 @@ mod test {
         tree.sync();
         let events: Vec<ScanEvent> = tree.scan().map(redact_event).collect();
         assert_yaml_snapshot!(events);
+        let find_res = tree.find_file(&basic_path);
+        assert_eq!(
+            find_res,
+            Some(SourceFileInfo {
+                language: SourceLanguage::Java,
+                id: SourceFileID(1)
+            })
+        );
         let no_events: Vec<ScanEvent> = tree.scan().map(redact_event).collect();
         assert_yaml_snapshot!(no_events);
         let _ = fs::remove_file(temp_test_dir.path().join("tests/test_java.rs")).unwrap();

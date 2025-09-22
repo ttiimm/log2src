@@ -1,5 +1,4 @@
 use std::ops::Range;
-
 use tree_sitter::{
     Language, Node, Parser, Point, Query, QueryCursor, Range as TSRange, StreamingIterator, Tree,
 };
@@ -42,8 +41,16 @@ impl<'a> SourceQuery<'a> {
         let mut results = Vec::new();
         let matches = cursor.matches(&query, self.tree.root_node(), self.source.as_bytes());
         matches.for_each(|m| {
+            let mut got_string_literal = false;
             for capture in m.captures {
                 let mut child = capture.node;
+                if child.kind() == "string_literal" {
+                    // only return results after the format string literal, other captures
+                    // are not relevant.
+                    got_string_literal = true;
+                } else if !got_string_literal {
+                    continue;
+                }
                 let mut arg_start: Option<(usize, Point)> = None;
 
                 if filter_idx.is_none() || filter_idx.is_some_and(|f| f == capture.index) {
@@ -52,24 +59,24 @@ impl<'a> SourceQuery<'a> {
                         range: capture.node.range(),
                         name_range: Self::find_fn_range(child),
                     });
-                }
-                while let Some(next_child) = child.next_sibling() {
-                    if matches!(next_child.kind(), "," | ")") {
-                        if let Some(start) = arg_start {
-                            results.push(QueryResult {
-                                kind: "identifier".to_string(),
-                                range: TSRange {
-                                    start_byte: start.0,
-                                    start_point: start.1,
-                                    end_byte: next_child.start_byte(),
-                                    end_point: next_child.start_position(),
-                                },
-                                name_range: Self::find_fn_range(child),
-                            });
+                    while let Some(next_child) = child.next_sibling() {
+                        if matches!(next_child.kind(), "," | ")") {
+                            if let Some(start) = arg_start {
+                                results.push(QueryResult {
+                                    kind: "args".to_string(),
+                                    range: TSRange {
+                                        start_byte: start.0,
+                                        start_point: start.1,
+                                        end_byte: next_child.start_byte(),
+                                        end_point: next_child.start_position(),
+                                    },
+                                    name_range: Self::find_fn_range(child),
+                                });
+                            }
+                            arg_start = Some((next_child.end_byte(), next_child.end_position()));
                         }
-                        arg_start = Some((next_child.end_byte(), next_child.end_position()));
+                        child = next_child;
                     }
-                    child = next_child;
                 }
             }
         });
