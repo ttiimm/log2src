@@ -1,6 +1,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
+use std::time::Duration;
 
 pub struct WorkInfo {
     pub completed: AtomicU64,
@@ -115,5 +116,11 @@ impl Iterator for ProgressListener {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.receiver.iter().next()
+    }
+}
+
+impl ProgressListener {
+    pub fn try_next_for(&self, timeout: Duration) -> Option<ProgressUpdate> {
+        self.receiver.recv_timeout(timeout).ok()
     }
 }

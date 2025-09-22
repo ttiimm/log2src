@@ -27,6 +27,7 @@ pub use code_source::CodeSource;
 use log_format::LogFormat;
 pub use progress::ProgressTracker;
 pub use progress::ProgressUpdate;
+pub use progress::WorkInfo;
 use source_query::QueryResult;
 pub use source_query::SourceQuery;
 pub use source_ref::SourceRef;
