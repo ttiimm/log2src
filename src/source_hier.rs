@@ -418,6 +418,7 @@ pub struct SourceHierTree {
     pub root_node: SourceHierNode,
     next_id: usize,
     deleted_events: Vec<ScanEvent>,
+    stats: SourceHierStats,
 }
 
 impl SourceHierTree {
@@ -427,6 +428,7 @@ impl SourceHierTree {
             root_node: SourceHierNode::stub(),
             next_id: 0,
             deleted_events: Vec::new(),
+            stats: SourceHierStats::default(),
         }
     }
 
@@ -441,6 +443,7 @@ impl SourceHierTree {
             &mut self.deleted_events,
         );
         self.next_id = SourceFileInfo::NEXT_ID.with(|id_opt| *id_opt.borrow());
+        self.stats = self.compute_stats();
     }
 
     /// Scan the tree for changes that have happened since the last scan.  Changes to the tree
@@ -482,7 +485,7 @@ impl SourceHierTree {
         walk(&self.root_node, &mut f);
     }
 
-    pub fn stats(&self) -> SourceHierStats {
+    fn compute_stats(&self) -> SourceHierStats {
         let mut retval = SourceHierStats::default();
 
         self.visit(|node| match node.content {
@@ -494,6 +497,10 @@ impl SourceHierTree {
         });
 
         retval
+    }
+
+    pub fn stats(&self) -> &SourceHierStats {
+        &self.stats
     }
 }
 

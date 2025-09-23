@@ -31,6 +31,7 @@ pub use progress::WorkInfo;
 use source_query::QueryResult;
 pub use source_query::SourceQuery;
 pub use source_ref::SourceRef;
+use crate::progress::WorkGuard;
 
 #[derive(Error, Debug, Diagnostic, Clone)]
 pub enum LogError {
@@ -161,6 +162,7 @@ impl LogMatcher {
     pub fn extract_log_statements(&mut self, tracker: &ProgressTracker) {
         tracker.begin_step("Extracting log statements".to_string());
         self.roots.iter_mut().for_each(|(_path, coll)| {
+            let guard = tracker.doing_work(coll.tree.stats().files as u64, "files".to_string());
             for event_chunk in &coll.tree.scan().chunks(10) {
                 let sources = event_chunk
                     .flat_map(|event| match event {
@@ -179,7 +181,7 @@ impl LogMatcher {
                         }
                     })
                     .collect::<Vec<CodeSource>>();
-                extract_logging(&sources, tracker)
+                extract_logging_guarded(&sources, &guard)
                     .into_iter()
                     .for_each(|sif| {
                         coll.files_with_statements.insert(sif.id, sif);
@@ -489,8 +491,7 @@ where
         .collect()
 }
 
-pub fn extract_logging(sources: &[CodeSource], tracker: &ProgressTracker) -> Vec<StatementsInFile> {
-    let guard = tracker.doing_work(sources.len() as u64, "files".to_string());
+pub fn extract_logging_guarded(sources: &[CodeSource], guard: &WorkGuard) -> Vec<StatementsInFile> {
     sources
         .par_iter()
         .flat_map(|code| {
@@ -546,6 +547,11 @@ pub fn extract_logging(sources: &[CodeSource], tracker: &ProgressTracker) -> Vec
             }
         })
         .collect()
+}
+
+pub fn extract_logging(sources: &[CodeSource], tracker: &ProgressTracker) -> Vec<StatementsInFile> {
+    let guard = tracker.doing_work(sources.len() as u64, "files".to_string());
+    extract_logging_guarded(sources, &guard)
 }
 
 #[cfg(test)]
