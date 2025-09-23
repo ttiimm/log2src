@@ -13,9 +13,9 @@ info:
 success: true
 exit_code: 0
 ----- stdout -----
-{"srcRef":{"sourcePath":"{java_dir}/BasicWithUpper.java","language":"Java","lineNumber":18,"endLineNumber":18,"column":16,"name":"main","text":"\"Hello from main\"","pattern":"(?s)^Hello from main$","args":[],"vars":[]},"variables":[]}
-{"srcRef":{"sourcePath":"{java_dir}/BasicWithUpper.java","language":"Java","lineNumber":25,"endLineNumber":25,"column":20,"name":"foo","text":"\"Hello from foo i=\\{i}\"","pattern":"(?s)^Hello from foo i=(.+)$","args":[{"Named":"i"}],"vars":[]},"variables":[{"expr":"i","value":"0"}]}
-{"srcRef":{"sourcePath":"{java_dir}/BasicWithUpper.java","language":"Java","lineNumber":25,"endLineNumber":25,"column":20,"name":"foo","text":"\"Hello from foo i=\\{i}\"","pattern":"(?s)^Hello from foo i=(.+)$","args":[{"Named":"i"}],"vars":[]},"variables":[{"expr":"i","value":"1"}]}
-{"srcRef":{"sourcePath":"{java_dir}/BasicWithUpper.java","language":"Java","lineNumber":25,"endLineNumber":25,"column":20,"name":"foo","text":"\"Hello from foo i=\\{i}\"","pattern":"(?s)^Hello from foo i=(.+)$","args":[{"Named":"i"}],"vars":[]},"variables":[{"expr":"i","value":"2"}]}
+{"srcRef":{"sourcePath":"{java_dir}/BasicWithUpper.java","language":"Java","lineNumber":18,"endLineNumber":18,"column":16,"name":"main","text":"\"Hello from main\"","quality":13,"pattern":"(?s)^Hello from main$","args":[],"vars":[]},"variables":[]}
+{"srcRef":{"sourcePath":"{java_dir}/BasicWithUpper.java","language":"Java","lineNumber":25,"endLineNumber":25,"column":20,"name":"foo","text":"\"Hello from foo i=\\{i}\"","quality":14,"pattern":"(?s)^Hello from foo i=(.+)$","args":[{"Named":"i"}],"vars":[]},"variables":[{"expr":"i","value":"0"}]}
+{"srcRef":{"sourcePath":"{java_dir}/BasicWithUpper.java","language":"Java","lineNumber":25,"endLineNumber":25,"column":20,"name":"foo","text":"\"Hello from foo i=\\{i}\"","quality":14,"pattern":"(?s)^Hello from foo i=(.+)$","args":[{"Named":"i"}],"vars":[]},"variables":[{"expr":"i","value":"1"}]}
+{"srcRef":{"sourcePath":"{java_dir}/BasicWithUpper.java","language":"Java","lineNumber":25,"endLineNumber":25,"column":20,"name":"foo","text":"\"Hello from foo i=\\{i}\"","quality":14,"pattern":"(?s)^Hello from foo i=(.+)$","args":[{"Named":"i"}],"vars":[]},"variables":[{"expr":"i","value":"2"}]}
 
 ----- stderr -----

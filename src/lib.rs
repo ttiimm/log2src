@@ -21,6 +21,7 @@ mod source_query;
 mod source_ref;
 
 // TODO: doesn't need to be exposed if we can clean up the arguments to do_mapping
+use crate::progress::WorkGuard;
 use crate::source_hier::{ScanEvent, SourceFileID, SourceHierContent, SourceHierTree};
 use crate::source_ref::FormatArgument;
 pub use code_source::CodeSource;
@@ -31,7 +32,6 @@ pub use progress::WorkInfo;
 use source_query::QueryResult;
 pub use source_query::SourceQuery;
 pub use source_ref::SourceRef;
-use crate::progress::WorkGuard;
 
 #[derive(Error, Debug, Diagnostic, Clone)]
 pub enum LogError {
@@ -231,7 +231,11 @@ impl LogMatcher {
                     })
                     .collect::<Vec<&SourceRef>>()
             };
-            if let Some(src_ref) = matches.first() {
+            if let Some(src_ref) = matches
+                .iter()
+                .sorted_by(|lhs, rhs| rhs.quality.cmp(&lhs.quality))
+                .next()
+            {
                 let variables = extract_variables(log_ref, src_ref);
                 return Some(LogMapping {
                     log_ref: log_ref.clone(),
@@ -297,10 +301,11 @@ impl SourceLanguage {
             SourceLanguage::Rust => {
                 // XXX: assumes it's a debug macro
                 r#"
-                    (macro_invocation macro: (identifier)
-                        (token_tree
+                    (macro_invocation macro: (_) @macro-name
+                        (token_tree .
                             (string_literal) @log
                         )
+                        (#not-any-of? @macro-name "format" "vec")
                     )
                 "#
             }
@@ -419,6 +424,7 @@ impl<'a> LogRef<'a> {
 pub fn link_to_source<'a>(log_ref: &LogRef, src_refs: &'a [SourceRef]) -> Option<&'a SourceRef> {
     src_refs
         .iter()
+        .sorted_by(|lhs, rhs| rhs.quality.cmp(&lhs.quality))
         .find(|&source_ref| source_ref.captures(log_ref.body()).is_some())
 }
 
@@ -447,9 +453,8 @@ pub fn extract_variables<'a>(log_ref: &LogRef<'a>, src_ref: &'a SourceRef) -> Ve
         None => log_ref.line,
     };
     if let Some(captures) = src_ref.captures(line) {
-        for (index, (cap, placeholder)) in
-            std::iter::zip(captures.iter().skip(1), src_ref.args.iter()).enumerate()
-        {
+        let mut placeholder_index = 0;
+        for (cap, placeholder) in std::iter::zip(captures.iter().skip(1), src_ref.args.iter()) {
             let expr = match placeholder {
                 FormatArgument::Named(name) => name.clone(),
                 FormatArgument::Positional(pos) => src_ref
@@ -458,7 +463,12 @@ pub fn extract_variables<'a>(log_ref: &LogRef<'a>, src_ref: &'a SourceRef) -> Ve
                     .map(|s| s.as_str())
                     .unwrap_or("<unknown>")
                     .to_string(),
-                FormatArgument::Placeholder => src_ref.vars[index].to_string(),
+                FormatArgument::Placeholder => {
+                    let res = src_ref.vars[placeholder_index].to_string();
+
+                    placeholder_index += 1;
+                    res
+                }
             };
             variables.push(VariablePair {
                 expr,
@@ -557,6 +567,7 @@ pub fn extract_logging(sources: &[CodeSource], tracker: &ProgressTracker) -> Vec
 #[cfg(test)]
 mod tests {
     use super::*;
+    use insta::assert_yaml_snapshot;
     use std::ptr;
 
     #[test]
@@ -622,11 +633,20 @@ fn foo(i: u32) {
 }
 
 fn nope(i: u32, j: i32) {
-    debug!("this won't match i={}; j={}", i, j);
+    log::debug!("this won't match i={}; j={}", i, j);
+}
+
+fn namedarg0(salutation: &str, name: &str) {
+    debug!("{salutation}, {name}!"); // lower quality than the next one
 }
 
 fn namedarg(name: &str) {
+    let msg = format!("Goodbye, {name}!");
     debug!("Hello, {name}!");
+}
+
+fn namedarg2(salutation: &str, name: &str) {
+    debug!("{salutation}, {name}!"); // lower quality than the previous one
 }
     "#;
 
@@ -637,20 +657,7 @@ fn namedarg(name: &str) {
             .pop()
             .unwrap()
             .log_statements;
-        assert_eq!(src_refs.len(), 3);
-        let first = &src_refs[0];
-        assert_eq!(first.line_no, 7);
-        assert_eq!(first.column, 11);
-        assert_eq!(first.name, "main");
-        assert_eq!(first.text, "\"you're only as funky as your last cut\"");
-        assert!(first.vars.is_empty());
-
-        let second = &src_refs[1];
-        assert_eq!(second.line_no, 18);
-        assert_eq!(second.column, 11);
-        assert_eq!(second.name, "nope");
-        assert_eq!(second.text, "\"this won't match i={}; j={}\"");
-        assert_eq!(second.vars[0], "i");
+        assert_yaml_snapshot!(src_refs);
     }
 
     #[test]
@@ -667,9 +674,24 @@ fn namedarg(name: &str) {
             .pop()
             .unwrap()
             .log_statements;
-        assert_eq!(src_refs.len(), 3);
+        assert_eq!(src_refs.len(), 5);
         let result = link_to_source(&log_ref, &src_refs);
         assert!(ptr::eq(result.unwrap(), &src_refs[0]));
+    }
+
+    #[test]
+    fn test_link_to_quality_source() {
+        let lf = LogFormat::new(
+            r#"^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z \w+ \w+\]\s+(?<body>.*)"#.to_string(),
+        );
+        let log_ref = LogRef::with_format("[2024-05-09T19:58:53Z DEBUG main] Hello, Leander!", lf);
+        let code = CodeSource::from_string(&Path::new("in-mem.rs"), TEST_SOURCE);
+        let src_refs = extract_logging(&[code], &ProgressTracker::new())
+            .pop()
+            .unwrap()
+            .log_statements;
+        let result = link_to_source(&log_ref, &src_refs);
+        assert_yaml_snapshot!(result);
     }
 
     const MULTILINE_SOURCE: &str = r#"
@@ -717,7 +739,7 @@ fn main() {
             .pop()
             .unwrap()
             .log_statements;
-        assert_eq!(src_refs.len(), 3);
+        assert_eq!(src_refs.len(), 5);
         let result = link_to_source(&log_ref, &src_refs);
         assert!(result.is_none());
     }
@@ -730,7 +752,7 @@ fn main() {
             .pop()
             .unwrap()
             .log_statements;
-        assert_eq!(src_refs.len(), 3);
+        assert_eq!(src_refs.len(), 5);
         let vars = extract_variables(&log_ref, &src_refs[1]);
         assert_eq!(
             vars,
@@ -755,8 +777,8 @@ fn main() {
             .pop()
             .unwrap()
             .log_statements;
-        assert_eq!(src_refs.len(), 3);
-        let vars = extract_variables(&log_ref, &src_refs[2]);
+        assert_eq!(src_refs.len(), 5);
+        let vars = extract_variables(&log_ref, &src_refs[3]);
         assert_eq!(
             vars,
             vec![VariablePair {

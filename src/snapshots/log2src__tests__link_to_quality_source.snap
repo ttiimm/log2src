@@ -1,0 +1,16 @@
+---
+source: src/lib.rs
+expression: result
+---
+sourcePath: in-mem.rs
+language: Rust
+lineNumber: 27
+endLineNumber: 27
+column: 11
+name: namedarg
+text: "\"Hello, {name}!\""
+quality: 7
+pattern: "(?s)^Hello, (.+)!$"
+args:
+  - Named: name
+vars: []

@@ -1,0 +1,68 @@
+---
+source: src/lib.rs
+expression: src_refs
+---
+- sourcePath: in-mem.rs
+  language: Rust
+  lineNumber: 7
+  endLineNumber: 7
+  column: 11
+  name: main
+  text: "\"you're only as funky as your last cut\""
+  quality: 30
+  pattern: "(?s)^you're only as funky as your last cut$"
+  args: []
+  vars: []
+- sourcePath: in-mem.rs
+  language: Rust
+  lineNumber: 18
+  endLineNumber: 18
+  column: 16
+  name: nope
+  text: "\"this won't match i={}; j={}\""
+  quality: 19
+  pattern: "(?s)^this won't match i=(.+); j=(.+)$"
+  args:
+    - Placeholder
+    - Placeholder
+  vars:
+    - i
+    - j
+- sourcePath: in-mem.rs
+  language: Rust
+  lineNumber: 22
+  endLineNumber: 22
+  column: 11
+  name: namedarg0
+  text: "\"{salutation}, {name}!\""
+  quality: 2
+  pattern: "(?s)^(.+), (.+)!$"
+  args:
+    - Named: salutation
+    - Named: name
+  vars: []
+- sourcePath: in-mem.rs
+  language: Rust
+  lineNumber: 27
+  endLineNumber: 27
+  column: 11
+  name: namedarg
+  text: "\"Hello, {name}!\""
+  quality: 7
+  pattern: "(?s)^Hello, (.+)!$"
+  args:
+    - Named: name
+  vars: []
+- sourcePath: in-mem.rs
+  language: Rust
+  lineNumber: 31
+  endLineNumber: 31
+  column: 11
+  name: namedarg2
+  text: "\"{salutation}, {name}!\""
+  quality: 2
+  pattern: "(?s)^(.+), (.+)!$"
+  args:
+    - Named: salutation
+    - Named: name
+  vars: []

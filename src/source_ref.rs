@@ -25,11 +25,19 @@ pub struct SourceRef {
     pub column: usize,
     pub name: String,
     pub text: String,
+    pub quality: usize,
     #[serde(skip_serializing)]
     pub(crate) matcher: Regex,
     pub pattern: String,
     pub(crate) args: Vec<FormatArgument>,
     pub(crate) vars: Vec<String>,
+}
+
+struct MessageMatcher {
+    matcher: Regex,
+    quality: usize,
+    pattern: String,
+    args: Vec<FormatArgument>,
 }
 
 impl SourceRef {
@@ -47,7 +55,13 @@ impl SourceRef {
         }
         let unquoted = &source[start..end].to_string();
         // println!("{} line {}", code.filename, line);
-        if let Some((matcher, pattern, args)) = build_matcher(unquoted, code.info.language) {
+        if let Some(MessageMatcher {
+            matcher,
+            pattern,
+            args,
+            quality,
+        }) = build_matcher(unquoted, code.info.language)
+        {
             let name = source[result.name_range].to_string();
             Some(SourceRef {
                 source_path: code.filename.clone(),
@@ -57,6 +71,7 @@ impl SourceRef {
                 column: col,
                 name,
                 text,
+                quality,
                 matcher,
                 pattern,
                 args,
@@ -99,8 +114,9 @@ static RUST_PLACEHOLDER_REGEX: LazyLock<Regex> = LazyLock::new(|| {
 static JAVA_PLACEHOLDER_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"\{.*}|\\\{(.*)}"#).unwrap());
 
-static CPP_PLACEHOLDER_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"%[-+ #0]*\d*(?:\.\d+)?[hlLzjt]*[diuoxXfFeEgGaAcspn%]|\{(?:([a-zA-Z_][a-zA-Z0-9_.]*)|(\d+))?\s*(?::[^}]*)?}"#).unwrap());
+static CPP_PLACEHOLDER_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"%[-+ #0]*\d*(?:\.\d+)?[hlLzjt]*[diuoxXfFeEgGaAcspn%]|\{(?:([a-zA-Z_][a-zA-Z0-9_.]*)|(\d+))?\s*(?::[^}]*)?}"#).unwrap()
+});
 
 fn placeholder_regex_for(language: SourceLanguage) -> &'static Regex {
     match language {
@@ -110,18 +126,15 @@ fn placeholder_regex_for(language: SourceLanguage) -> &'static Regex {
     }
 }
 
-fn build_matcher(
-    text: &str,
-    language: SourceLanguage,
-) -> Option<(Regex, String, Vec<FormatArgument>)> {
+fn build_matcher(text: &str, language: SourceLanguage) -> Option<MessageMatcher> {
     let mut args = Vec::new();
     let mut last_end = 0;
     let mut pattern = "(?s)^".to_string();
-    let mut exact_len = 0;
+    let mut quality = 0;
     for cap in placeholder_regex_for(language).captures_iter(text) {
         let placeholder = cap.get(0).unwrap();
         let text = escape_ignore_newlines(&text[last_end..placeholder.start()]);
-        exact_len += text.len();
+        quality += text.chars().filter(|c| !c.is_whitespace()).count();
         pattern.push_str(text.as_str());
         last_end = placeholder.end();
         pattern.push_str("(.+)");
@@ -133,13 +146,18 @@ fn build_matcher(
         });
     }
     let text = escape_ignore_newlines(&text[last_end..]);
-    exact_len += text.len();
-    if exact_len == 0 {
+    quality += text.chars().filter(|c| !c.is_whitespace()).count();
+    if quality == 0 {
         None
     } else {
         pattern.push_str(text.as_str());
         pattern.push('$');
-        Some((Regex::new(pattern.as_str()).unwrap(), pattern, args))
+        Some(MessageMatcher {
+            matcher: Regex::new(pattern.as_str()).unwrap(),
+            quality,
+            pattern,
+            args,
+        })
     }
 }
 
@@ -167,7 +185,12 @@ mod tests {
 
     #[test]
     fn test_build_matcher_needs_escape() {
-        let (matcher, _pat, _args) = build_matcher("{}) {}, {}", SourceLanguage::Rust).unwrap();
+        let MessageMatcher {
+            matcher,
+            pattern: _pat,
+            args: _args,
+            ..
+        } = build_matcher("{}) {}, {}", SourceLanguage::Rust).unwrap();
         assert_eq!(
             Regex::new(r#"(?s)^(.+)\) (.+), (.+)$"#).unwrap().as_str(),
             matcher.as_str()
@@ -176,7 +199,7 @@ mod tests {
 
     #[test]
     fn test_build_matcher_named() {
-        let (matcher, _pat, _args) =
+        let MessageMatcher { matcher, .. } =
             build_matcher("abc {main_path:?} def", SourceLanguage::Rust).unwrap();
         assert_eq!(
             Regex::new(r#"(?s)^abc (.+) def$"#).unwrap().as_str(),
@@ -186,7 +209,7 @@ mod tests {
 
     #[test]
     fn test_build_matcher_mix() {
-        let (matcher, _pat, args) =
+        let MessageMatcher { matcher, args, .. } =
             build_matcher("{}) {:?}, {foo.bar}", SourceLanguage::Rust).unwrap();
         assert_eq!(
             Regex::new(r#"(?s)^(.+)\) (.+), (.+)$"#).unwrap().as_str(),
@@ -197,7 +220,8 @@ mod tests {
 
     #[test]
     fn test_build_matcher_positional() {
-        let (matcher, _pat, args) = build_matcher("second={2}", SourceLanguage::Rust).unwrap();
+        let MessageMatcher { matcher, args, .. } =
+            build_matcher("second={2}", SourceLanguage::Rust).unwrap();
         assert_eq!(
             Regex::new(r#"(?s)^second=(.+)$"#).unwrap().as_str(),
             matcher.as_str()
@@ -207,10 +231,12 @@ mod tests {
 
     #[test]
     fn test_build_matcher_cpp() {
-        let (matcher, _pat, args) =
+        let MessageMatcher { matcher, args, .. } =
             build_matcher("they are %d years old", SourceLanguage::Cpp).unwrap();
         assert_eq!(
-            Regex::new(r#"(?s)^they are (.+) years old$"#).unwrap().as_str(),
+            Regex::new(r#"(?s)^they are (.+) years old$"#)
+                .unwrap()
+                .as_str(),
             matcher.as_str()
         );
         assert_eq!(args[0], FormatArgument::Placeholder);
@@ -218,10 +244,12 @@ mod tests {
 
     #[test]
     fn test_build_matcher_cpp_spdlog() {
-        let (matcher, _pat, args) =
+        let MessageMatcher { matcher, args, .. } =
             build_matcher("they are {0:d} years old", SourceLanguage::Cpp).unwrap();
         assert_eq!(
-            Regex::new(r#"(?s)^they are (.+) years old$"#).unwrap().as_str(),
+            Regex::new(r#"(?s)^they are (.+) years old$"#)
+                .unwrap()
+                .as_str(),
             matcher.as_str()
         );
         assert_eq!(args[0], FormatArgument::Positional(0));
@@ -235,7 +263,7 @@ mod tests {
 
     #[test]
     fn test_build_matcher_multiline() {
-        let (matcher, _pat, _args) = build_matcher(
+        let MessageMatcher { matcher, .. } = build_matcher(
             "you're only as funky\n as your last cut",
             SourceLanguage::Rust,
         )
