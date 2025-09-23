@@ -62,16 +62,18 @@ impl<'a> SourceQuery<'a> {
                     while let Some(next_child) = child.next_sibling() {
                         if matches!(next_child.kind(), "," | ")") {
                             if let Some(start) = arg_start {
-                                results.push(QueryResult {
-                                    kind: "args".to_string(),
-                                    range: TSRange {
-                                        start_byte: start.0,
-                                        start_point: start.1,
-                                        end_byte: next_child.start_byte(),
-                                        end_point: next_child.start_position(),
-                                    },
-                                    name_range: Self::find_fn_range(child),
-                                });
+                                if start.0 < next_child.start_byte() {
+                                    results.push(QueryResult {
+                                        kind: "args".to_string(),
+                                        range: TSRange {
+                                            start_byte: start.0,
+                                            start_point: start.1,
+                                            end_byte: next_child.start_byte(),
+                                            end_point: next_child.start_position(),
+                                        },
+                                        name_range: Self::find_fn_range(child),
+                                    });
+                                }
                             }
                             arg_start = Some((next_child.end_byte(), next_child.end_position()));
                         }

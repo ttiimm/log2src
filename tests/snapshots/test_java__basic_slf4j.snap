@@ -13,7 +13,7 @@ info:
 success: true
 exit_code: 0
 ----- stdout -----
-{"srcRef":{"sourcePath":"{java_dir}/BasicSlf4j.java","language":"Java","lineNumber":10,"endLineNumber":10,"column":20,"name":"main","text":"\"Application starting\"","pattern":"(?s)^Application starting$","args":[],"vars":[]},"variables":[]}
-{"srcRef":{"sourcePath":"{java_dir}/BasicSlf4j.java","language":"Java","lineNumber":12,"endLineNumber":13,"column":21,"name":"main","text":"\"Debug message: args length = {}\"","pattern":"(?s)^Debug message: args length = (.+)$","args":["Placeholder"],"vars":["args.length"]},"variables":[{"expr":"args.length","value":"0"}]}
+{"srcRef":{"sourcePath":"{java_dir}/BasicSlf4j.java","language":"Java","lineNumber":10,"endLineNumber":10,"column":20,"name":"main","text":"\"Application starting\"","quality":19,"pattern":"(?s)^Application starting$","args":[],"vars":[]},"variables":[]}
+{"srcRef":{"sourcePath":"{java_dir}/BasicSlf4j.java","language":"Java","lineNumber":12,"endLineNumber":13,"column":21,"name":"main","text":"\"Debug message: args length = {}\"","quality":24,"pattern":"(?s)^Debug message: args length = (.+)$","args":["Placeholder"],"vars":["args.length"]},"variables":[{"expr":"args.length","value":"0"}]}
 
 ----- stderr -----
