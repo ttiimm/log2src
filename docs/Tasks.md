@@ -1,19 +1,23 @@
 # Tasks
 
-1. Handle running with no log format.
-1. Extract a thread id from log when available and associate with source ref.
-1. Generate call stack from exceptions.
-1. Support multiple source roots from CLI.
-1. Serialize state for re-use on subsequent executions
+- [ ] Handle running CLI with no log format.
+  - TSS: Doesn't this work already?  I echo
+    the body of the log message into log2src
+    and it can find the message.
+- [ ] Extract a thread id from log when available and associate with source ref.
+- [ ] Generate call stack from exceptions.
+- [ ] Support multiple source roots from CLI.
+- [ ] Serialize state for re-use on subsequent executions
 
 ## Extension
 
-1. Work with non .log extension (.json, etc).
-1. Basic test coverage
-1. Support src -> log breakpoints
+- [ ] Work with non .log extension (.json, etc).
+- [ ] Basic test coverage
+- [ ] Support src -> log breakpoints
 
 ## Languages
 
-1. Python
-1. Go
-1. JavaScript
+- [X] Python
+- [ ] Go
+- [ ] JavaScript
+- [ ] Typescript

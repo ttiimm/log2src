@@ -1,15 +1,15 @@
 use itertools::Itertools;
 use miette::Diagnostic;
 use rayon::prelude::*;
-use regex::RegexSet;
+use regex::{Captures, Regex, RegexSet};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fs::File;
 use std::io;
-use std::ops::RangeBounds;
+use std::ops::{Deref, RangeBounds};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use thiserror::Error;
 use tree_sitter::Language;
 
@@ -254,6 +254,7 @@ pub enum SourceLanguage {
     Java,
     #[serde(rename = "C++")]
     Cpp,
+    Python,
 }
 
 impl From<SourceLanguage> for Language {
@@ -262,6 +263,7 @@ impl From<SourceLanguage> for Language {
             SourceLanguage::Rust => tree_sitter_rust_orchard::LANGUAGE.into(),
             SourceLanguage::Java => tree_sitter_java::LANGUAGE.into(),
             SourceLanguage::Cpp => tree_sitter_cpp::LANGUAGE.into(),
+            SourceLanguage::Python => tree_sitter_python::LANGUAGE.into(),
         }
     }
 }
@@ -270,12 +272,30 @@ const IDENTS_RS: &[&str] = &["debug", "info", "warn"];
 const IDENTS_JAVA: &[&str] = &["logger", "log", "fine", "debug", "info", "warn", "trace"];
 const IDENTS_CPP: &[&str] = &["debug", "info", "warn", "trace"];
 
+const IDENTS_PYTHON: &[&str] = &["debug", "info", "warn", "trace"];
+
+static RUST_PLACEHOLDER_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"\{(?:([a-zA-Z_][a-zA-Z0-9_.]*)|(\d+))?\s*(?::[^}]*)?}"#).unwrap()
+});
+
+static JAVA_PLACEHOLDER_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"\{.*}|\\\{(.*)}"#).unwrap());
+
+static CPP_PLACEHOLDER_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"%[-+ #0]*\d*(?:\.\d+)?[hlLzjt]*[diuoxXfFeEgGaAcspn%]|\{(?:([a-zA-Z_][a-zA-Z0-9_.]*)|(\d+))?\s*(?::[^}]*)?}"#).unwrap()
+});
+
+static PYTHON_PLACEHOLDER_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"%[-+ #0]*\d*(?:\.\d+)?[hlLzjt]*[diuoxXfFeEgGaAcspn%]"#).unwrap()
+});
+
 impl SourceLanguage {
     pub fn as_str(&self) -> &'static str {
         match self {
             SourceLanguage::Rust => "Rust",
             SourceLanguage::Java => "Java",
             SourceLanguage::Cpp => "C++",
+            SourceLanguage::Python => "Python",
         }
     }
 
@@ -284,6 +304,7 @@ impl SourceLanguage {
             Some("rs") => Some(Self::Rust),
             Some("java") => Some(Self::Java),
             Some("h" | "hh" | "hpp" | "hxx" | "tpp" | "cc" | "cpp" | "cxx") => Some(Self::Cpp),
+            Some("py") => Some(Self::Python),
             None | Some(_) => None,
         }
     }
@@ -339,6 +360,20 @@ impl SourceLanguage {
                     )
                 "#
             }
+            SourceLanguage::Python => {
+                r#"
+                (
+                    (expression_statement
+                      (call
+                        function: (_) @func
+                        arguments: (argument_list .
+                          (string) @args
+                        )
+                      )
+                    )
+                )
+                "#
+            }
         }
     }
 
@@ -347,7 +382,34 @@ impl SourceLanguage {
             SourceLanguage::Rust => IDENTS_RS,
             SourceLanguage::Java => IDENTS_JAVA,
             SourceLanguage::Cpp => IDENTS_CPP,
+            SourceLanguage::Python => IDENTS_PYTHON,
         }
+    }
+
+    fn get_placeholder_regex(&self) -> &'static Regex {
+        match self {
+            SourceLanguage::Rust => RUST_PLACEHOLDER_REGEX.deref(),
+            SourceLanguage::Java => JAVA_PLACEHOLDER_REGEX.deref(),
+            SourceLanguage::Cpp => CPP_PLACEHOLDER_REGEX.deref(),
+            SourceLanguage::Python => PYTHON_PLACEHOLDER_REGEX.deref(),
+        }
+    }
+
+    fn captures_to_format_arg(&self, caps: &Captures) -> FormatArgument {
+        for (index, cap) in caps.iter().skip(1).enumerate() {
+            if let Some(cap) = cap {
+                return match (self, index) {
+                    (SourceLanguage::Rust | SourceLanguage::Java | SourceLanguage::Cpp, 0) => {
+                        FormatArgument::Named(cap.as_str().to_string())
+                    }
+                    (SourceLanguage::Rust | SourceLanguage::Cpp, 1) => {
+                        FormatArgument::Positional(cap.as_str().parse().unwrap())
+                    }
+                    _ => unreachable!(),
+                };
+            }
+        }
+        FormatArgument::Placeholder
     }
 }
 
@@ -513,7 +575,7 @@ pub fn extract_logging_guarded(sources: &[CodeSource], guard: &WorkGuard) -> Vec
             for result in results {
                 // println!("node.kind()={:?} range={:?}", result.kind, result.range);
                 match result.kind.as_str() {
-                    "string_literal" => {
+                    "string_literal" | "string" => {
                         if let Some(src_ref) = SourceRef::new(code, result) {
                             patterns.push(src_ref.pattern.clone());
                             matched.push(src_ref);
@@ -849,6 +911,34 @@ fn main() {
             vec![VariablePair {
                 expr: "argv[1]".to_string(),
                 value: "Steve".to_string()
+            },]
+        );
+    }
+
+    const PYTHON_SOURCE: &str = r#"
+def main(args):
+    logger.info("foo %s \N{greek small letter pi}", test_var)
+    logging.info(f'Hello, {args[1]}!')
+    logger.warning(f"warning message:\nlow disk space")
+    logger.info(rf"""info message:
+processing started -- {args[0]}""")
+"#;
+
+    #[test]
+    fn test_basic_python() {
+        let log_ref = LogRef::new("foo bar π");
+        let code = CodeSource::from_string(&Path::new("in-mem.py"), PYTHON_SOURCE);
+        let src_refs = extract_logging(&[code], &ProgressTracker::new())
+            .pop()
+            .unwrap()
+            .log_statements;
+        assert_yaml_snapshot!(src_refs);
+        let vars = extract_variables(&log_ref, &src_refs[0]);
+        assert_eq!(
+            vars,
+            vec![VariablePair {
+                expr: "test_var".to_string(),
+                value: "bar".to_string()
             },]
         );
     }
