@@ -2,7 +2,6 @@ use crate::{CodeSource, QueryResult, SourceLanguage};
 use core::fmt;
 use regex::{Captures, Regex};
 use serde::Serialize;
-use std::ops::Deref;
 use std::sync::LazyLock;
 
 #[derive(Clone, Debug, Serialize, Eq, PartialEq)]
@@ -53,16 +52,22 @@ impl SourceRef {
         if start == range.end_byte {
             end = range.end_byte;
         }
-        let unquoted = &source[start..end].to_string();
-        // println!("{} line {}", code.filename, line);
+        let unquoted = if let Some(pat) = result.pattern {
+            pat
+        } else {
+            source[start..end].to_string()
+        };
         if let Some(MessageMatcher {
             matcher,
             pattern,
-            args,
+            mut args,
             quality,
-        }) = build_matcher(unquoted, code.info.language)
+        }) = build_matcher(result.raw, &unquoted, code.info.language)
         {
             let name = source[result.name_range].to_string();
+            if !result.args.is_empty() {
+                args = result.args;
+            }
             Some(SourceRef {
                 source_path: code.filename.clone(),
                 language: code.info.language,
@@ -107,45 +112,21 @@ impl PartialEq for SourceRef {
     }
 }
 
-static RUST_PLACEHOLDER_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"\{(?:([a-zA-Z_][a-zA-Z0-9_.]*)|(\d+))?\s*(?::[^}]*)?}"#).unwrap()
-});
-
-static JAVA_PLACEHOLDER_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"\{.*}|\\\{(.*)}"#).unwrap());
-
-static CPP_PLACEHOLDER_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"%[-+ #0]*\d*(?:\.\d+)?[hlLzjt]*[diuoxXfFeEgGaAcspn%]|\{(?:([a-zA-Z_][a-zA-Z0-9_.]*)|(\d+))?\s*(?::[^}]*)?}"#).unwrap()
-});
-
-fn placeholder_regex_for(language: SourceLanguage) -> &'static Regex {
-    match language {
-        SourceLanguage::Rust => RUST_PLACEHOLDER_REGEX.deref(),
-        SourceLanguage::Java => JAVA_PLACEHOLDER_REGEX.deref(),
-        SourceLanguage::Cpp => CPP_PLACEHOLDER_REGEX.deref(),
-    }
-}
-
-fn build_matcher(text: &str, language: SourceLanguage) -> Option<MessageMatcher> {
+fn build_matcher(raw: bool, text: &str, language: SourceLanguage) -> Option<MessageMatcher> {
     let mut args = Vec::new();
     let mut last_end = 0;
     let mut pattern = "(?s)^".to_string();
     let mut quality = 0;
-    for cap in placeholder_regex_for(language).captures_iter(text) {
+    for cap in language.get_placeholder_regex().captures_iter(text) {
         let placeholder = cap.get(0).unwrap();
-        let text = escape_ignore_newlines(&text[last_end..placeholder.start()]);
+        let text = escape_ignore_newlines(raw, &text[last_end..placeholder.start()]);
         quality += text.chars().filter(|c| !c.is_whitespace()).count();
         pattern.push_str(text.as_str());
         last_end = placeholder.end();
         pattern.push_str("(.+)");
-        args.push(match (cap.get(1), cap.get(2)) {
-            (Some(expr), None) => FormatArgument::Named(expr.as_str().to_string()),
-            (None, Some(pos)) => FormatArgument::Positional(pos.as_str().parse().unwrap_or(0)),
-            (Some(_), Some(_)) => unreachable!(),
-            (None, None) => FormatArgument::Placeholder,
-        });
+        args.push(language.captures_to_format_arg(&cap));
     }
-    let text = escape_ignore_newlines(&text[last_end..]);
+    let text = escape_ignore_newlines(raw, &text[last_end..]);
     quality += text.chars().filter(|c| !c.is_whitespace()).count();
     if quality == 0 {
         None
@@ -161,21 +142,65 @@ fn build_matcher(text: &str, language: SourceLanguage) -> Option<MessageMatcher>
     }
 }
 
+static ESCAPE_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"([.*+?^${}()|\[\]])|([\n\r\t])|(\\[0-7]{3}|\\0)|(\\N\{[^}]+})"#).unwrap()
+});
+
+// A regex for raw strings that doesn't try to interpret escape sequences.
+static RAW_ESCAPE_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"([.*+?^${}()|\[\]])|([\n\r\t])|(\\)"#).unwrap()
+});
+
 /// Escape special chars except newlines and carriage returns in order to support multiline strings
-fn escape_ignore_newlines(segment: &str) -> String {
+fn escape_ignore_newlines(raw: bool, segment: &str) -> String {
+    const HEX_CHARS: [char; 16] = [
+        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F',
+    ];
+
     let mut result = String::with_capacity(segment.len() * 2);
-    for c in segment.chars() {
-        match c {
-            '\n' => result.push_str(r"\n"), // Use actual newline in regex
-            '\r' => result.push_str(r"\r"), // Handle carriage returns too
-            // Escape regex special chars
-            '.' | '+' | '*' | '?' | '^' | '$' | '(' | ')' | '[' | ']' | '{' | '}' | '|' => {
-                result.push('\\');
-                result.push(c);
+    let mut last_end = 0;
+    let regex = if raw {
+        &RAW_ESCAPE_REGEX
+    } else {
+        &ESCAPE_REGEX
+    };
+    for cap in regex.captures_iter(segment) {
+        let overall_range = cap.get(0).unwrap().range();
+        result.push_str(segment[last_end..overall_range.start].as_ref());
+        last_end = overall_range.end;
+        if let Some(c) = cap.get(1) {
+            result.push('\\');
+            result.push_str(c.as_str());
+        } else if let Some(c) = cap.get(2) {
+            match c.as_str() {
+                "\n" => result.push_str("\\n"),
+                "\r" => result.push_str("\\r"),
+                "\t" => result.push_str("\\t"),
+                _ => unreachable!(),
             }
-            _ => result.push(c),
+        } else if let Some(c) = cap.get(3) {
+            if raw {
+                result.push('\\');
+                    result.push_str(c.as_str());
+            } else {
+                let c = c.as_str();
+                let c = &c[1..];
+                let c = u8::from_str_radix(c, 8).unwrap();
+                result.push('\\');
+                result.push('x');
+                result.push(HEX_CHARS[(c >> 4) as usize]);
+                result.push(HEX_CHARS[(c & 0xf) as usize]);
+            }
+        } else if let Some(_c) = cap.get(4) {
+            // XXX This is the fancy Python "\N{...}" escape sequence.  Ideally, we'd interpret the
+            // name of the escape, but that seems like a lot of work.  So, we'll just match any
+            // character.
+            result.push_str("\\w");
+        } else {
+            unreachable!();
         }
     }
+    result.push_str(segment[last_end..].as_ref());
     result
 }
 
@@ -190,9 +215,11 @@ mod tests {
             pattern: _pat,
             args: _args,
             ..
-        } = build_matcher("{}) {}, {}", SourceLanguage::Rust).unwrap();
+        } = build_matcher(false, "{}) {}, {} \\033", SourceLanguage::Rust).unwrap();
         assert_eq!(
-            Regex::new(r#"(?s)^(.+)\) (.+), (.+)$"#).unwrap().as_str(),
+            Regex::new(r#"(?s)^(.+)\) (.+), (.+) \x1B$"#)
+                .unwrap()
+                .as_str(),
             matcher.as_str()
         );
     }
@@ -200,7 +227,7 @@ mod tests {
     #[test]
     fn test_build_matcher_named() {
         let MessageMatcher { matcher, .. } =
-            build_matcher("abc {main_path:?} def", SourceLanguage::Rust).unwrap();
+            build_matcher(false, "abc {main_path:?} def", SourceLanguage::Rust).unwrap();
         assert_eq!(
             Regex::new(r#"(?s)^abc (.+) def$"#).unwrap().as_str(),
             matcher.as_str()
@@ -210,7 +237,7 @@ mod tests {
     #[test]
     fn test_build_matcher_mix() {
         let MessageMatcher { matcher, args, .. } =
-            build_matcher("{}) {:?}, {foo.bar}", SourceLanguage::Rust).unwrap();
+            build_matcher(false, "{}) {:?}, {foo.bar}", SourceLanguage::Rust).unwrap();
         assert_eq!(
             Regex::new(r#"(?s)^(.+)\) (.+), (.+)$"#).unwrap().as_str(),
             matcher.as_str()
@@ -221,7 +248,7 @@ mod tests {
     #[test]
     fn test_build_matcher_positional() {
         let MessageMatcher { matcher, args, .. } =
-            build_matcher("second={2}", SourceLanguage::Rust).unwrap();
+            build_matcher(false, "second={2}", SourceLanguage::Rust).unwrap();
         assert_eq!(
             Regex::new(r#"(?s)^second=(.+)$"#).unwrap().as_str(),
             matcher.as_str()
@@ -232,7 +259,7 @@ mod tests {
     #[test]
     fn test_build_matcher_cpp() {
         let MessageMatcher { matcher, args, .. } =
-            build_matcher("they are %d years old", SourceLanguage::Cpp).unwrap();
+            build_matcher(false, "they are %d years old", SourceLanguage::Cpp).unwrap();
         assert_eq!(
             Regex::new(r#"(?s)^they are (.+) years old$"#)
                 .unwrap()
@@ -245,7 +272,7 @@ mod tests {
     #[test]
     fn test_build_matcher_cpp_spdlog() {
         let MessageMatcher { matcher, args, .. } =
-            build_matcher("they are {0:d} years old", SourceLanguage::Cpp).unwrap();
+            build_matcher(false, "they are {0:d} years old", SourceLanguage::Cpp).unwrap();
         assert_eq!(
             Regex::new(r#"(?s)^they are (.+) years old$"#)
                 .unwrap()
@@ -257,13 +284,14 @@ mod tests {
 
     #[test]
     fn test_build_matcher_none() {
-        let build_res = build_matcher("%s", SourceLanguage::Cpp);
+        let build_res = build_matcher(false, "%s", SourceLanguage::Cpp);
         assert!(build_res.is_none());
     }
 
     #[test]
     fn test_build_matcher_multiline() {
         let MessageMatcher { matcher, .. } = build_matcher(
+            false,
             "you're only as funky\n as your last cut",
             SourceLanguage::Rust,
         )

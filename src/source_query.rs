@@ -3,6 +3,7 @@ use tree_sitter::{
     Language, Node, Parser, Point, Query, QueryCursor, Range as TSRange, StreamingIterator, Tree,
 };
 
+use crate::source_ref::FormatArgument;
 use crate::CodeSource;
 
 pub struct SourceQuery<'a> {
@@ -15,6 +16,9 @@ pub(crate) struct QueryResult {
     pub kind: String,
     pub range: TSRange,
     pub name_range: Range<usize>,
+    pub pattern: Option<String>,
+    pub args: Vec<FormatArgument>,
+    pub raw: bool,
 }
 
 impl<'a> SourceQuery<'a> {
@@ -44,21 +48,60 @@ impl<'a> SourceQuery<'a> {
             let mut got_string_literal = false;
             for capture in m.captures {
                 let mut child = capture.node;
-                if child.kind() == "string_literal" {
-                    // only return results after the format string literal, other captures
-                    // are not relevant.
-                    got_string_literal = true;
-                } else if !got_string_literal {
-                    continue;
+                match child.kind() {
+                    "string_literal" | "string" => {
+                        // only return results after the format string literal, other captures
+                        // are not relevant.
+                        got_string_literal = true;
+                    }
+                    _ => {
+                        if !got_string_literal {
+                            continue;
+                        }
+                    }
                 }
                 let mut arg_start: Option<(usize, Point)> = None;
 
                 if filter_idx.is_none() || filter_idx.is_some_and(|f| f == capture.index) {
+                    let qr_index = results.len();
                     results.push(QueryResult {
                         kind: capture.node.kind().to_string(),
                         range: capture.node.range(),
                         name_range: Self::find_fn_range(child),
+                        pattern: None,
+                        args: vec![],
+                        raw: false,
                     });
+                    let mut pattern = String::new();
+                    if child.kind() == "string" {
+                        // The Python tree-sitter outputs string nodes that contain details about
+                        // the string, like interpolation expressions.
+                        let mut child_cursor = child.walk();
+                        for string_child in child.children(&mut child_cursor) {
+                            let range = string_child.start_byte()..string_child.end_byte();
+                            match string_child.kind() {
+                                "string_start" => {
+                                    // Check for a python raw string literal.
+                                    if self.source[range].contains("r") {
+                                        results[qr_index].raw = true;
+                                    }
+                                }
+                                "string_content" => pattern.push_str(self.source[range].as_ref()),
+                                "interpolation" => {
+                                    // Swap in a Python placeholder for the interpolation
+                                    // expression.
+                                    pattern.push_str("%s");
+                                    let expr =
+                                        string_child.child_by_field_name("expression").unwrap();
+                                    results[qr_index].args.push(FormatArgument::Named(
+                                        self.source[expr.start_byte()..expr.end_byte()].to_string(),
+                                    ))
+                                }
+                                _ => {}
+                            }
+                        }
+                        results[qr_index].pattern = Some(pattern);
+                    }
                     while let Some(next_child) = child.next_sibling() {
                         if matches!(next_child.kind(), "," | ")") {
                             if let Some(start) = arg_start {
@@ -72,6 +115,9 @@ impl<'a> SourceQuery<'a> {
                                             end_point: next_child.start_position(),
                                         },
                                         name_range: Self::find_fn_range(child),
+                                        pattern: None,
+                                        args: vec![],
+                                        raw: false,
                                     });
                                 }
                             }
@@ -94,7 +140,13 @@ impl<'a> SourceQuery<'a> {
                 range.start_byte..range.end_byte
             }
             "function_definition" => {
-                let range = node.child_by_field_name("declarator").unwrap().range();
+                let range = if let Some(decl) = node.child_by_field_name("declarator") {
+                    decl.range()
+                } else if let Some(name) = node.child_by_field_name("name") {
+                    name.range()
+                } else {
+                    unreachable!();
+                };
                 range.start_byte..range.end_byte
             }
             "method_declaration" => {

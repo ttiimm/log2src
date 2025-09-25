@@ -1,0 +1,52 @@
+---
+source: src/lib.rs
+expression: src_refs
+---
+- sourcePath: in-mem.py
+  language: Python
+  lineNumber: 3
+  endLineNumber: 3
+  column: 16
+  name: main
+  text: "\"foo %s \\N{greek small letter pi}\""
+  quality: 5
+  pattern: "(?s)^foo (.+) \\w$"
+  args:
+    - Placeholder
+  vars:
+    - test_var
+- sourcePath: in-mem.py
+  language: Python
+  lineNumber: 4
+  endLineNumber: 4
+  column: 17
+  name: main
+  text: "f'Hello, {args[1]}!'"
+  quality: 7
+  pattern: "(?s)^Hello, (.+)!$"
+  args:
+    - Named: "args[1]"
+  vars: []
+- sourcePath: in-mem.py
+  language: Python
+  lineNumber: 5
+  endLineNumber: 5
+  column: 19
+  name: main
+  text: "f\"warning message:\\nlow disk space\""
+  quality: 29
+  pattern: "(?s)^warning message:\\nlow disk space$"
+  args: []
+  vars: []
+- sourcePath: in-mem.py
+  language: Python
+  lineNumber: 6
+  endLineNumber: 7
+  column: 16
+  name: main
+  text: "rf\"\"\"info message:\nprocessing started -- {args[0]}\"\"\""
+  quality: 33
+  pattern: "(?s)^info message:\\nprocessing started -- (.+)$"
+  args:
+    - Named: "args[0]"
+  vars: []
