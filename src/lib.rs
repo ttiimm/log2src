@@ -279,7 +279,7 @@ static RUST_PLACEHOLDER_REGEX: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 static JAVA_PLACEHOLDER_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"\{.*}|\\\{(.*)}"#).unwrap());
+    LazyLock::new(|| Regex::new(r#"\{[^}]*}|\\\{([^}]*)}"#).unwrap());
 
 static CPP_PLACEHOLDER_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"%[-+ #0]*\d*(?:\.\d+)?[hlLzjt]*[diuoxXfFeEgGaAcspn%]|\{(?:([a-zA-Z_][a-zA-Z0-9_.]*)|(\d+))?\s*(?::[^}]*)?}"#).unwrap()
@@ -338,7 +338,7 @@ impl SourceLanguage {
                         arguments: [
                             (argument_list (template_expression
                                 template_argument: (string_literal) @arguments))
-                            (argument_list (string_literal) @arguments)
+                            (argument_list . (string_literal) @arguments)
                         ]
                         (#match? @object-name "log(ger)?|LOG(GER)?")
                         (#match? @method-name "fine|debug|info|warn|trace")
@@ -586,7 +586,7 @@ pub fn extract_logging_guarded(sources: &[CodeSource], guard: &WorkGuard) -> Vec
                             let range = result.range;
                             let source = code.buffer.as_str();
                             let text = source[range.start_byte..range.end_byte].to_string();
-                            // println!("text={} matched.len()={}", text, matched.len());
+                            // eprintln!("text={} matched.len()={}", text, matched.len());
                             // check the text doesn't match any of the logging related identifiers
                             if code
                                 .info
@@ -921,7 +921,7 @@ def main(args):
     logging.info(f'Hello, {args[1]}!')
     logger.warning(f"warning message:\nlow disk space")
     logger.info(rf"""info message:
-processing started -- {args[0]}""")
+processing \started -- {args[0]}""")
 "#;
 
     #[test]

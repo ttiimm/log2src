@@ -44,9 +44,9 @@ expression: src_refs
   endLineNumber: 7
   column: 16
   name: main
-  text: "rf\"\"\"info message:\nprocessing started -- {args[0]}\"\"\""
-  quality: 33
-  pattern: "(?s)^info message:\\nprocessing started -- (.+)$"
+  text: "rf\"\"\"info message:\nprocessing \\started -- {args[0]}\"\"\""
+  quality: 35
+  pattern: "(?s)^info message:\\nprocessing \\\\started -- (.+)$"
   args:
     - Named: "args[0]"
   vars: []

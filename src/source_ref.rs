@@ -119,19 +119,19 @@ fn build_matcher(raw: bool, text: &str, language: SourceLanguage) -> Option<Mess
     let mut quality = 0;
     for cap in language.get_placeholder_regex().captures_iter(text) {
         let placeholder = cap.get(0).unwrap();
-        let text = escape_ignore_newlines(raw, &text[last_end..placeholder.start()]);
-        quality += text.chars().filter(|c| !c.is_whitespace()).count();
-        pattern.push_str(text.as_str());
+        let subtext = escape_ignore_newlines(raw, &text[last_end..placeholder.start()]);
+        quality += subtext.chars().filter(|c| !c.is_whitespace()).count();
+        pattern.push_str(subtext.as_str());
         last_end = placeholder.end();
         pattern.push_str("(.+)");
         args.push(language.captures_to_format_arg(&cap));
     }
-    let text = escape_ignore_newlines(raw, &text[last_end..]);
-    quality += text.chars().filter(|c| !c.is_whitespace()).count();
+    let subtext = escape_ignore_newlines(raw, &text[last_end..]);
+    quality += subtext.chars().filter(|c| !c.is_whitespace()).count();
     if quality == 0 {
         None
     } else {
-        pattern.push_str(text.as_str());
+        pattern.push_str(subtext.as_str());
         pattern.push('$');
         Some(MessageMatcher {
             matcher: Regex::new(pattern.as_str()).unwrap(),
@@ -142,14 +142,27 @@ fn build_matcher(raw: bool, text: &str, language: SourceLanguage) -> Option<Mess
     }
 }
 
+/// Regex for finding values that need to be escaped in a string-literal.  The components are
+/// as follows:
+///
+/// * `[.*+?^${}()|\[\]]` - Characters that are used in regexes and need to be escaped.
+/// * `[\n\r\t]` - White space characters that we should turn into regex escape sequences.
+/// * `\\[0-7]{3}|\\0` - Regex does not support octal escape-sequences, so we need to turn
+///   them into a hex escape.
+/// * `\\N\{[^}]+}` - Python named-Unicode escape that is turned into a `\w` since it would be
+///   challenging to get the names all right.
 static ESCAPE_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"([.*+?^${}()|\[\]])|([\n\r\t])|(\\[0-7]{3}|\\0)|(\\N\{[^}]+})"#).unwrap()
 });
 
-// A regex for raw strings that doesn't try to interpret escape sequences.
-static RAW_ESCAPE_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"([.*+?^${}()|\[\]])|([\n\r\t])|(\\)"#).unwrap()
-});
+/// Regex for finding values that need to be escaped in a raw string-literal.  The components are
+/// as follows:
+///
+/// * `[.*+?^${}()|\[\]]` - Characters that are used in regexes and need to be escaped.
+/// * `[\n\r\t]` - White space characters that we should turn into regex escape sequences.
+/// * `\\` - A backslash
+static RAW_ESCAPE_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"([.*+?^${}()|\[\]])|([\n\r\t])|(\\)"#).unwrap());
 
 /// Escape special chars except newlines and carriage returns in order to support multiline strings
 fn escape_ignore_newlines(raw: bool, segment: &str) -> String {
@@ -181,7 +194,7 @@ fn escape_ignore_newlines(raw: bool, segment: &str) -> String {
         } else if let Some(c) = cap.get(3) {
             if raw {
                 result.push('\\');
-                    result.push_str(c.as_str());
+                result.push_str(c.as_str());
             } else {
                 let c = c.as_str();
                 let c = &c[1..];
@@ -298,6 +311,22 @@ mod tests {
         .unwrap();
         assert_eq!(
             Regex::new(r#"(?s)^you're only as funky\n as your last cut$"#)
+                .unwrap()
+                .as_str(),
+            matcher.as_str()
+        );
+    }
+
+    #[test]
+    fn test_build_matcher_raw() {
+        let MessageMatcher { matcher, .. } = build_matcher(
+            true,
+            "Hard-coded \\Windows\\Path",
+            SourceLanguage::Rust,
+        )
+            .unwrap();
+        assert_eq!(
+            Regex::new(r#"(?s)^Hard-coded \\Windows\\Path$"#)
                 .unwrap()
                 .as_str(),
             matcher.as_str()
