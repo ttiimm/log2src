@@ -1,0 +1,6 @@
+---
+source: src/log_format.rs
+expression: rep
+---
+unknown capture in log format: extra
+    Diagnostic severity: error

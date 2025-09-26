@@ -13,9 +13,9 @@ info:
 success: true
 exit_code: 0
 ----- stdout -----
-{"srcRef":{"sourcePath":"{java_dir}/BasicWithCustom.java","language":"Java","lineNumber":15,"endLineNumber":15,"column":16,"name":"main","text":"\"Hello from main\"","quality":13,"pattern":"(?s)^Hello from main$","args":[],"vars":[]},"variables":[]}
-{"srcRef":{"sourcePath":"{java_dir}/BasicWithCustom.java","language":"Java","lineNumber":22,"endLineNumber":22,"column":20,"name":"foo","text":"\"Hello from foo i=\\{i}\"","quality":14,"pattern":"(?s)^Hello from foo i=(.+)$","args":[{"Named":"i"}],"vars":[]},"variables":[{"expr":"i","value":"0"}]}
-{"srcRef":{"sourcePath":"{java_dir}/BasicWithCustom.java","language":"Java","lineNumber":22,"endLineNumber":22,"column":20,"name":"foo","text":"\"Hello from foo i=\\{i}\"","quality":14,"pattern":"(?s)^Hello from foo i=(.+)$","args":[{"Named":"i"}],"vars":[]},"variables":[{"expr":"i","value":"1"}]}
-{"srcRef":{"sourcePath":"{java_dir}/BasicWithCustom.java","language":"Java","lineNumber":22,"endLineNumber":22,"column":20,"name":"foo","text":"\"Hello from foo i=\\{i}\"","quality":14,"pattern":"(?s)^Hello from foo i=(.+)$","args":[{"Named":"i"}],"vars":[]},"variables":[{"expr":"i","value":"2"}]}
+{"logRef":{"details":{"file":"BasicWithCustom","lineno":15}},"srcRef":{"sourcePath":"{java_dir}/BasicWithCustom.java","language":"Java","lineNumber":15,"endLineNumber":15,"column":16,"name":"main","text":"\"Hello from main\"","quality":13,"pattern":"(?s)^Hello from main$","args":[],"vars":[]},"variables":[]}
+{"logRef":{"details":{"file":"BasicWithCustom","lineno":22}},"srcRef":{"sourcePath":"{java_dir}/BasicWithCustom.java","language":"Java","lineNumber":22,"endLineNumber":22,"column":20,"name":"foo","text":"\"Hello from foo i=\\{i}\"","quality":14,"pattern":"(?s)^Hello from foo i=(.+)$","args":[{"Named":"i"}],"vars":[]},"variables":[{"expr":"i","value":"0"}]}
+{"logRef":{"details":{"file":"BasicWithCustom","lineno":22}},"srcRef":{"sourcePath":"{java_dir}/BasicWithCustom.java","language":"Java","lineNumber":22,"endLineNumber":22,"column":20,"name":"foo","text":"\"Hello from foo i=\\{i}\"","quality":14,"pattern":"(?s)^Hello from foo i=(.+)$","args":[{"Named":"i"}],"vars":[]},"variables":[{"expr":"i","value":"1"}]}
+{"logRef":{"details":{"file":"BasicWithCustom","lineno":22}},"srcRef":{"sourcePath":"{java_dir}/BasicWithCustom.java","language":"Java","lineNumber":22,"endLineNumber":22,"column":20,"name":"foo","text":"\"Hello from foo i=\\{i}\"","quality":14,"pattern":"(?s)^Hello from foo i=(.+)$","args":[{"Named":"i"}],"vars":[]},"variables":[{"expr":"i","value":"2"}]}
 
 ----- stderr -----

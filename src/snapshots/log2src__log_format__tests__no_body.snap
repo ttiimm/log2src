@@ -1,0 +1,6 @@
+---
+source: src/log_format.rs
+expression: rep
+---
+log format is missing capture: body
+    Diagnostic severity: error

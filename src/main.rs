@@ -77,6 +77,12 @@ fn main() -> miette::Result<()> {
         });
     }
 
+    let format_re = if let Some(format) = args.format {
+        Some(format.as_str().try_into()?)
+    } else {
+        None
+    };
+
     let input = args.log;
     let mut reader: Box<dyn io::Read> = match input {
         None => Box::new(io::stdin()),
@@ -87,7 +93,7 @@ fn main() -> miette::Result<()> {
     reader.read_to_string(&mut buffer).into_diagnostic()?;
     let filter = args.start.unwrap_or(0)..args.end.unwrap_or(usize::MAX);
 
-    let filtered = filter_log(&buffer, filter, args.format.clone());
+    let filtered = filter_log(&buffer, filter, format_re);
     let mut log_matcher = LogMatcher::new();
     log_matcher
         .add_root(&PathBuf::from(args.sources))

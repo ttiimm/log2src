@@ -25,7 +25,7 @@ use crate::progress::WorkGuard;
 use crate::source_hier::{ScanEvent, SourceFileID, SourceHierContent, SourceHierTree};
 use crate::source_ref::FormatArgument;
 pub use code_source::CodeSource;
-use log_format::LogFormat;
+pub use log_format::LogFormat;
 pub use progress::ProgressTracker;
 pub use progress::ProgressUpdate;
 pub use progress::WorkInfo;
@@ -35,6 +35,16 @@ pub use source_ref::SourceRef;
 
 #[derive(Error, Debug, Diagnostic, Clone)]
 pub enum LogError {
+    #[error("invalid log format regular expression")]
+    InvalidFormatRegex { source: regex::Error },
+    #[error("unknown capture in log format: {name}")]
+    #[diagnostic(help(
+        "The supported captures are: timestamp, thread, level, file, line, method, and body"
+    ))]
+    UnknownFormatCapture { name: String },
+    #[error("log format is missing capture: {name}")]
+    #[diagnostic(help("A log format must have a 'body' capture at a minimum"))]
+    FormatMissingCapture { name: String },
     #[error("\"{path}\" is already covered by \"{root}\"")]
     PathExists { path: PathBuf, root: PathBuf },
     #[error("cannot read source file \"{path}\"")]
@@ -421,23 +431,29 @@ pub struct VariablePair {
 
 #[derive(Serialize)]
 pub struct LogMapping<'a> {
-    #[serde(skip_serializing)]
+    #[serde(rename(serialize = "logRef"))]
     pub log_ref: LogRef<'a>,
     #[serde(rename(serialize = "srcRef"))]
     pub src_ref: Option<SourceRef>,
     pub variables: Vec<VariablePair>,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Serialize)]
 pub struct LogRef<'a> {
+    #[serde(skip_serializing)]
     pub line: &'a str,
     pub details: Option<LogDetails<'a>>,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Serialize)]
 pub struct LogDetails<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thread: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub file: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub lineno: Option<u32>,
+    #[serde(skip_serializing)]
     pub body: Option<&'a str>,
 }
 
@@ -449,20 +465,9 @@ impl<'a> LogRef<'a> {
         }
     }
 
-    pub fn from_parsed(file: Option<&'a str>, lineno: Option<u32>, body: &'a str) -> Self {
-        let details = Some(LogDetails {
-            file,
-            lineno,
-            body: Some(body),
-        });
-        Self {
-            line: body,
-            details,
-        }
-    }
-
     pub fn with_format(line: &'a str, log_format: LogFormat) -> Self {
         let captures = log_format.captures(line);
+        let thread = captures.name("thread").map(|thread_match| thread_match.as_str());
         let file = captures.name("file").map(|file_match| file_match.as_str());
         let lineno = captures
             .name("line")
@@ -470,7 +475,7 @@ impl<'a> LogRef<'a> {
         let body = captures.name("body").map(|body| body.as_str());
         Self {
             line,
-            details: Some(LogDetails { file, lineno, body }),
+            details: Some(LogDetails { thread, file, lineno, body }),
         }
     }
 
@@ -542,11 +547,10 @@ pub fn extract_variables<'a>(log_ref: &LogRef<'a>, src_ref: &'a SourceRef) -> Ve
     variables
 }
 
-pub fn filter_log<R>(buffer: &str, filter: R, log_format: Option<String>) -> Vec<LogRef<'_>>
+pub fn filter_log<R>(buffer: &str, filter: R, log_format: Option<LogFormat>) -> Vec<LogRef<'_>>
 where
     R: RangeBounds<usize>,
 {
-    let log_format = log_format.map(LogFormat::new);
     buffer
         .lines()
         .enumerate()
@@ -659,12 +663,10 @@ mod tests {
         let buffer = String::from(
             "2025-04-10 22:12:52 INFO  JvmPauseMonitor:146 - JvmPauseMonitor-n0: Started",
         );
-        let regex = String::from(
-            r"^(?<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) (?<level>\w+)\s+ (?<file>[\w$.]+):(?<line>\d+) - (?<body>.*)$",
-        );
-        let log_format = Some(regex);
-        let result = filter_log(&buffer, .., log_format);
+        let regex = r"^(?<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) (?<level>\w+)\s+ (?<file>[\w$.]+):(?<line>\d+) - (?<body>.*)$";
+        let result = filter_log(&buffer, .., Some(regex.try_into().unwrap()));
         let details = Some(LogDetails {
+            thread: None,
             file: Some("JvmPauseMonitor"),
             lineno: Some(146),
             body: Some("JvmPauseMonitor-n0: Started"),
@@ -724,9 +726,9 @@ fn namedarg2(salutation: &str, name: &str) {
 
     #[test]
     fn test_link_to_source() {
-        let lf = LogFormat::new(
-            r#"^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z \w+ \w+\]\s+(?<body>.*)"#.to_string(),
-        );
+        let lf = r#"^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z \w+ \w+\]\s+(?<body>.*)"#
+            .try_into()
+            .unwrap();
         let log_ref = LogRef::with_format(
             "[2024-05-09T19:58:53Z DEBUG main] you're only as funky as your last cut",
             lf,
@@ -743,9 +745,9 @@ fn namedarg2(salutation: &str, name: &str) {
 
     #[test]
     fn test_link_to_quality_source() {
-        let lf = LogFormat::new(
-            r#"^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z \w+ \w+\]\s+(?<body>.*)"#.to_string(),
-        );
+        let lf = r#"^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z \w+ \w+\]\s+(?<body>.*)"#
+            .try_into()
+            .unwrap();
         let log_ref = LogRef::with_format("[2024-05-09T19:58:53Z DEBUG main] Hello, Leander!", lf);
         let code = CodeSource::from_string(&Path::new("in-mem.rs"), TEST_SOURCE);
         let src_refs = extract_logging(&[code], &ProgressTracker::new())
@@ -768,9 +770,9 @@ fn main() {
 "#;
     #[test]
     fn test_link_multiline() {
-        let lf = LogFormat::new(
-            r#"^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z \w+ \w+\]\s+(?<body>.*)"#.to_string(),
-        );
+        let lf = r#"^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z \w+ \w+\]\s+(?<body>.*)"#
+            .try_into()
+            .unwrap();
         let log_ref = LogRef::with_format(
             "[2024-05-09T19:58:53Z DEBUG main] you're only as funky\n as your last cut",
             lf,
@@ -864,13 +866,11 @@ fn main() {
 """#;
     #[test]
     fn test_extract_var_punctuation() {
-        let regex = String::from(
-            r"^(?<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) (?<level>\w+)\s+ (?<file>[\w$.]+):(?<line>\d+) - (?<body>.*)$",
-        );
-        let log_format = LogFormat::new(regex);
+        let lf =
+            r"^(?<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) (?<level>\w+)\s+ (?<file>[\w$.]+):(?<line>\d+) - (?<body>.*)$".try_into().unwrap();
         let log_ref = LogRef::with_format(
             "2025-04-10 22:12:52 INFO  JvmPauseMonitor:146 - JvmPauseMonitor-n0: Started",
-            log_format,
+            lf,
         );
         let code = CodeSource::from_string(&PathBuf::from("in-mem.java"), TEST_PUNC_SRC);
         let src_refs = extract_logging(&[code], &ProgressTracker::new())
