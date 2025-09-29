@@ -98,7 +98,7 @@ fn basic_slf4j() -> Result<(), Box<dyn std::error::Error>> {
         .arg("-l")
         .arg(log.to_str().expect("test case log exists"))
         .arg("-f")
-        .arg("^(?<timestamp>\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}) (?<body>.*)$");
+        .arg("^(?<timestamp>\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}) (?<thread>\\d+) (?<body>.*)$");
 
     assert_cmd_snapshot!(cmd);
     Ok(())

@@ -1,0 +1,10 @@
+---
+source: src/log_format.rs
+expression: rep
+---
+invalid log format regular expression
+    Diagnostic severity: error
+    Caused by: regex parse error:
+    abc(
+       ^
+error: unclosed group
