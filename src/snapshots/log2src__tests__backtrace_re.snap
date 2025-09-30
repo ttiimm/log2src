@@ -1,0 +1,10 @@
+---
+source: src/lib.rs
+expression: log_ref.line
+---
+JvmPauseMonitor-n0: Started
+java.lang.IllegalStateException: simulated failure for demo
+    at org.example.Main.simulateError(Main.java:50)
+    at org.example.Main.main(Main.java:41)
+    at org.codehaus.mojo.exec.ExecJavaMojo$1.run(ExecJavaMojo.java:279)
+    at java.base/java.lang.Thread.run(Thread.java:1447)

@@ -270,7 +270,6 @@ export class DebugSession extends LoggingDebugSession {
         const log2srcPath = path.resolve(__dirname, this._binaryPath);
         const execFile = require('child_process').execFileSync;
         const start = this._line - 1;
-        const end = this._line;
 
         const editors = this.findEditors();
         if (editors.length > 0) {
@@ -280,7 +279,7 @@ export class DebugSession extends LoggingDebugSession {
         let l2sArgs = ['-d', this._launchArgs.source,
             '--log', this._launchArgs.log,
             '--start', start,
-            '--end', end]
+            '--count', 1]
         if (this._launchArgs.log_format !== undefined && this._launchArgs.log_format !== "") {
             l2sArgs.push("-f");
             l2sArgs.push(this._launchArgs.log_format);

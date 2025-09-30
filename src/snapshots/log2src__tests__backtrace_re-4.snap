@@ -1,0 +1,6 @@
+---
+source: src/lib.rs
+expression: vars
+---
+- expr: this
+  value: JvmPauseMonitor-n0

@@ -1,0 +1,30 @@
+---
+source: src/lib.rs
+expression: src_refs
+---
+- sourcePath: in-mem.java
+  language: Java
+  lineNumber: 3
+  endLineNumber: 3
+  column: 13
+  name: run
+  text: "\"{}: Started\""
+  quality: 8
+  pattern: "(?s)^(.+): Started$"
+  args:
+    - Placeholder
+  vars:
+    - this
+- sourcePath: in-mem.java
+  language: Java
+  lineNumber: 9
+  endLineNumber: 9
+  column: 15
+  name: run
+  text: "\"{}: Stopped\""
+  quality: 8
+  pattern: "(?s)^(.+): Stopped$"
+  args:
+    - Placeholder
+  vars:
+    - this

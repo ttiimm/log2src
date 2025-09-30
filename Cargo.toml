@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 clap = { version = "4.5.36", features = ["derive"] }
+colored_json = "5.0.0"
 indicatif = "0.18.0"
 itertools = "0.14.0"
 regex = "1.11.1"
@@ -19,7 +20,7 @@ tree-sitter-rust-orchard = "0.12.0"
 tree-sitter-java = "0.23.5"
 tree-sitter-python = "0.25.0"
 rayon = "1.11.0"
-miette = { version = "7.6.0", features = ["fancy"] }
+miette = { version = "7.6.0", features = ["fancy", "serde"] }
 
 [build-dependencies]
 cc="*"

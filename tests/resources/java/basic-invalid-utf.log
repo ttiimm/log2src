@@ -1,0 +1,5 @@
+2024-05-08 14:46:47 FINE Basic main: Hello from main
+2024-05-08 14:46:47 FINE Basic foo: Hello from foo i=0
+2024-05-08 14:46:47 INFO Basic invalid: Invalid UTF-8 sequence follows: ˇ˛ÄÅ <- invalid bytes
+2024-05-08 14:46:47 FINE Basic foo: Hello from foo i=1
+2024-05-08 14:46:47 FINE Basic foo: Hello from foo i=2

@@ -5,6 +5,43 @@ use std::{path::Path, process::Command};
 mod common_settings;
 
 #[test]
+fn invalid_log_path() -> Result<(), Box<dyn std::error::Error>> {
+    let _guard = common_settings::enable_filters();
+    let mut cmd = Command::cargo_bin("log2src")?;
+    let basic_source = Path::new("tests").join("java").join("Basic.java");
+    let basic_log = Path::new("badname.log");
+    cmd.arg("-d")
+        .arg(basic_source.to_str().expect("test case source code exists"))
+        .arg("-l")
+        .arg(basic_log.to_str().expect("test case log exists"))
+        .arg("-f")
+        .arg(r#"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \w+ \w+ \w+: (?<body>.*)"#);
+
+    assert_cmd_snapshot!(cmd);
+    Ok(())
+}
+
+#[test]
+fn invalid_log_format() -> Result<(), Box<dyn std::error::Error>> {
+    let _guard = common_settings::enable_filters();
+    let mut cmd = Command::cargo_bin("log2src")?;
+    let basic_source = Path::new("tests").join("java").join("Basic.java");
+    let basic_log = Path::new("tests")
+        .join("resources")
+        .join("java")
+        .join("basic.log");
+    cmd.arg("-d")
+        .arg(basic_source.to_str().expect("test case source code exists"))
+        .arg("-l")
+        .arg(basic_log.to_str().expect("test case log exists"))
+        .arg("-f")
+        .arg(r#"^-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \w+ \w+ \w+: (?<body>.*)"#);
+
+    assert_cmd_snapshot!(cmd);
+    Ok(())
+}
+
+#[test]
 fn basic() -> Result<(), Box<dyn std::error::Error>> {
     let _guard = common_settings::enable_filters();
     let mut cmd = Command::cargo_bin("log2src")?;
@@ -13,6 +50,50 @@ fn basic() -> Result<(), Box<dyn std::error::Error>> {
         .join("resources")
         .join("java")
         .join("basic.log");
+    cmd.arg("-d")
+        .arg(basic_source.to_str().expect("test case source code exists"))
+        .arg("-l")
+        .arg(basic_log.to_str().expect("test case log exists"))
+        .arg("-f")
+        .arg(r#"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \w+ \w+ \w+: (?<body>.*)"#);
+
+    assert_cmd_snapshot!(cmd);
+    Ok(())
+}
+
+#[test]
+fn basic_range() -> Result<(), Box<dyn std::error::Error>> {
+    let _guard = common_settings::enable_filters();
+    let mut cmd = Command::cargo_bin("log2src")?;
+    let basic_source = Path::new("tests").join("java").join("Basic.java");
+    let basic_log = Path::new("tests")
+        .join("resources")
+        .join("java")
+        .join("basic.log");
+    cmd.arg("-d")
+        .arg(basic_source.to_str().expect("test case source code exists"))
+        .arg("-l")
+        .arg(basic_log.to_str().expect("test case log exists"))
+        .arg("-f")
+        .arg(r#"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \w+ \w+ \w+: (?<body>.*)"#)
+        .arg("-s")
+        .arg("1")
+        .arg("-c")
+        .arg("2");
+
+    assert_cmd_snapshot!(cmd);
+    Ok(())
+}
+
+#[test]
+fn basic_invalid_utf() -> Result<(), Box<dyn std::error::Error>> {
+    let _guard = common_settings::enable_filters();
+    let mut cmd = Command::cargo_bin("log2src")?;
+    let basic_source = Path::new("tests").join("java").join("Basic.java");
+    let basic_log = Path::new("tests")
+        .join("resources")
+        .join("java")
+        .join("basic-invalid-utf.log");
     cmd.arg("-d")
         .arg(basic_source.to_str().expect("test case source code exists"))
         .arg("-l")

@@ -1,9 +1,13 @@
 use clap::Parser as ClapParser;
+use colored_json::{ColoredFormatter, CompactFormatter, Styler};
 use indicatif::{ProgressBar, ProgressStyle};
-use log2src::{filter_log, LogError, LogMapping, LogMatcher, ProgressTracker, ProgressUpdate};
+use log2src::{
+    LogError, LogFormat, LogMapping, LogMatcher, LogRef, LogRefBuilder, ProgressTracker,
+    ProgressUpdate,
+};
 use miette::{IntoDiagnostic, Report};
-use serde_json::{self};
-use std::io::stdout;
+use serde::Serialize;
+use std::io::{stdout, BufRead, BufReader};
 use std::sync::atomic::Ordering;
 use std::thread::sleep;
 use std::time::Duration;
@@ -13,9 +17,9 @@ use std::{fs, io, path::PathBuf};
 #[derive(ClapParser)]
 #[command(author, version, about, long_about)]
 struct Cli {
-    /// A source directory (or soon directoires) to map logs onto
+    /// The source directories to map logs onto
     #[arg(short = 'd', long, value_name = "SOURCES")]
-    sources: String,
+    sources: Vec<String>,
 
     /// A log file to use, if not from stdin
     #[arg(short, long, value_name = "LOG")]
@@ -25,17 +29,151 @@ struct Cli {
     #[arg(short, long, value_name = "FORMAT")]
     format: Option<String>,
 
-    /// The line in the log to use (0 based)
+    /// The first line in the log to use (0 based)
     #[arg(short, long, value_name = "START")]
     start: Option<usize>,
 
-    /// The last line of the log to use (0 based)
-    #[arg(short, long, value_name = "END")]
-    end: Option<usize>,
+    /// The number of lines to process
+    #[arg(short, long, value_name = "COUNT")]
+    count: Option<usize>,
 
     /// Print progress information to standard error
     #[arg(short, long)]
     verbose: bool,
+}
+
+fn get_colored_formatter() -> ColoredFormatter<CompactFormatter> {
+    let compact_formatter = CompactFormatter {};
+
+    ColoredFormatter::with_styler(compact_formatter, Styler::default())
+}
+
+#[must_use]
+struct MessageAccumulator {
+    log_matcher: LogMatcher,
+    log_format: Option<LogFormat>,
+    content: String,
+    message_count: usize,
+}
+
+impl MessageAccumulator {
+    fn new(log_matcher: LogMatcher, log_format: Option<LogFormat>) -> Self {
+        Self {
+            log_matcher,
+            log_format,
+            content: String::new(),
+            message_count: 0,
+        }
+    }
+
+    fn get_log_mapping<'a>(&self, log_ref: LogRef<'a>) -> LogMapping<'a> {
+        self.log_matcher
+            .match_log_statement(&log_ref)
+            .unwrap_or_else(move || LogMapping {
+                log_ref,
+                src_ref: None,
+                variables: vec![],
+            })
+    }
+
+    fn process_msg(&mut self) {
+        if let Some(captures) = self.log_format.as_ref().unwrap().captures(&self.content) {
+            self.message_count += 1;
+            let log_ref = LogRefBuilder::new().build_from_captures(captures, &self.content);
+            let log_mapping = self.get_log_mapping(log_ref);
+            let serialized = get_colored_formatter().to_colored_json_auto(&log_mapping);
+            println!("{}", serialized.unwrap());
+        }
+        self.content.clear();
+    }
+
+    fn new_msg(&mut self, line: &str) {
+        if !self.content.is_empty() {
+            self.process_msg();
+        }
+
+        self.content.push_str(line);
+    }
+
+    fn continued_line(&mut self, line: &str) {
+        if self.content.is_empty() {
+            return;
+        }
+        self.content.push('\n');
+        self.content.push_str(line);
+    }
+
+    fn process_bare_msg(&self, line: &str) {
+        let log_ref = LogRefBuilder::new().with_body(Some(line)).build(line);
+        let log_mapping = self.get_log_mapping(log_ref);
+        println!(
+            "{}",
+            get_colored_formatter()
+                .to_colored_json_auto(&log_mapping)
+                .unwrap()
+        );
+    }
+
+    fn consume_line(&mut self, line: &str) {
+        match &self.log_format {
+            Some(format) => {
+                if format.is_match(&line) {
+                    self.new_msg(&line);
+                } else {
+                    self.continued_line(&line);
+                }
+            }
+            None => {
+                self.process_bare_msg(&line);
+            }
+        }
+    }
+
+    fn flush(&mut self) {
+        if !self.content.is_empty() {
+            self.process_msg();
+        }
+    }
+
+    fn eof(mut self) -> miette::Result<()> {
+        self.flush();
+
+        if self.log_format.is_some() && self.message_count == 0 {
+            Err(LogError::NoLogMessages.into())
+        } else {
+            Ok(())
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct SerializableDiagnostic {
+    message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    severity: Option<miette::Severity>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    help: Option<String>,
+}
+
+impl From<Report> for SerializableDiagnostic {
+    fn from(value: Report) -> Self {
+        Self {
+            message: value.to_string(),
+            code: value.code().map(|c| c.to_string()),
+            severity: value.severity(),
+            source: value.source().map(|s| s.to_string()),
+            help: value.help().map(|h| h.to_string()),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct ErrorWrapper {
+    error: SerializableDiagnostic,
 }
 
 fn main() -> miette::Result<()> {
@@ -71,33 +209,43 @@ fn main() -> miette::Result<()> {
                             bar.set_position(info.completed.load(Ordering::Relaxed));
                             sleep(Duration::from_millis(33));
                         }
+                        bar.finish_and_clear();
                     }
                 }
             }
         });
     }
 
-    let format_re = if let Some(format) = args.format {
+    let log_format: Option<LogFormat> = if let Some(format) = args.format {
         Some(format.as_str().try_into()?)
     } else {
         None
     };
 
-    let input = args.log;
-    let mut reader: Box<dyn io::Read> = match input {
+    let reader: Box<dyn io::Read> = match args.log {
         None => Box::new(io::stdin()),
-        Some(filename) => Box::new(fs::File::open(filename).expect("Can open file")),
+        Some(filename) => {
+            let path = PathBuf::from(filename);
+            match fs::File::open(&path) {
+                Ok(file) => Box::new(file),
+                Err(err) => {
+                    return Err(LogError::CannotReadLogFile {
+                        path,
+                        source: err.into(),
+                    }
+                    .into());
+                }
+            }
+        }
     };
 
-    let mut buffer = String::new();
-    reader.read_to_string(&mut buffer).into_diagnostic()?;
-    let filter = args.start.unwrap_or(0)..args.end.unwrap_or(usize::MAX);
-
-    let filtered = filter_log(&buffer, filter, format_re);
     let mut log_matcher = LogMatcher::new();
-    log_matcher
-        .add_root(&PathBuf::from(args.sources))
-        .into_diagnostic()?;
+    for source in &args.sources {
+        log_matcher
+            .add_root(&PathBuf::from(source))
+            .into_diagnostic()?;
+    }
+
     log_matcher
         .discover_sources(&tracker)
         .into_iter()
@@ -106,15 +254,36 @@ fn main() -> miette::Result<()> {
     if log_matcher.is_empty() {
         return Err(LogError::NoLogStatements.into());
     }
-    let log_mappings = filtered
-        .iter()
-        .flat_map(|log_ref| log_matcher.match_log_statement(log_ref))
-        .collect::<Vec<LogMapping>>();
+    let start = args.start.unwrap_or(0);
+    let desired_line_range = start..start.saturating_add(args.count.unwrap_or(usize::MAX));
+    let mut accumulator = MessageAccumulator::new(log_matcher, log_format);
 
-    for mapping in log_mappings {
-        let serialized = serde_json::to_string(&mapping).unwrap();
-        println!("{}", serialized);
+    let reader = BufReader::new(reader);
+    for (lineno, line_res) in reader.lines().enumerate() {
+        if !desired_line_range.contains(&lineno) {
+            continue;
+        }
+        match line_res {
+            Ok(line) => accumulator.consume_line(&line),
+            Err(err) => {
+                accumulator.flush();
+                let report: Report = LogError::UnableToReadLine {
+                    line: lineno,
+                    source: err.into(),
+                }
+                .into();
+                let wrapper = ErrorWrapper {
+                    error: SerializableDiagnostic::from(report),
+                };
+                println!(
+                    "{}",
+                    get_colored_formatter()
+                        .to_colored_json_auto(&wrapper)
+                        .unwrap()
+                );
+            }
+        }
     }
 
-    Ok(())
+    accumulator.eof()
 }

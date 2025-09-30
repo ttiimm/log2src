@@ -1,0 +1,8 @@
+---
+source: src/lib.rs
+expression: log_ref
+---
+details:
+  trace:
+    language: Java
+    content: "java.lang.IllegalStateException: simulated failure for demo\n    at org.example.Main.simulateError(Main.java:50)\n    at org.example.Main.main(Main.java:41)\n    at org.codehaus.mojo.exec.ExecJavaMojo$1.run(ExecJavaMojo.java:279)\n"

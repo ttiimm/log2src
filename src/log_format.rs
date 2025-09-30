@@ -1,6 +1,6 @@
 use regex::{Captures, Regex, RegexBuilder};
 
-use crate::{LogError, LogRef};
+use crate::LogError;
 
 #[derive(Clone, Debug)]
 pub struct LogFormat {
@@ -13,21 +13,12 @@ impl LogFormat {
         flatten.any(|name| name == "line") && flatten.any(|name| name == "file")
     }
 
-    pub fn build_src_filter(&self, log_refs: &Vec<LogRef>) -> Option<Vec<String>> {
-        let mut results = Vec::new();
-        for log_ref in log_refs {
-            let captures = self.captures(log_ref.line);
-            if let Some(file_match) = captures.name("file") {
-                results.push(file_match.as_str().to_string());
-            }
-        }
-        (!results.is_empty()).then_some(results)
+    pub fn is_match(&self, line: &str) -> bool {
+        self.regex.is_match(line)
     }
 
-    pub fn captures<'a>(&self, line: &'a str) -> Captures<'a> {
-        self.regex
-            .captures(line)
-            .unwrap_or_else(|| panic!("Couldn't match `{}` with `{:?}`", line, self.regex))
+    pub fn captures<'a>(&self, line: &'a str) -> Option<Captures<'a>> {
+        self.regex.captures(line)
     }
 }
 
