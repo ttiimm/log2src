@@ -4,8 +4,8 @@
   - TSS: Doesn't this work already?  I echo
     the body of the log message into log2src
     and it can find the message.
-- [ ] Extract a thread id from log when available and associate with source ref.
-- [ ] Generate call stack from exceptions.
+- [X] Extract a thread id from log when available and associate with source ref.
+- [X] Generate call stack from exceptions.
 - [ ] Support multiple source roots from CLI.
 - [ ] Serialize state for re-use on subsequent executions
 
@@ -13,6 +13,7 @@
 
 - [ ] Work with non .log extension (.json, etc).
 - [ ] Basic test coverage
+- [ ] Visualize the exceptions/traces
 - [ ] Support src -> log breakpoints
 
 ## Languages
