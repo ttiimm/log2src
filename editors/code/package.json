@@ -10,7 +10,7 @@
   "engines": {
     "vscode": "^1.83.0",
     "node": ">=16.0.0",
-    "pnpm": "10.8.0"
+    "pnpm": ">=10.8.0"
   },
   "categories": [
     "Debuggers"

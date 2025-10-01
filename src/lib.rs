@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fs::File;
 use std::io;
-use std::ops::{Deref, RangeBounds};
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 use thiserror::Error;
@@ -35,6 +35,8 @@ pub use source_ref::SourceRef;
 
 #[derive(Error, Debug, Diagnostic, Clone)]
 pub enum LogError {
+    #[error("unable to read line {line}")]
+    UnableToReadLine { line: usize, source: Arc<io::Error> },
     #[error("invalid log format regular expression")]
     InvalidFormatRegex { source: regex::Error },
     #[error("unknown capture in log format: {name}")]
@@ -53,6 +55,11 @@ pub enum LogError {
         path: PathBuf,
         source: Arc<io::Error>,
     },
+    #[error("cannot read log file \"{path}\"")]
+    CannotReadLogFile {
+        path: PathBuf,
+        source: Arc<io::Error>,
+    },
     #[error("no log statements found")]
     #[diagnostic(help(
         "\
@@ -68,6 +75,9 @@ pub enum LogError {
     },
     #[error("unsupported file type \"{name}\"")]
     UnsupportedFileType { name: String },
+    #[error("no log messages found in input")]
+    #[diagnostic(help("Make sure the log format matches the input"))]
+    NoLogMessages,
 }
 
 /// Collection of log statements in a single source file
@@ -299,6 +309,65 @@ static PYTHON_PLACEHOLDER_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"%[-+ #0]*\d*(?:\.\d+)?[hlLzjt]*[diuoxXfFeEgGaAcspn%]"#).unwrap()
 });
 
+static BACKTRACE_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r#"(?smx)
+    (?<python>
+        # Match the initial 'Traceback' line
+        ^Traceback\s+\(most\s+recent\s+call\s+last\):\s*$\n?
+
+        # Match all stack frames
+        (?:
+            # File line: '  File "path", line N, in function'
+            ^\s{2}File\s+\"[^\"]*\",\s+line\s+\d+,\s+in\s+\S+\s*$\n?
+
+            # Code line (optional): '    code_here'
+            (?:^\s{4}.*$\n?)?
+        )+
+
+        # Match the final exception line
+        ^[a-zA-Z_][a-zA-Z0-9_.]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*:.*$
+    )
+    |
+    (?<java>
+        # Match exception header(s)
+        (?:^\S*?(?:Exception|Error)(?::\s*.*?)?$\n?)+
+
+        # Match all stack trace components
+        (?:
+            # Stack frame: at package.Class.method(Source.java:123)
+            (?:^\s*at\s+
+                (?:[a-zA-Z_$][a-zA-Z0-9_$]*\.)*  # Package names
+                [a-zA-Z_$][a-zA-Z0-9_$]*         # Class name
+                (?:\.[a-zA-Z_$][a-zA-Z0-9_$]*)?  # Method name
+                (?:\([^)]*\))?                    # Source info
+                (?:\s*~\[[^\]]+\])?              # Module info
+                (?:\s*@[a-fA-F0-9]+)?$\n?        # Memory address
+            )
+            |
+            # Suppressed frames: ... N more
+            (?:^\s*\.{3}\s*\d+\s+
+                (?:more|common\s+frames?\s+omitted)$\n?
+            )
+            |
+            # Caused by chain
+            (?:^\s*Caused\s+by:\s*
+                [a-zA-Z_$][a-zA-Z0-9_$.]*       # Exception class
+                (?::\s*.*?)?$\n?                 # Optional message
+            )
+            |
+            # Suppressed exceptions
+            (?:^\s*Suppressed:\s*
+                [a-zA-Z_$][a-zA-Z0-9_$.]*       # Exception class
+                (?::\s*.*?)?$\n?                 # Optional message
+            )
+        )*
+    )
+"#,
+    )
+    .unwrap()
+});
+
 impl SourceLanguage {
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -351,7 +420,7 @@ impl SourceLanguage {
                             (argument_list . (string_literal) @arguments)
                         ]
                         (#match? @object-name "log(ger)?|LOG(GER)?")
-                        (#match? @method-name "fine|debug|info|warn|trace")
+                        (#match? @method-name "fine|debug|info|warn|trace|error")
                     )
                 "#
             }
@@ -442,43 +511,127 @@ pub struct LogMapping<'a> {
 pub struct LogRef<'a> {
     #[serde(skip_serializing)]
     pub line: &'a str,
+    #[serde(skip_serializing_if = "is_only_body")]
     pub details: Option<LogDetails<'a>>,
 }
 
+fn is_only_body(details: &Option<LogDetails>) -> bool {
+    if let Some(details) = details {
+        details.thread.is_none()
+            && details.file.is_none()
+            && details.lineno.is_none()
+            && details.trace.is_none()
+    } else {
+        true
+    }
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Serialize)]
+pub struct StackTrace<'a> {
+    pub language: SourceLanguage,
+    pub content: &'a str,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Default)]
 pub struct LogDetails<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thread: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub file: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub lineno: Option<u32>,
+    pub lineno: Option<usize>,
     #[serde(skip_serializing)]
     pub body: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trace: Option<StackTrace<'a>>,
+}
+
+impl<'a> LogDetails<'a> {
+    fn is_empty(&self) -> bool {
+        self.thread.is_none()
+            && self.file.is_none()
+            && self.lineno.is_none()
+            && self.body.is_none()
+            && self.trace.is_none()
+    }
+}
+
+pub struct LogRefBuilder<'a> {
+    details: LogDetails<'a>,
+}
+
+impl<'a> LogRefBuilder<'a> {
+    pub fn new() -> Self {
+        Self {
+            details: Default::default(),
+        }
+    }
+
+    pub fn build_from_captures(self, captures: Captures<'a>, content: &'a str) -> LogRef<'a> {
+        self.with_file(captures.name("file").map(|m| m.as_str()))
+            .with_lineno(
+                captures
+                    .name("line")
+                    .map(|m| m.as_str().parse::<usize>().unwrap_or_default()),
+            )
+            .with_thread(captures.name("thread").map(|m| m.as_str()))
+            .with_body(captures.name("body").map(|m| m.as_str()))
+            .build(content)
+    }
+
+    pub fn with_thread(mut self, thread: Option<&'a str>) -> Self {
+        self.details.thread = thread;
+        self
+    }
+    pub fn with_file(mut self, file: Option<&'a str>) -> Self {
+        self.details.file = file;
+        self
+    }
+    pub fn with_lineno(mut self, lineno: Option<usize>) -> Self {
+        self.details.lineno = lineno;
+        self
+    }
+
+    pub fn with_body(mut self, body: Option<&'a str>) -> Self {
+        let (body, trace) = if let Some(body) = body {
+            if let Some(trace) = BACKTRACE_REGEX.captures(body) {
+                let language = if trace.name("python").is_some() {
+                    SourceLanguage::Python
+                } else if trace.name("java").is_some() {
+                    SourceLanguage::Java
+                } else {
+                    unreachable!();
+                };
+                let cap0 = trace.get(0).unwrap();
+                (
+                    Some(*&body[0..cap0.range().start].trim_end()),
+                    Some(StackTrace {
+                        language,
+                        content: cap0.as_str(),
+                    }),
+                )
+            } else {
+                (Some(body), None)
+            }
+        } else {
+            (None, None)
+        };
+        self.details.body = body;
+        self.details.trace = trace;
+        self
+    }
+
+    pub fn build(self, line: &'a str) -> LogRef<'a> {
+        let details = if self.details.is_empty() {
+            None
+        } else {
+            Some(self.details)
+        };
+        LogRef { line, details }
+    }
 }
 
 impl<'a> LogRef<'a> {
-    pub fn new(line: &'a str) -> Self {
-        Self {
-            line,
-            details: None,
-        }
-    }
-
-    pub fn with_format(line: &'a str, log_format: LogFormat) -> Self {
-        let captures = log_format.captures(line);
-        let thread = captures.name("thread").map(|thread_match| thread_match.as_str());
-        let file = captures.name("file").map(|file_match| file_match.as_str());
-        let lineno = captures
-            .name("line")
-            .and_then(|lineno| lineno.as_str().parse::<u32>().ok());
-        let body = captures.name("body").map(|body| body.as_str());
-        Self {
-            line,
-            details: Some(LogDetails { thread, file, lineno, body }),
-        }
-    }
-
     pub fn body(self) -> &'a str {
         if let Some(LogDetails { body: Some(s), .. }) = self.details {
             s
@@ -500,17 +653,20 @@ pub fn lookup_source<'a>(
     log_format: &LogFormat,
     src_refs: &'a [SourceRef],
 ) -> Option<&'a SourceRef> {
-    let captures = log_format.captures(log_ref.body());
-    let file_name = captures.name("file").map_or("", |m| m.as_str());
-    let line_no: usize = captures
-        .name("line")
-        .map_or(0, |m| m.as_str().parse::<usize>().unwrap_or_default());
-    // println!("{:?} {:?}", file_name, line_no);
+    if let Some(captures) = log_format.captures(log_ref.body()) {
+        let file_name = captures.name("file").map_or("", |m| m.as_str());
+        let line_no: usize = captures
+            .name("line")
+            .map_or(0, |m| m.as_str().parse::<usize>().unwrap_or_default());
+        // println!("{:?} {:?}", file_name, line_no);
 
-    src_refs.iter().find(|&source_ref| {
-        // println!("source_ref.source_path = {} line_no = {}", source_ref.source_path, source_ref.line_no);
-        source_ref.source_path.contains(file_name) && source_ref.line_no == line_no
-    })
+        src_refs.iter().find(|&source_ref| {
+            // println!("source_ref.source_path = {} line_no = {}", source_ref.source_path, source_ref.line_no);
+            source_ref.source_path.contains(file_name) && source_ref.line_no == line_no
+        })
+    } else {
+        None
+    }
 }
 
 pub fn extract_variables<'a>(log_ref: &LogRef<'a>, src_ref: &'a SourceRef) -> Vec<VariablePair> {
@@ -545,26 +701,6 @@ pub fn extract_variables<'a>(log_ref: &LogRef<'a>, src_ref: &'a SourceRef) -> Ve
     }
 
     variables
-}
-
-pub fn filter_log<R>(buffer: &str, filter: R, log_format: Option<LogFormat>) -> Vec<LogRef<'_>>
-where
-    R: RangeBounds<usize>,
-{
-    buffer
-        .lines()
-        .enumerate()
-        .filter_map(|(line_no, line)| {
-            if filter.contains(&line_no) {
-                match &log_format {
-                    Some(format) => Some(LogRef::with_format(line, format.clone())),
-                    None => Some(LogRef::new(line)),
-                }
-            } else {
-                None
-            }
-        })
-        .collect()
 }
 
 pub fn extract_logging_guarded(sources: &[CodeSource], guard: &WorkGuard) -> Vec<StatementsInFile> {
@@ -633,50 +769,36 @@ pub fn extract_logging(sources: &[CodeSource], tracker: &ProgressTracker) -> Vec
 #[cfg(test)]
 mod tests {
     use super::*;
-    use insta::assert_yaml_snapshot;
+    use insta::{assert_snapshot, assert_yaml_snapshot};
     use std::ptr;
 
-    #[test]
-    fn test_filter_log_defaults() {
-        let buffer = String::from("hello\nwarning\nerror\nboom");
-        let result = filter_log(&buffer, .., None);
-        assert_eq!(
-            result,
-            vec![
-                LogRef::new("hello"),
-                LogRef::new("warning"),
-                LogRef::new("error"),
-                LogRef::new("boom"),
-            ]
-        );
+    fn from_log_format_and_line<'a>(buffer: &'a str, log_format: LogFormat) -> LogRef<'a> {
+        let captures = log_format.captures(&buffer).unwrap();
+        LogRefBuilder::new().build_from_captures(captures, &buffer)
     }
 
     #[test]
-    fn test_filter_log_with_filter() {
-        let buffer = String::from("hello\nwarning\nerror\nboom");
-        let result = filter_log(&buffer, 1..2, None);
-        assert_eq!(result, vec![LogRef::new("warning")]);
-    }
-
-    #[test]
-    fn test_filter_log_with_format() {
+    fn test_log_ref_builder() {
         let buffer = String::from(
             "2025-04-10 22:12:52 INFO  JvmPauseMonitor:146 - JvmPauseMonitor-n0: Started",
         );
         let regex = r"^(?<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) (?<level>\w+)\s+ (?<file>[\w$.]+):(?<line>\d+) - (?<body>.*)$";
-        let result = filter_log(&buffer, .., Some(regex.try_into().unwrap()));
+        let log_format: LogFormat = regex.try_into().unwrap();
+        let captures = log_format.captures(&buffer).unwrap();
+        let result = LogRefBuilder::new().build_from_captures(captures, &buffer);
         let details = Some(LogDetails {
             thread: None,
             file: Some("JvmPauseMonitor"),
             lineno: Some(146),
             body: Some("JvmPauseMonitor-n0: Started"),
+            trace: None,
         });
         assert_eq!(
             result,
-            vec![LogRef {
+            LogRef {
                 line: "2025-04-10 22:12:52 INFO  JvmPauseMonitor:146 - JvmPauseMonitor-n0: Started",
                 details
-            }]
+            }
         );
     }
 
@@ -729,7 +851,7 @@ fn namedarg2(salutation: &str, name: &str) {
         let lf = r#"^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z \w+ \w+\]\s+(?<body>.*)"#
             .try_into()
             .unwrap();
-        let log_ref = LogRef::with_format(
+        let log_ref = from_log_format_and_line(
             "[2024-05-09T19:58:53Z DEBUG main] you're only as funky as your last cut",
             lf,
         );
@@ -748,7 +870,8 @@ fn namedarg2(salutation: &str, name: &str) {
         let lf = r#"^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z \w+ \w+\]\s+(?<body>.*)"#
             .try_into()
             .unwrap();
-        let log_ref = LogRef::with_format("[2024-05-09T19:58:53Z DEBUG main] Hello, Leander!", lf);
+        let log_ref =
+            from_log_format_and_line("[2024-05-09T19:58:53Z DEBUG main] Hello, Leander!", lf);
         let code = CodeSource::from_string(&Path::new("in-mem.rs"), TEST_SOURCE);
         let src_refs = extract_logging(&[code], &ProgressTracker::new())
             .pop()
@@ -773,7 +896,7 @@ fn main() {
         let lf = r#"^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z \w+ \w+\]\s+(?<body>.*)"#
             .try_into()
             .unwrap();
-        let log_ref = LogRef::with_format(
+        let log_ref = from_log_format_and_line(
             "[2024-05-09T19:58:53Z DEBUG main] you're only as funky\n as your last cut",
             lf,
         );
@@ -797,7 +920,7 @@ fn main() {
 
     #[test]
     fn test_link_to_source_no_matches() {
-        let log_ref = LogRef::new("nope!");
+        let log_ref = LogRefBuilder::new().build("nope!");
         let code = CodeSource::from_string(&Path::new("in-mem.rs"), TEST_SOURCE);
         let src_refs = extract_logging(&[code], &ProgressTracker::new())
             .pop()
@@ -810,7 +933,7 @@ fn main() {
 
     #[test]
     fn test_extract_variables() {
-        let log_ref = LogRef::new("this won't match i=1; j=2");
+        let log_ref = LogRefBuilder::new().build("this won't match i=1; j=2");
         let code = CodeSource::from_string(&Path::new("in-mem.rs"), TEST_SOURCE);
         let src_refs = extract_logging(&[code], &ProgressTracker::new())
             .pop()
@@ -835,7 +958,7 @@ fn main() {
 
     #[test]
     fn test_extract_named() {
-        let log_ref = LogRef::new("Hello, Tim!");
+        let log_ref = LogRefBuilder::new().build("Hello, Tim!");
         let code = CodeSource::from_string(&Path::new("in-mem.rs"), TEST_SOURCE);
         let src_refs = extract_logging(&[code], &ProgressTracker::new())
             .pop()
@@ -868,7 +991,7 @@ fn main() {
     fn test_extract_var_punctuation() {
         let lf =
             r"^(?<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) (?<level>\w+)\s+ (?<file>[\w$.]+):(?<line>\d+) - (?<body>.*)$".try_into().unwrap();
-        let log_ref = LogRef::with_format(
+        let log_ref = from_log_format_and_line(
             "2025-04-10 22:12:52 INFO  JvmPauseMonitor:146 - JvmPauseMonitor-n0: Started",
             lf,
         );
@@ -898,7 +1021,7 @@ fn main() {
 
     #[test]
     fn test_basic_cpp() {
-        let log_ref = LogRef::new("Hello, Steve!");
+        let log_ref = LogRefBuilder::new().build("Hello, Steve!");
         let code = CodeSource::from_string(&Path::new("in-mem.cc"), CPP_SOURCE);
         let src_refs = extract_logging(&[code], &ProgressTracker::new())
             .pop()
@@ -926,7 +1049,7 @@ processing \started -- {args[0]}""")
 
     #[test]
     fn test_basic_python() {
-        let log_ref = LogRef::new("foo bar π");
+        let log_ref = LogRefBuilder::new().build("foo bar π");
         let code = CodeSource::from_string(&Path::new("in-mem.py"), PYTHON_SOURCE);
         let src_refs = extract_logging(&[code], &ProgressTracker::new())
             .pop()
@@ -941,5 +1064,28 @@ processing \started -- {args[0]}""")
                 value: "bar".to_string()
             },]
         );
+    }
+
+    const TRACE: &str = r#"JvmPauseMonitor-n0: Started
+java.lang.IllegalStateException: simulated failure for demo
+    at org.example.Main.simulateError(Main.java:50)
+    at org.example.Main.main(Main.java:41)
+    at org.codehaus.mojo.exec.ExecJavaMojo$1.run(ExecJavaMojo.java:279)
+    at java.base/java.lang.Thread.run(Thread.java:1447)
+"#;
+
+    #[test]
+    fn test_backtrace_re() {
+        let code = CodeSource::from_string(&PathBuf::from("in-mem.java"), TEST_PUNC_SRC);
+        let log_ref = LogRefBuilder::new().with_body(Some(TRACE)).build(TRACE);
+        assert_snapshot!(log_ref.line);
+        assert_yaml_snapshot!(log_ref);
+        let src_refs = extract_logging(&[code], &ProgressTracker::new())
+            .pop()
+            .unwrap()
+            .log_statements;
+        assert_yaml_snapshot!(src_refs);
+        let vars = extract_variables(&log_ref, &src_refs[0]);
+        assert_yaml_snapshot!(vars);
     }
 }

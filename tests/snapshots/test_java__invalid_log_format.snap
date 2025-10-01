@@ -1,0 +1,19 @@
+---
+source: tests/test_java.rs
+info:
+  program: log2src
+  args:
+    - "-d"
+    - tests/java/Basic.java
+    - "-l"
+    - tests/resources/java/basic.log
+    - "-f"
+    - "^-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2} \\w+ \\w+ \\w+: (?<body>.*)"
+---
+success: false
+exit_code: 1
+----- stdout -----
+
+----- stderr -----
+Error:   × no log messages found in input
+  help: Make sure the log format matches the input
