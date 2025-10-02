@@ -143,16 +143,15 @@ impl LogMatcher {
     }
 
     pub fn find_source_file_statements(&self, path: &Path) -> Vec<&StatementsInFile> {
-        let mut retval: Vec<&StatementsInFile> = Vec::new();
-        self.roots.values().for_each(|root| {
-            retval.extend(
+        self.roots
+            .values()
+            .flat_map(|root| {
                 root.tree
                     .find_file(path)
-                    .iter()
-                    .filter_map(|(_actual_path, info)| root.files_with_statements.get(&info.id)),
-            );
-        });
-        retval
+                    .into_iter()
+                    .filter_map(|(_actual_path, info)| root.files_with_statements.get(&info.id))
+            })
+            .collect()
     }
 
     /// Traverse the roots looking for supported source files.
