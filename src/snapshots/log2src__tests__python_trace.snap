@@ -1,0 +1,12 @@
+---
+source: src/lib.rs
+expression: trace
+---
+- name: main
+  sourcePath: python-logging-example/python_logging_example/__main__.py
+  language: Python
+  lineNumber: 26
+- name: fail_now
+  sourcePath: python-logging-example/python_logging_example/helper.py
+  language: Python
+  lineNumber: 3

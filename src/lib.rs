@@ -23,7 +23,7 @@ mod source_ref;
 // TODO: doesn't need to be exposed if we can clean up the arguments to do_mapping
 use crate::progress::WorkGuard;
 use crate::source_hier::{ScanEvent, SourceFileID, SourceHierContent, SourceHierTree};
-use crate::source_ref::FormatArgument;
+use crate::source_ref::{CallSite, FormatArgument};
 pub use code_source::CodeSource;
 pub use log_format::LogFormat;
 pub use progress::ProgressTracker;
@@ -142,15 +142,17 @@ impl LogMatcher {
             .next()
     }
 
-    pub fn find_source_file_statements(&self, path: &Path) -> Option<&StatementsInFile> {
-        if let Some((_root_path, src_tree)) = self.match_path(path) {
-            src_tree
-                .tree
-                .find_file(path)
-                .and_then(|info| src_tree.files_with_statements.get(&info.id))
-        } else {
-            None
-        }
+    pub fn find_source_file_statements(&self, path: &Path) -> Vec<&StatementsInFile> {
+        let mut retval: Vec<&StatementsInFile> = Vec::new();
+        self.roots.values().for_each(|root| {
+            retval.extend(
+                root.tree
+                    .find_file(path)
+                    .iter()
+                    .filter_map(|(_actual_path, info)| root.files_with_statements.get(&info.id)),
+            );
+        });
+        retval
     }
 
     /// Traverse the roots looking for supported source files.
@@ -256,11 +258,22 @@ impl LogMatcher {
                 .sorted_by(|lhs, rhs| rhs.quality.cmp(&lhs.quality))
                 .next()
             {
+                let exception_trace = match log_ref {
+                    LogRef {
+                        details:
+                            Some(LogDetails {
+                                trace: Some(trace), ..
+                            }),
+                        ..
+                    } => trace.to_exception_trace(self),
+                    _ => Vec::new(),
+                };
                 let variables = extract_variables(log_ref, src_ref);
                 return Some(LogMapping {
                     log_ref: log_ref.clone(),
                     src_ref: Some((*src_ref).clone()),
                     variables,
+                    exception_trace,
                 });
             }
         }
@@ -319,7 +332,7 @@ static BACKTRACE_REGEX: LazyLock<Regex> = LazyLock::new(|| {
         # Match all stack frames
         (?:
             # File line: '  File "path", line N, in function'
-            ^\s{2}File\s+\"[^\"]*\",\s+line\s+\d+,\s+in\s+\S+\s*$\n?
+            ^\s{2}File\s+"[^"]*",\s+line\s+\d+,\s+in\s+\S+\s*$\n?
 
             # Code line (optional): '    code_here'
             (?:^\s{4}.*$\n?)?
@@ -411,7 +424,7 @@ impl SourceLanguage {
             }
             SourceLanguage::Java => {
                 r#"
-                    (method_invocation 
+                    (method_invocation
                         object: (identifier) @object-name
                         name: (identifier) @method-name
                         arguments: [
@@ -504,6 +517,9 @@ pub struct LogMapping<'a> {
     pub log_ref: LogRef<'a>,
     #[serde(rename(serialize = "srcRef"))]
     pub src_ref: Option<SourceRef>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(rename(serialize = "exceptionTrace"))]
+    pub exception_trace: Vec<CallSite>,
     pub variables: Vec<VariablePair>,
 }
 
@@ -526,10 +542,86 @@ fn is_only_body(details: &Option<LogDetails>) -> bool {
     }
 }
 
+static PYTHON_CALLER_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r#"(?smx)
+    (?:
+        ^\s+File\s+"(?<path>[^"]+)",\s+line\s+(?<line>\d+),\s+in\s+(?<name>[^\n]+)$\n?
+    )
+"#,
+    )
+    .unwrap()
+});
+
+static JAVA_CALLER_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r#"(?smx)
+    (?:
+        ^\s+at\s+(?<pkg>(?:[^.\n(]+\.)*)(?<class>[^.$\n(]+)\.(?<name>\S+)\((?<file>[^:]+):(?<line>\d+)\)\s*$\n?
+    )
+"#,
+    )
+    .unwrap()
+});
+
 #[derive(Copy, Clone, Debug, PartialEq, Serialize)]
 pub struct StackTrace<'a> {
     pub language: SourceLanguage,
     pub content: &'a str,
+}
+
+impl<'a> StackTrace<'a> {
+    fn to_exception_trace(&self, log_matcher: &LogMatcher) -> Vec<CallSite> {
+        let mut retval = Vec::new();
+        match self.language {
+            SourceLanguage::Rust => {}
+            SourceLanguage::Java => {
+                for cap in JAVA_CALLER_REGEX.captures_iter(self.content) {
+                    // The Java stack trace does not contain the full path to the source file.
+                    // So, we need to construct a path from the package and class name.  Then,
+                    // we use SourceHierTree::find_file() to find the actual path.
+                    let path_for_pkg = cap
+                        .name("pkg")
+                        .map(|m| PathBuf::from(m.as_str().replace(".", "/")))
+                        .unwrap_or_default();
+                    let path_for_class = path_for_pkg.join(cap.name("file").unwrap().as_str());
+                    let full_path = log_matcher
+                        .roots
+                        .values()
+                        .filter_map(|root| {
+                            if let Some((actual_path, _source_info)) =
+                                root.tree.find_file(&path_for_class).iter().next()
+                            {
+                                Some(actual_path.clone())
+                            } else {
+                                None
+                            }
+                        })
+                        .next();
+                    if let Some(full_path) = full_path {
+                        retval.push(CallSite {
+                            name: cap.name("name").unwrap().as_str().to_string(),
+                            source_path: full_path.to_string_lossy().to_string(),
+                            language: SourceLanguage::Java,
+                            line_no: cap.name("line").unwrap().as_str().parse::<usize>().unwrap(),
+                        });
+                    }
+                }
+            }
+            SourceLanguage::Cpp => {}
+            SourceLanguage::Python => {
+                for cap in PYTHON_CALLER_REGEX.captures_iter(self.content) {
+                    retval.push(CallSite {
+                        name: cap.name("name").unwrap().as_str().to_string(),
+                        source_path: cap.name("path").unwrap().as_str().to_string(),
+                        language: SourceLanguage::Python,
+                        line_no: cap.name("line").unwrap().as_str().parse::<usize>().unwrap(),
+                    });
+                }
+            }
+        }
+        retval
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Default)]
@@ -1087,5 +1179,28 @@ java.lang.IllegalStateException: simulated failure for demo
         assert_yaml_snapshot!(src_refs);
         let vars = extract_variables(&log_ref, &src_refs[0]);
         assert_yaml_snapshot!(vars);
+    }
+
+    const PYTHON_TRACE: &str = r#"\
+Traceback (most recent call last):
+  File "python-logging-example/python_logging_example/__main__.py", line 26, in main
+    helper.fail_now()
+    ~~~~~~~~~~~~~~~^^
+  File "python-logging-example/python_logging_example/helper.py", line 3, in fail_now
+    return 1 / 0
+           ~~^~~
+ZeroDivisionError: division by zero
+"#;
+
+    #[test]
+    fn test_python_trace() {
+        let stacktrace = StackTrace {
+            language: SourceLanguage::Python,
+            content: PYTHON_TRACE,
+        };
+
+        let log_matcher = LogMatcher::new();
+        let trace = stacktrace.to_exception_trace(&log_matcher);
+        assert_yaml_snapshot!(trace);
     }
 }

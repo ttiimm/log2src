@@ -19,9 +19,15 @@ import * as path from 'path';
 
 import { outputChannel } from './extension';
 
+interface CallSite {
+    name: string,
+    sourcePath: string,
+    lineNumber: number
+}
 
 interface LogMapping {
     srcRef: SourceRef,
+    exceptionTrace: Array<CallSite>,
     variables: Array<VariablePair>
 }
 

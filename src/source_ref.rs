@@ -11,6 +11,16 @@ pub enum FormatArgument {
     Placeholder,
 }
 
+#[derive(Clone, Debug, Serialize)]
+pub struct CallSite {
+    pub name: String,
+    #[serde(rename(serialize = "sourcePath"))]
+    pub source_path: String,
+    pub language: SourceLanguage,
+    #[serde(rename(serialize = "lineNumber"))]
+    pub line_no: usize,
+}
+
 // TODO: get rid of this clone?
 #[derive(Clone, Debug, Serialize)]
 pub struct SourceRef {
