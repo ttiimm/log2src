@@ -33,7 +33,7 @@ struct Cli {
     #[arg(short, long, value_name = "START")]
     start: Option<usize>,
 
-    /// The number of lines to process
+    /// The number of log messages to process
     #[arg(short, long, value_name = "COUNT")]
     count: Option<usize>,
 
@@ -54,15 +54,17 @@ struct MessageAccumulator {
     log_format: Option<LogFormat>,
     content: String,
     message_count: usize,
+    limit: usize,
 }
 
 impl MessageAccumulator {
-    fn new(log_matcher: LogMatcher, log_format: Option<LogFormat>) -> Self {
+    fn new(log_matcher: LogMatcher, log_format: Option<LogFormat>, limit: usize) -> Self {
         Self {
             log_matcher,
             log_format,
             content: String::new(),
             message_count: 0,
+            limit,
         }
     }
 
@@ -73,6 +75,7 @@ impl MessageAccumulator {
                 log_ref,
                 src_ref: None,
                 variables: vec![],
+                exception_trace: vec![],
             })
     }
 
@@ -130,9 +133,13 @@ impl MessageAccumulator {
     }
 
     fn flush(&mut self) {
-        if !self.content.is_empty() {
+        if !self.content.is_empty() && !self.at_limit() {
             self.process_msg();
         }
+    }
+
+    fn at_limit(&self) -> bool {
+        self.message_count >= self.limit
     }
 
     fn eof(mut self) -> miette::Result<()> {
@@ -255,13 +262,13 @@ fn main() -> miette::Result<()> {
         return Err(LogError::NoLogStatements.into());
     }
     let start = args.start.unwrap_or(0);
-    let desired_line_range = start..start.saturating_add(args.count.unwrap_or(usize::MAX));
-    let mut accumulator = MessageAccumulator::new(log_matcher, log_format);
+    let count = args.count.unwrap_or(usize::MAX);
+    let mut accumulator = MessageAccumulator::new(log_matcher, log_format, count);
 
     let reader = BufReader::new(reader);
-    for (lineno, line_res) in reader.lines().enumerate() {
-        if !desired_line_range.contains(&lineno) {
-            continue;
+    for (lineno, line_res) in reader.lines().skip(start).enumerate() {
+        if accumulator.at_limit() {
+            break;
         }
         match line_res {
             Ok(line) => accumulator.consume_line(&line),

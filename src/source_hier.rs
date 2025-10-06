@@ -236,21 +236,31 @@ impl SourceHierContent {
         true
     }
 
-    pub fn find_file(&self, self_path: &Path, desired_path: &Path) -> Option<SourceFileInfo> {
+    pub fn find_file(
+        &self,
+        self_path: &Path,
+        desired_path: &Path,
+        accum: &mut Vec<(PathBuf, SourceFileInfo)>,
+    ) {
         match self {
-            SourceHierContent::File { info, .. } if desired_path == Path::new("") => Some(*info),
+            SourceHierContent::File { info, .. } if desired_path == Path::new("") => {
+                accum.push((self_path.to_path_buf(), *info));
+            }
             SourceHierContent::Directory { ref entries } => {
                 let mut components = desired_path.components();
                 if let Some(Component::Normal(name)) = components.next() {
                     if let Some(node) = entries.get(name) {
-                        return node
-                            .content
-                            .find_file(&self_path.join(name), components.as_path());
+                        node.content
+                            .find_file(&self_path.join(name), components.as_path(), accum);
+                    } else {
+                        for (name, entry) in entries {
+                            let sub_path = self_path.join(name);
+                            entry.content.find_file(&sub_path, desired_path, accum);
+                        }
                     }
                 }
-                None
             }
-            _ => None,
+            _ => {}
         }
     }
 }
@@ -459,11 +469,20 @@ impl SourceHierTree {
         }
     }
 
-    pub fn find_file(&self, path: &Path) -> Option<SourceFileInfo> {
-        match path.strip_prefix(&self.root_path) {
-            Ok(sub_path) => self.root_node.content.find_file(&self.root_path, sub_path),
-            Err(_) => None,
-        }
+    pub fn find_file(&self, path: &Path) -> Vec<(PathBuf, SourceFileInfo)> {
+        let path_to_find = if path.is_absolute() {
+            match path.strip_prefix(&self.root_path) {
+                Ok(sub_path) => sub_path,
+                Err(_) => return vec![],
+            }
+        } else {
+            path
+        };
+        let mut retval = vec![];
+        self.root_node
+            .content
+            .find_file(&self.root_path, path_to_find, &mut retval);
+        retval
     }
 
     /// Visit every node in the hierarchy, depth-first, calling `f` on each.
@@ -550,7 +569,8 @@ mod test {
         let temp_test_dir = setup_test_environment(&tests_path);
         let _ = fs::create_dir(temp_test_dir.path().join(".git")).unwrap();
         let _ = File::create_new(temp_test_dir.path().join(".git/config"))
-            .unwrap().write("abc".as_bytes())
+            .unwrap()
+            .write("abc".as_bytes())
             .unwrap();
         let basic_path = temp_test_dir.path().join("tests/java/Basic.java");
         {
@@ -566,10 +586,13 @@ mod test {
         let find_res = tree.find_file(&basic_path);
         assert_eq!(
             find_res,
-            Some(SourceFileInfo {
-                language: SourceLanguage::Java,
-                id: SourceFileID(1)
-            })
+            vec![(
+                basic_path.clone(),
+                SourceFileInfo {
+                    language: SourceLanguage::Java,
+                    id: SourceFileID(1)
+                }
+            )]
         );
         let no_events: Vec<ScanEvent> = tree.scan().map(redact_event).collect();
         assert_yaml_snapshot!(no_events);
