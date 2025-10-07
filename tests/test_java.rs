@@ -1,3 +1,4 @@
+use std::fs;
 use insta_cmd::assert_cmd_snapshot;
 use std::fs::File;
 use std::io::{Read, Write};
@@ -206,9 +207,8 @@ fn basic_slf4j() -> Result<(), Box<dyn std::error::Error>> {
                 let mut file = File::open(entry.path())?;
                 file.read_to_end(&mut buffer)?;
             }
-            let mut file = File::create(entry.path())?;
             buffer.resize(buffer.len() - 50, 0);
-            file.write_all(&buffer)?;
+            fs::write(entry.path(), &buffer)?;
         }
     }
 
