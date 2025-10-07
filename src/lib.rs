@@ -1,15 +1,22 @@
+use directories::ProjectDirs;
+use indicatif::HumanBytes;
 use itertools::Itertools;
 use miette::Diagnostic;
 use rayon::prelude::*;
 use regex::{Captures, Regex, RegexSet};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::error::Error;
 use std::ffi::OsStr;
 use std::fs::File;
-use std::io;
+use std::io::{BufRead, BufReader, Seek, Write};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
+use std::time::{SystemTime, UNIX_EPOCH};
+use std::{fs, io};
+use tempfile::NamedTempFile;
 use thiserror::Error;
 use tree_sitter::Language;
 
@@ -33,8 +40,11 @@ use source_query::QueryResult;
 pub use source_query::SourceQuery;
 pub use source_ref::SourceRef;
 
-#[derive(Error, Debug, Diagnostic, Clone)]
+#[derive(Error, Debug, Diagnostic, Clone, Default)]
 pub enum LogError {
+    #[default]
+    #[error("unknown error")]
+    Unknown,
     #[error("unable to read line {line}")]
     UnableToReadLine { line: usize, source: Arc<io::Error> },
     #[error("invalid log format regular expression")]
@@ -78,10 +88,89 @@ pub enum LogError {
     #[error("no log messages found in input")]
     #[diagnostic(help("Make sure the log format matches the input"))]
     NoLogMessages,
+    #[error("failed to find user cache directory")]
+    #[diagnostic(severity(warning))]
+    CannotFindCache,
+    #[error("failed to create cache directory \"{path}\"")]
+    #[diagnostic(severity(warning))]
+    CannotCreateCache {
+        path: PathBuf,
+        source: Arc<dyn Error + Send + Sync>,
+    },
+    #[error("failed to write cache file")]
+    #[diagnostic(severity(warning))]
+    FailedToWriteCache {
+        source: Arc<dyn Error + Send + Sync>,
+    },
+    #[error("outdated cache file \"{path}\"")]
+    #[diagnostic(severity(info))]
+    OldCacheEntry { path: PathBuf },
+    #[error("failed to read cache file \"{path}\"")]
+    #[diagnostic(severity(warning))]
+    FailedToReadCache {
+        path: PathBuf,
+        source: Arc<dyn Error + Send + Sync>,
+    },
+}
+
+/// Handle for the source tree cache
+pub struct Cache {
+    pub location: PathBuf,
+}
+
+impl Cache {
+    /// Try to get a handle on the cache in the user's default location.
+    pub fn open() -> Result<Cache, LogError> {
+        // XXX we don't own log2src.org
+        let project_dirs =
+            ProjectDirs::from("org", "log2src", "log2src").ok_or(LogError::CannotFindCache {})?;
+        let location = project_dirs.cache_dir().to_path_buf();
+        Ok(Cache { location })
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum CacheEntrySchema {
+    #[serde(
+        rename = "https://raw.githubusercontent.com/ttiimm/log2src/refs/heads/main/schemas/cache-header-v1.json"
+    )]
+    V1,
+}
+
+/// The revision value is a simple way to invalidate the cache entries by changing the number.
+#[derive(Serialize, Deserialize, Debug)]
+pub enum Revision {
+    #[serde(rename = "1")]
+    Current,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum CacheEntryFormat {
+    Bincode,
+}
+
+/// Header for an entry in the cache.  Currently, this is more of interest to humans than machines.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct CacheEntryHeader {
+    #[serde(rename = "$schema")]
+    pub schema: CacheEntrySchema,
+    pub revision: Revision,
+    pub format: CacheEntryFormat,
+    pub path: String,
+    pub timestamp: u64,
+}
+
+fn to_write_cache_error<E>(err: E) -> LogError
+where
+    E: Error + Send + Sync + 'static,
+{
+    LogError::FailedToWriteCache {
+        source: Arc::new(err),
+    }
 }
 
 /// Collection of log statements in a single source file
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct StatementsInFile {
     pub path: String,
     id: SourceFileID,
@@ -90,10 +179,33 @@ pub struct StatementsInFile {
     /// XXX If there are too many in the file, the RegexSet constructor
     /// will fail with CompiledTooBig. We should probably fall back to
     /// manually trying each one at that point...
-    pub matcher: RegexSet,
+    #[serde(skip)]
+    pub matcher: Option<RegexSet>,
+}
+
+impl StatementsInFile {
+    /// When loading from the cache, we need to fill in the pattern string and populate the
+    /// RegexSet matcher.
+    fn try_creating_matcher(&mut self) {
+        for stmt in self.log_statements.iter_mut() {
+            if stmt.pattern_str.is_empty() {
+                stmt.pattern_str = stmt.pattern.to_string();
+            }
+        }
+        if self.matcher.is_some() {
+            return;
+        }
+        let patterns = self
+            .log_statements
+            .iter()
+            .map(|s| s.pattern_str.as_str())
+            .collect::<Vec<&str>>();
+        self.matcher = RegexSet::new(&patterns).ok();
+    }
 }
 
 /// Collection of individual source files under a root path
+#[derive(Serialize, Deserialize, Debug)]
 pub struct SourceTree {
     pub tree: SourceHierTree,
     pub files_with_statements: HashMap<SourceFileID, StatementsInFile>,
@@ -105,12 +217,155 @@ pub struct LogMatcher {
     roots: HashMap<PathBuf, SourceTree>,
 }
 
+fn to_cached_name(path: &Path) -> String {
+    format!(
+        "cache.{:x}",
+        Sha256::digest(path.as_os_str().as_encoded_bytes())
+    )
+}
+
+/// A summary of the work done by extract_log_statements().  Useful for knowing if there were
+/// any changes that need to be saved to the cache.
+#[derive(Default, Debug)]
+pub struct ExtractLogSummary {
+    pub deleted: u64,
+    pub new: u64,
+}
+
+impl ExtractLogSummary {
+    pub fn changes(&self) -> u64 {
+        self.new.saturating_add(self.deleted)
+    }
+}
+
 impl LogMatcher {
     /// Create an empty LogMatcher
     pub fn new() -> Self {
         Self {
             roots: HashMap::new(),
         }
+    }
+
+    fn load_cache_entry(path: &Path, mut file: &File) -> Result<SourceTree, LogError> {
+        let mut reader = BufReader::new(&mut file);
+        let mut header_str = String::new();
+        reader
+            .read_line(&mut header_str)
+            .map_err(|err| LogError::FailedToReadCache {
+                path: path.to_owned(),
+                source: Arc::new(err),
+            })?;
+        // We're deserializing the header to check for garbage and version compatibility.
+        let _header = serde_json::from_str::<CacheEntryHeader>(&header_str).map_err(|_err| {
+            LogError::OldCacheEntry {
+                path: path.to_owned(),
+            }
+        })?;
+        // XXX check that the path matches?
+        let mut decoded_root: SourceTree =
+            bincode::serde::decode_from_std_read(&mut reader, bincode::config::standard())
+                .map_err(|err| LogError::FailedToReadCache {
+                    path: path.to_owned(),
+                    source: Arc::new(err),
+                })?;
+        for sif in decoded_root.files_with_statements.values_mut() {
+            sif.try_creating_matcher();
+        }
+        Ok(decoded_root)
+    }
+
+    /// Try to load SourceTrees from the cache for each root.
+    #[must_use]
+    pub fn load_from_cache(&mut self, cache: &Cache, tracker: &ProgressTracker) -> Vec<LogError> {
+        tracker.begin_step(format!(
+            "Loading cached log statements from: {}",
+            cache.location.display()
+        ));
+        let mut old_roots: HashMap<PathBuf, SourceTree> = HashMap::new();
+        let mut retval: Vec<LogError> = Vec::new();
+        std::mem::swap(&mut self.roots, &mut old_roots);
+        let work_guard = tracker.doing_work(old_roots.len() as u64, "root".to_string());
+        let mut found = 0;
+        let mut not_found = 0;
+        let mut skipped = 0;
+        for (root_path, old_root) in old_roots.into_iter() {
+            let cached_name = to_cached_name(&root_path);
+            let cached_path = cache.location.join(&cached_name);
+            let new_root = if let Ok(mut file) = File::open(&cached_path) {
+                match Self::load_cache_entry(&cached_path, &mut file) {
+                    Ok(new_root) => {
+                        found += 1;
+                        new_root
+                    }
+                    Err(err) => {
+                        skipped += 1;
+                        retval.push(err);
+                        old_root
+                    }
+                }
+            } else {
+                not_found += 1;
+                old_root
+            };
+            self.roots.insert(root_path, new_root);
+            work_guard.inc(1);
+        }
+        tracker.end_step(format!(
+            "found {}; skipped {}; not found {}",
+            found, skipped, not_found
+        ));
+
+        retval
+    }
+
+    /// Save the log statements to the cache.
+    pub fn cache_to(&self, cache: &Cache, tracker: &ProgressTracker) -> Result<(), LogError> {
+        tracker.begin_step(format!(
+            "Saving log statements to: {}",
+            cache.location.display()
+        ));
+        let mut total_size: u64 = 0;
+        let work_guard = tracker.doing_work(self.roots.len() as u64, "root".to_string());
+        for (root_path, root) in &self.roots {
+            let cached_name = to_cached_name(&root_path);
+            let tmp_path = {
+                fs::create_dir_all(&cache.location).map_err(to_write_cache_error)?;
+                let mut file =
+                    NamedTempFile::with_suffix_in(".tmp", &cache.location).map_err(|err| {
+                        LogError::FailedToWriteCache {
+                            source: Arc::new(err),
+                        }
+                    })?;
+                // Write a JSON header as the first line so that a user can figure out what this
+                // file is.  It can also be used in the future if the file format needs to change.
+                let header = CacheEntryHeader {
+                    schema: CacheEntrySchema::V1,
+                    revision: Revision::Current,
+                    format: CacheEntryFormat::Bincode,
+                    path: root_path.to_string_lossy().to_string(),
+                    timestamp: SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs(),
+                };
+                serde_json::to_writer(&file, &header).map_err(to_write_cache_error)?;
+                file.write_all("\n".as_bytes())
+                    .map_err(to_write_cache_error)?;
+                bincode::serde::encode_into_std_write(root, &mut file, bincode::config::standard())
+                    .map_err(to_write_cache_error)?;
+                total_size = total_size.saturating_add(file.stream_position().unwrap_or(0));
+                file.into_temp_path()
+            };
+            fs::rename(tmp_path, cache.location.join(cached_name)).map_err(to_write_cache_error)?;
+            work_guard.inc(1);
+        }
+        tracker.end_step(format!(
+            "{} files totaling {}",
+            self.roots.len(),
+            HumanBytes(total_size)
+        ));
+
+        Ok(())
     }
 
     /// True if no log statements are recognized by this matcher.
@@ -122,7 +377,8 @@ impl LogMatcher {
 
     /// Add a source root path
     pub fn add_root(&mut self, path: &Path) -> Result<(), LogError> {
-        if let Some(_existing_path) = self.match_path(path) {
+        let path = path.canonicalize().unwrap_or(path.to_owned());
+        if let Some(_existing_path) = self.match_path(&path) {
         } else {
             self.roots
                 .entry(path.to_owned())
@@ -180,23 +436,28 @@ impl LogMatcher {
     }
 
     /// Scan the source files looking for potential log statements.
-    pub fn extract_log_statements(&mut self, tracker: &ProgressTracker) {
+    pub fn extract_log_statements(&mut self, tracker: &ProgressTracker) -> ExtractLogSummary {
+        let mut retval = ExtractLogSummary::default();
         tracker.begin_step("Extracting log statements".to_string());
         self.roots.iter_mut().for_each(|(_path, coll)| {
             let guard = tracker.doing_work(coll.tree.stats().files as u64, "files".to_string());
             for event_chunk in &coll.tree.scan().chunks(10) {
                 let sources = event_chunk
                     .flat_map(|event| match event {
-                        ScanEvent::NewFile(path, info) => match File::open(&path) {
-                            Ok(file) => match CodeSource::new(&path, info, file) {
-                                Ok(cs) => Some(cs),
-                                Err(_) => todo!(),
-                            },
-                            Err(_) => {
-                                todo!()
+                        ScanEvent::NewFile(path, info) => {
+                            retval.new += 1;
+                            match File::open(&path) {
+                                Ok(file) => match CodeSource::new(&path, info, file) {
+                                    Ok(cs) => Some(cs),
+                                    Err(_) => todo!(),
+                                },
+                                Err(_) => {
+                                    todo!()
+                                }
                             }
-                        },
+                        }
                         ScanEvent::DeletedFile(_path, id) => {
+                            retval.deleted += 1;
                             coll.files_with_statements.remove(&id);
                             None
                         }
@@ -217,6 +478,8 @@ impl LogMatcher {
                 .map(|stmts| stmts.log_statements.len())
                 .sum::<usize>()
         ));
+
+        retval
     }
 
     /// Attempt to match the given log message.
@@ -233,7 +496,8 @@ impl LogMatcher {
                     .values()
                     .filter(|stmts| stmts.path.contains(filename))
                     .flat_map(|stmts| {
-                        let file_matches = stmts.matcher.matches(body);
+                        let file_matches =
+                            stmts.matcher.as_ref().expect("have RegexSet").matches(body);
                         match file_matches.iter().next() {
                             None => None,
                             Some(index) => stmts.log_statements.get(index),
@@ -244,7 +508,12 @@ impl LogMatcher {
                 coll.files_with_statements
                     .par_iter()
                     .flat_map(|src_ref_coll| {
-                        let file_matches = src_ref_coll.1.matcher.matches(log_ref.body());
+                        let file_matches = src_ref_coll
+                            .1
+                            .matcher
+                            .as_ref()
+                            .expect("have RegexSet")
+                            .matches(log_ref.body());
                         match file_matches.iter().next() {
                             None => None,
                             Some(index) => src_ref_coll.1.log_statements.get(index),
@@ -280,7 +549,7 @@ impl LogMatcher {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Copy, Clone, Serialize)]
+#[derive(Debug, Eq, PartialEq, Copy, Clone, Serialize, Deserialize)]
 pub enum SourceLanguage {
     Rust,
     Java,
@@ -560,7 +829,7 @@ static JAVA_CALLER_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     )
 "#,
     )
-    .unwrap()
+        .unwrap()
 });
 
 #[derive(Copy, Clone, Debug, PartialEq, Serialize)]
@@ -799,7 +1068,6 @@ pub fn extract_logging_guarded(sources: &[CodeSource], guard: &WorkGuard) -> Vec
         .par_iter()
         .flat_map(|code| {
             let mut matched = vec![];
-            let mut patterns = vec![];
             let src_query = SourceQuery::new(code);
             let query = code.info.language.get_query();
             let results = src_query.query(query, None);
@@ -808,7 +1076,6 @@ pub fn extract_logging_guarded(sources: &[CodeSource], guard: &WorkGuard) -> Vec
                 match result.kind.as_str() {
                     "string_literal" | "string" => {
                         if let Some(src_ref) = SourceRef::new(code, result) {
-                            patterns.push(src_ref.pattern.clone());
                             matched.push(src_ref);
                         }
                     }
@@ -841,12 +1108,14 @@ pub fn extract_logging_guarded(sources: &[CodeSource], guard: &WorkGuard) -> Vec
             if matched.is_empty() {
                 None
             } else {
-                Some(StatementsInFile {
+                let mut sif = StatementsInFile {
                     path: matched.first().unwrap().source_path.clone(),
                     id: code.info.id,
                     log_statements: matched,
-                    matcher: RegexSet::new(patterns).expect("To combine patterns"),
-                })
+                    matcher: None,
+                };
+                sif.try_creating_matcher();
+                Some(sif)
             }
         })
         .collect()

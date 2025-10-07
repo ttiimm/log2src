@@ -1,0 +1,34 @@
+{
+    "$schema": "https://json-schema.org/draft-07/schema",
+    "title": "log2src cache entry header v1",
+    "description": "Schema for the header of a log2src cache entry.",
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+        "$schema": {
+            "type": "string",
+            "format": "uri"
+        },
+        "revision": {
+            "type": "string"
+        },
+        "format": {
+            "type": "string",
+            "enum": [
+                "Bincode"
+            ]
+        },
+        "path": {
+            "type": "string"
+        },
+        "timestamp": {
+            "type": "integer"
+        }
+    },
+    "required": [
+        "$schema",
+        "format",
+        "path",
+        "timestamp"
+    ]
+}
