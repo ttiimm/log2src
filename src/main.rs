@@ -279,6 +279,9 @@ fn main() -> miette::Result<()> {
     }
 
     let cache_open_res = Cache::open();
+    if args.verbose && cache_open_res.is_err() {
+        eprintln!("Could not find cache directory, will not cache source trees");
+    }
 
     if let Ok(cache) = &cache_open_res {
         let res = log_matcher.load_from_cache(&cache, &tracker);
