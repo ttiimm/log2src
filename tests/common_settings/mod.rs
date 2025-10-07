@@ -9,7 +9,7 @@ pub fn enable_filters(home_path: &Path) -> insta::internals::SettingsBindDropGua
     settings.add_filter(r#""[^"]*examples(?:/|\\\\?)"#, "\"{example_dir}/");
     settings.add_filter(r#""[^"]*tests(?:/|\\\\?)java(?:/|\\\\?)"#, "\"{java_dir}/");
     settings.add_filter(r#"(?:[ \w\.]+) (\(os error \d+\))"#, " {errmsg} $1");
-    settings.add_filter(r#"cache\.[0-9a-f]+"#, "cache.XXX");
+    settings.add_filter(r#""[^"]*cache\.[0-9a-f]+"#, "\"cache.XXX");
     settings.add_filter(
         regex::escape(home_path.to_string_lossy().as_ref()).as_str(),
         "{home}",

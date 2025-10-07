@@ -11,9 +11,9 @@ info:
     - "^(?<timestamp>\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}) (?<thread>\\d+) (?<body>.*)$"
   env:
     COLS: "1000"
-    HOME: /var/folders/gq/s3t7n95d19g3w41nsw0m0n240000gn/T/.tmpkUcT52
-    USERPROFILE: /var/folders/gq/s3t7n95d19g3w41nsw0m0n240000gn/T/.tmpkUcT52
-    XDG_CONFIG_HOME: /var/folders/gq/s3t7n95d19g3w41nsw0m0n240000gn/T/.tmpkUcT52
+    HOME: /var/folders/gq/s3t7n95d19g3w41nsw0m0n240000gn/T/.tmpRSyw4W
+    USERPROFILE: /var/folders/gq/s3t7n95d19g3w41nsw0m0n240000gn/T/.tmpRSyw4W
+    XDG_CONFIG_HOME: /var/folders/gq/s3t7n95d19g3w41nsw0m0n240000gn/T/.tmpRSyw4W
 ---
 success: true
 exit_code: 0
@@ -22,5 +22,5 @@ exit_code: 0
 {"logRef":{"details":{"thread":"123"}},"srcRef":{"sourcePath":"{java_dir}/BasicSlf4j.java","language":"Java","lineNumber":12,"endLineNumber":13,"column":21,"name":"main","text":"\"Debug message: args length = {}\"","quality":24,"pattern":"(?s)^Debug message: args length = (.+)$","args":["Placeholder"],"vars":["args.length"]},"variables":[{"expr":"args.length","value":"0"}]}
 
 ----- stderr -----
-  ⚠ failed to read cache file "{home}/Library/Caches/org.log2src.log2src/cache.XXX"
+  ⚠ failed to read cache file "cache.XXX"
   ╰─▶ Io { inner: Error { kind: UnexpectedEof, message: "failed to fill whole buffer" }, additional: 11 }
