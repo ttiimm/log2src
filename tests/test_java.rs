@@ -1,13 +1,14 @@
-use assert_cmd::prelude::*;
 use insta_cmd::assert_cmd_snapshot;
-use std::{path::Path, process::Command};
+use std::fs::File;
+use std::io::{Read, Write};
+use std::path::Path;
+use walkdir::WalkDir;
 
 mod common_settings;
 
 #[test]
 fn invalid_log_path() -> Result<(), Box<dyn std::error::Error>> {
-    let _guard = common_settings::enable_filters();
-    let mut cmd = Command::cargo_bin("log2src")?;
+    let mut cmd = common_settings::CommandGuard::new()?;
     let basic_source = Path::new("tests").join("java").join("Basic.java");
     let basic_log = Path::new("badname.log");
     cmd.arg("-d")
@@ -17,14 +18,13 @@ fn invalid_log_path() -> Result<(), Box<dyn std::error::Error>> {
         .arg("-f")
         .arg(r#"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \w+ \w+ \w+: (?<body>.*)"#);
 
-    assert_cmd_snapshot!(cmd);
+    assert_cmd_snapshot!(cmd.cmd);
     Ok(())
 }
 
 #[test]
 fn invalid_log_format() -> Result<(), Box<dyn std::error::Error>> {
-    let _guard = common_settings::enable_filters();
-    let mut cmd = Command::cargo_bin("log2src")?;
+    let mut cmd = common_settings::CommandGuard::new()?;
     let basic_source = Path::new("tests").join("java").join("Basic.java");
     let basic_log = Path::new("tests")
         .join("resources")
@@ -37,14 +37,13 @@ fn invalid_log_format() -> Result<(), Box<dyn std::error::Error>> {
         .arg("-f")
         .arg(r#"^-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \w+ \w+ \w+: (?<body>.*)"#);
 
-    assert_cmd_snapshot!(cmd);
+    assert_cmd_snapshot!(cmd.cmd);
     Ok(())
 }
 
 #[test]
 fn basic() -> Result<(), Box<dyn std::error::Error>> {
-    let _guard = common_settings::enable_filters();
-    let mut cmd = Command::cargo_bin("log2src")?;
+    let mut cmd = common_settings::CommandGuard::new()?;
     let basic_source = Path::new("tests").join("java").join("Basic.java");
     let basic_log = Path::new("tests")
         .join("resources")
@@ -57,14 +56,13 @@ fn basic() -> Result<(), Box<dyn std::error::Error>> {
         .arg("-f")
         .arg(r#"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \w+ \w+ \w+: (?<body>.*)"#);
 
-    assert_cmd_snapshot!(cmd);
+    assert_cmd_snapshot!(cmd.cmd);
     Ok(())
 }
 
 #[test]
 fn basic_range() -> Result<(), Box<dyn std::error::Error>> {
-    let _guard = common_settings::enable_filters();
-    let mut cmd = Command::cargo_bin("log2src")?;
+    let mut cmd = common_settings::CommandGuard::new()?;
     let basic_source = Path::new("tests").join("java").join("Basic.java");
     let basic_log = Path::new("tests")
         .join("resources")
@@ -81,14 +79,13 @@ fn basic_range() -> Result<(), Box<dyn std::error::Error>> {
         .arg("-c")
         .arg("2");
 
-    assert_cmd_snapshot!(cmd);
+    assert_cmd_snapshot!(cmd.cmd);
     Ok(())
 }
 
 #[test]
 fn basic_invalid_utf() -> Result<(), Box<dyn std::error::Error>> {
-    let _guard = common_settings::enable_filters();
-    let mut cmd = Command::cargo_bin("log2src")?;
+    let mut cmd = common_settings::CommandGuard::new()?;
     let basic_source = Path::new("tests").join("java").join("Basic.java");
     let basic_log = Path::new("tests")
         .join("resources")
@@ -101,14 +98,13 @@ fn basic_invalid_utf() -> Result<(), Box<dyn std::error::Error>> {
         .arg("-f")
         .arg(r#"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \w+ \w+ \w+: (?<body>.*)"#);
 
-    assert_cmd_snapshot!(cmd);
+    assert_cmd_snapshot!(cmd.cmd);
     Ok(())
 }
 
 #[test]
 fn basic_with_log() -> Result<(), Box<dyn std::error::Error>> {
-    let _guard = common_settings::enable_filters();
-    let mut cmd = Command::cargo_bin("log2src")?;
+    let mut cmd = common_settings::CommandGuard::new()?;
     let basic_source = Path::new("tests").join("java").join("BasicWithLog.java");
     let basic_log = Path::new("tests")
         .join("resources")
@@ -121,14 +117,13 @@ fn basic_with_log() -> Result<(), Box<dyn std::error::Error>> {
         .arg("-f")
         .arg(r#"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \w+ \w+ \w+: (?<body>.*)"#);
 
-    assert_cmd_snapshot!(cmd);
+    assert_cmd_snapshot!(cmd.cmd);
     Ok(())
 }
 
 #[test]
 fn basic_with_upper() -> Result<(), Box<dyn std::error::Error>> {
-    let _guard = common_settings::enable_filters();
-    let mut cmd = Command::cargo_bin("log2src")?;
+    let mut cmd = common_settings::CommandGuard::new()?;
     let basic_source = Path::new("tests").join("java").join("BasicWithUpper.java");
     let basic_log = Path::new("tests")
         .join("resources")
@@ -141,14 +136,13 @@ fn basic_with_upper() -> Result<(), Box<dyn std::error::Error>> {
         .arg("-f")
         .arg(r#"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \w+ \w+ \w+: (?<body>.*)"#);
 
-    assert_cmd_snapshot!(cmd);
+    assert_cmd_snapshot!(cmd.cmd);
     Ok(())
 }
 
 #[test]
 fn basic_with_log_format() -> Result<(), Box<dyn std::error::Error>> {
-    let _guard = common_settings::enable_filters();
-    let mut cmd = Command::cargo_bin("log2src")?;
+    let mut cmd = common_settings::CommandGuard::new()?;
     let source = Path::new("tests").join("java").join("BasicWithCustom.java");
     let log = Path::new("tests")
         .join("resources")
@@ -161,14 +155,15 @@ fn basic_with_log_format() -> Result<(), Box<dyn std::error::Error>> {
         .arg("-f")
         .arg("^(?<timestamp>\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}) (?<level>\\w+) (?<file>[\\w$.]+):(?<line>\\d+) (?<method>[\\w$]+): (?<body>.*)$");
 
-    assert_cmd_snapshot!(cmd);
+    for _index in 0..2 {
+        assert_cmd_snapshot!(cmd.cmd);
+    }
     Ok(())
 }
 
 #[test]
 fn basic_slf4j() -> Result<(), Box<dyn std::error::Error>> {
-    let _guard = common_settings::enable_filters();
-    let mut cmd = Command::cargo_bin("log2src")?;
+    let mut cmd = common_settings::CommandGuard::new()?;
     let source = Path::new("tests").join("java").join("BasicSlf4j.java");
     let log = Path::new("tests")
         .join("resources")
@@ -179,8 +174,45 @@ fn basic_slf4j() -> Result<(), Box<dyn std::error::Error>> {
         .arg("-l")
         .arg(log.to_str().expect("test case log exists"))
         .arg("-f")
-        .arg("^(?<timestamp>\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}) (?<thread>\\d+) (?<body>.*)$");
+        .arg(
+            "^(?<timestamp>\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}) (?<thread>\\d+) (?<body>.*)$",
+        );
 
-    assert_cmd_snapshot!(cmd);
+    assert_cmd_snapshot!(cmd.cmd);
+
+    // corrupt the cache entry header
+    for entry in WalkDir::new(cmd.home_path()) {
+        let entry = entry?;
+        if entry.file_name().to_string_lossy().starts_with("cache.") {
+            let mut buffer = Vec::new();
+            {
+                let mut file = File::open(entry.path())?;
+                file.read_to_end(&mut buffer)?;
+            }
+            buffer[0] = b'0';
+            let mut file = File::create(entry.path())?;
+            file.write_all(&buffer)?;
+        }
+    }
+
+    assert_cmd_snapshot!(cmd.cmd);
+
+    // corrupt the cache entry content
+    for entry in WalkDir::new(cmd.home_path()) {
+        let entry = entry?;
+        if entry.file_name().to_string_lossy().starts_with("cache.") {
+            let mut buffer = Vec::new();
+            {
+                let mut file = File::open(entry.path())?;
+                file.read_to_end(&mut buffer)?;
+            }
+            let mut file = File::create(entry.path())?;
+            buffer.resize(buffer.len() - 1, 0);
+            file.write_all(&buffer)?;
+        }
+    }
+
+    assert_cmd_snapshot!(cmd.cmd);
+
     Ok(())
 }

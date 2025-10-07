@@ -1,0 +1,25 @@
+---
+source: tests/test_java.rs
+info:
+  program: log2src
+  args:
+    - "-d"
+    - tests/java/BasicWithCustom.java
+    - "-l"
+    - tests/resources/java/basic-class-line.log
+    - "-f"
+    - "^(?<timestamp>\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}) (?<level>\\w+) (?<file>[\\w$.]+):(?<line>\\d+) (?<method>[\\w$]+): (?<body>.*)$"
+  env:
+    HOME: /var/folders/gq/s3t7n95d19g3w41nsw0m0n240000gn/T/.tmp4qYTFu
+    USERPROFILE: /var/folders/gq/s3t7n95d19g3w41nsw0m0n240000gn/T/.tmp4qYTFu
+    XDG_CONFIG_HOME: /var/folders/gq/s3t7n95d19g3w41nsw0m0n240000gn/T/.tmp4qYTFu
+---
+success: true
+exit_code: 0
+----- stdout -----
+{"logRef":{"details":{"file":"BasicWithCustom","lineno":15}},"srcRef":{"sourcePath":"{java_dir}/BasicWithCustom.java","language":"Java","lineNumber":15,"endLineNumber":15,"column":16,"name":"main","text":"\"Hello from main\"","quality":13,"pattern":"(?s)^Hello from main$","args":[],"vars":[]},"variables":[]}
+{"logRef":{"details":{"file":"BasicWithCustom","lineno":22}},"srcRef":{"sourcePath":"{java_dir}/BasicWithCustom.java","language":"Java","lineNumber":22,"endLineNumber":22,"column":20,"name":"foo","text":"\"Hello from foo i=\\{i}\"","quality":14,"pattern":"(?s)^Hello from foo i=(.+)$","args":[{"Named":"i"}],"vars":[]},"variables":[{"expr":"i","value":"0"}]}
+{"logRef":{"details":{"file":"BasicWithCustom","lineno":22}},"srcRef":{"sourcePath":"{java_dir}/BasicWithCustom.java","language":"Java","lineNumber":22,"endLineNumber":22,"column":20,"name":"foo","text":"\"Hello from foo i=\\{i}\"","quality":14,"pattern":"(?s)^Hello from foo i=(.+)$","args":[{"Named":"i"}],"vars":[]},"variables":[{"expr":"i","value":"1"}]}
+{"logRef":{"details":{"file":"BasicWithCustom","lineno":22}},"srcRef":{"sourcePath":"{java_dir}/BasicWithCustom.java","language":"Java","lineNumber":22,"endLineNumber":22,"column":20,"name":"foo","text":"\"Hello from foo i=\\{i}\"","quality":14,"pattern":"(?s)^Hello from foo i=(.+)$","args":[{"Named":"i"}],"vars":[]},"variables":[{"expr":"i","value":"2"}]}
+
+----- stderr -----
