@@ -2,20 +2,37 @@ use clap::Parser as ClapParser;
 use colored_json::{ColoredFormatter, CompactFormatter, Styler};
 use indicatif::{ProgressBar, ProgressStyle};
 use log2src::{
-    LogError, LogFormat, LogMapping, LogMatcher, LogRef, LogRefBuilder, ProgressTracker,
+    Cache, LogError, LogFormat, LogMapping, LogMatcher, LogRef, LogRefBuilder, ProgressTracker,
     ProgressUpdate,
 };
-use miette::{IntoDiagnostic, Report};
+use miette::{IntoDiagnostic, MietteHandlerOpts, Report};
 use serde::Serialize;
 use std::io::{stdout, BufRead, BufReader};
 use std::sync::atomic::Ordering;
 use std::thread::sleep;
 use std::time::Duration;
-use std::{fs, io, path::PathBuf};
+use std::{env, fs, io, path::PathBuf};
+
+fn get_footer() -> String {
+    let mut footer = String::new();
+    if let Ok(cache) = Cache::open() {
+        footer.push_str("Paths:\n");
+        footer.push_str(
+            format!(
+                "    Cache directory: {}\n",
+                cache.location.to_string_lossy()
+            )
+            .as_str(),
+        );
+    }
+    footer.push_str("\nFor more information, see https://github.com/ttiimm/log2src\n");
+    footer
+}
 
 /// The log2src command maps log statements back to the source code that emitted them.
 #[derive(ClapParser)]
 #[command(author, version, about, long_about)]
+#[command(after_help = get_footer())]
 struct Cli {
     /// The source directories to map logs onto
     #[arg(short = 'd', long, value_name = "SOURCES")]
@@ -184,6 +201,14 @@ struct ErrorWrapper {
 }
 
 fn main() -> miette::Result<()> {
+    let _ = miette::set_hook(Box::new(move |_| {
+        Box::new(
+            MietteHandlerOpts::new()
+                .width(env::var("COLS").unwrap_or_default().parse().unwrap_or(80))
+                .break_words(false)
+                .build(),
+        )
+    }));
     let mut tracker = ProgressTracker::new();
 
     let args = Cli::parse();
@@ -253,14 +278,38 @@ fn main() -> miette::Result<()> {
             .into_diagnostic()?;
     }
 
+    let cache_open_res = Cache::open();
+
+    if let Ok(cache) = &cache_open_res {
+        let res = log_matcher.load_from_cache(&cache, &tracker);
+        for err in res {
+            let report = Report::new(err);
+            if args.verbose
+                || report.severity().unwrap_or(miette::Severity::Error) != miette::Severity::Advice
+            {
+                eprintln!("{:?}", report);
+            }
+        }
+    }
+
     log_matcher
         .discover_sources(&tracker)
         .into_iter()
         .for_each(|err| eprintln!("{:?}", Report::new(err)));
-    log_matcher.extract_log_statements(&tracker);
+    let extract_summary = log_matcher.extract_log_statements(&tracker);
     if log_matcher.is_empty() {
         return Err(LogError::NoLogStatements.into());
     }
+
+    if extract_summary.changes() > 0 {
+        if let Ok(cache) = &cache_open_res {
+            let res = log_matcher.cache_to(&cache, &tracker);
+            if let Err(err) = res {
+                eprintln!("{:?}", Report::new(err));
+            }
+        }
+    }
+
     let start = args.start.unwrap_or(0);
     let count = args.count.unwrap_or(usize::MAX);
     let mut accumulator = MessageAccumulator::new(log_matcher, log_format, count);

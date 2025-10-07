@@ -1,10 +1,10 @@
 use crate::{CodeSource, QueryResult, SourceLanguage};
 use core::fmt;
 use regex::{Captures, Regex};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::sync::LazyLock;
 
-#[derive(Clone, Debug, Serialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
 pub enum FormatArgument {
     Named(String),
     Positional(usize),
@@ -22,7 +22,7 @@ pub struct CallSite {
 }
 
 // TODO: get rid of this clone?
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SourceRef {
     #[serde(rename(serialize = "sourcePath"))]
     pub source_path: String,
@@ -35,9 +35,10 @@ pub struct SourceRef {
     pub name: String,
     pub text: String,
     pub quality: usize,
-    #[serde(skip_serializing)]
-    pub(crate) matcher: Regex,
-    pub pattern: String,
+    #[serde(with = "serde_regex")]
+    pub(crate) pattern: Regex,
+    #[serde(skip)]
+    pub pattern_str: String,
     pub(crate) args: Vec<FormatArgument>,
     pub(crate) vars: Vec<String>,
 }
@@ -87,8 +88,8 @@ impl SourceRef {
                 name,
                 text,
                 quality,
-                matcher,
-                pattern,
+                pattern: matcher,
+                pattern_str: pattern,
                 args,
                 vars: vec![],
             })
@@ -98,7 +99,7 @@ impl SourceRef {
     }
 
     pub fn captures<'a>(&self, line: &'a str) -> Option<Captures<'a>> {
-        self.matcher.captures(line)
+        self.pattern.captures(line)
     }
 }
 

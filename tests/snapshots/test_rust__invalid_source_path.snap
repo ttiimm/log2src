@@ -11,6 +11,11 @@ info:
     - "\\[\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z \\w+ \\w+\\]\\s+(?<body>.*)"
     - "-s"
     - "1"
+  env:
+    COLS: "1000"
+    HOME: /var/folders/gq/s3t7n95d19g3w41nsw0m0n240000gn/T/.tmpD3nTNw
+    USERPROFILE: /var/folders/gq/s3t7n95d19g3w41nsw0m0n240000gn/T/.tmpD3nTNw
+    XDG_CONFIG_HOME: /var/folders/gq/s3t7n95d19g3w41nsw0m0n240000gn/T/.tmpD3nTNw
 ---
 success: false
 exit_code: 1
@@ -21,5 +26,4 @@ exit_code: 1
   ╰─▶ {errmsg} (os error 2)
 
 Error:   × no log statements found
-  help: Make sure the source path is valid and refers to a tree with supported
-        source code and logging statements
+  help: Make sure the source path is valid and refers to a tree with supported source code and logging statements

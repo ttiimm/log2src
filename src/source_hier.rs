@@ -1,5 +1,5 @@
 use crate::{LogError, SourceLanguage};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::ffi::{OsStr, OsString};
@@ -24,11 +24,11 @@ enum ShallowCheckResult {
 }
 
 /// A unique identifier for a file that can be used instead of retaining the full path.
-#[derive(Copy, Clone, Debug, Serialize, Hash, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, Hash, Eq, PartialEq)]
 pub struct SourceFileID(usize);
 
 /// A summary of a source code file
-#[derive(Copy, Clone, Debug, Serialize, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
 pub struct SourceFileInfo {
     pub language: SourceLanguage,
     pub id: SourceFileID,
@@ -51,7 +51,7 @@ impl SourceFileInfo {
 }
 
 /// The type of content in a node in the source hierarchy
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum SourceHierContent {
     File {
         info: SourceFileInfo,
@@ -62,6 +62,7 @@ pub enum SourceHierContent {
         entries: BTreeMap<OsString, SourceHierNode>,
     },
     Error {
+        #[serde(skip)]
         source: LogError,
     },
     Unknown {},
@@ -267,7 +268,7 @@ impl SourceHierContent {
 
 /// A node in the SourceHierTree.  It contains information that is common to all types of content
 /// and the content itself (e.g. file, directory, error, ...).
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SourceHierNode {
     pub last_scan_time: Option<SystemTime>,
     pub content: SourceHierContent,
@@ -365,7 +366,7 @@ impl SourceHierNode {
 
 /// An event when iterating over the value returned by the [`scan()`](SourceHierTree::scan())
 /// method.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum ScanEvent {
     NewFile(PathBuf, SourceFileInfo),
     DeletedFile(PathBuf, SourceFileID),
@@ -413,7 +414,7 @@ impl Iterator for TreeScanner<'_> {
     }
 }
 
-#[derive(Debug, Serialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct SourceHierStats {
     pub files: usize,
     pub unsupported_files: usize,
@@ -422,11 +423,12 @@ pub struct SourceHierStats {
 }
 
 /// A SourceHierTree tracks the state of a source code hierarchy.
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SourceHierTree {
     pub root_path: PathBuf,
     pub root_node: SourceHierNode,
     next_id: usize,
+    #[serde(skip)]
     deleted_events: Vec<ScanEvent>,
     stats: SourceHierStats,
 }
