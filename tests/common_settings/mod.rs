@@ -32,6 +32,8 @@ impl TempHome {
         cmd.env("HOME", self.location.path());
         cmd.env("XDG_CONFIG_HOME", self.location.path());
         cmd.env("USERPROFILE", self.location.path());
+        cmd.env("LOCALAPPDATA", self.location.path());
+        cmd.env("APPDATA", self.location.path());
     }
 }
 
