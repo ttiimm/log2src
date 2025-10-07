@@ -207,7 +207,7 @@ fn basic_slf4j() -> Result<(), Box<dyn std::error::Error>> {
                 file.read_to_end(&mut buffer)?;
             }
             let mut file = File::create(entry.path())?;
-            buffer.resize(buffer.len() - 1, 0);
+            buffer.resize(buffer.len() - 50, 0);
             file.write_all(&buffer)?;
         }
     }
