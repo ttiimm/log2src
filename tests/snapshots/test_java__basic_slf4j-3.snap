@@ -11,9 +11,9 @@ info:
     - "^(?<timestamp>\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}) (?<thread>\\d+) (?<body>.*)$"
   env:
     COLS: "1000"
-    HOME: /var/folders/gq/s3t7n95d19g3w41nsw0m0n240000gn/T/.tmpRSyw4W
-    USERPROFILE: /var/folders/gq/s3t7n95d19g3w41nsw0m0n240000gn/T/.tmpRSyw4W
-    XDG_CONFIG_HOME: /var/folders/gq/s3t7n95d19g3w41nsw0m0n240000gn/T/.tmpRSyw4W
+    HOME: /var/folders/gq/s3t7n95d19g3w41nsw0m0n240000gn/T/.tmpzzq9Js
+    USERPROFILE: /var/folders/gq/s3t7n95d19g3w41nsw0m0n240000gn/T/.tmpzzq9Js
+    XDG_CONFIG_HOME: /var/folders/gq/s3t7n95d19g3w41nsw0m0n240000gn/T/.tmpzzq9Js
 ---
 success: true
 exit_code: 0
@@ -23,4 +23,4 @@ exit_code: 0
 
 ----- stderr -----
   ⚠ failed to read cache file "cache.XXX"
-  ╰─▶ Io { inner: Error { kind: UnexpectedEof, message: "failed to fill whole buffer" }, additional: 11 }
+  ╰─▶ Io { inner: Error { kind: UnexpectedEof, message: "failed to fill whole buffer" }, additional: 39 }
