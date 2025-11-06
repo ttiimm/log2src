@@ -3,6 +3,7 @@
   "displayName": "log2src",
   "description": "A debugger driven by logs",
   "version": "0.0.1",
+  "publisher": "ttiimm",
   "author": {
     "name": "Tim Likarish Ellis"
   },
