@@ -31,6 +31,6 @@ expression: events
     - language: Java
       id: 1
 - NewFile:
-    - common_settings.rs
+    - mod.rs
     - language: Rust
       id: 0

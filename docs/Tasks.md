@@ -6,8 +6,8 @@
     and it can find the message.
 - [X] Extract a thread id from log when available and associate with source ref.
 - [X] Generate call stack from exceptions.
-- [ ] Support multiple source roots from CLI.
-- [ ] Serialize state for re-use on subsequent executions
+- [X] Support multiple source roots from CLI.
+- [X] Serialize state for re-use on subsequent executions
 
 ## Extension
 
