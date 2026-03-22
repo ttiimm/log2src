@@ -202,6 +202,15 @@ impl StatementsInFile {
             .collect::<Vec<&str>>();
         self.matcher = RegexSet::new(&patterns).ok();
     }
+
+    fn to_lookup_pair(&self) -> Option<(String, SourceFileID)> {
+        PATH_TO_NAME_REGEX
+            .captures(&self.path)
+            .into_iter()
+            .flat_map(|caps| caps.get(1))
+            .map(|name_match| (name_match.as_str().to_owned(), self.id))
+            .next()
+    }
 }
 
 /// Collection of individual source files under a root path
@@ -209,6 +218,10 @@ impl StatementsInFile {
 pub struct SourceTree {
     pub tree: SourceHierTree,
     pub files_with_statements: HashMap<SourceFileID, StatementsInFile>,
+    /// Most log statements only have the file name, so we keep an extra map from the name
+    /// to the source file IDs to speed up matches.
+    #[serde(skip)]
+    pub file_name_to_sources: HashMap<String, Vec<SourceFileID>>,
 }
 
 /// Collection of root paths to their tree of source files
@@ -270,6 +283,13 @@ impl LogMatcher {
                 })?;
         for sif in decoded_root.files_with_statements.values_mut() {
             sif.try_creating_matcher();
+            sif.to_lookup_pair().into_iter().for_each(|(name, sid)| {
+                decoded_root
+                    .file_name_to_sources
+                    .entry(name)
+                    .or_default()
+                    .push(sid);
+            });
         }
         Ok(decoded_root)
     }
@@ -385,6 +405,7 @@ impl LogMatcher {
                 .or_insert_with(|| SourceTree {
                     tree: SourceHierTree::from(&path),
                     files_with_statements: HashMap::new(),
+                    file_name_to_sources: HashMap::new(),
                 });
         }
         Ok(())
@@ -459,6 +480,9 @@ impl LogMatcher {
                         ScanEvent::DeletedFile(_path, id) => {
                             retval.deleted += 1;
                             coll.files_with_statements.remove(&id);
+                            coll.file_name_to_sources.values_mut().for_each(|ids| {
+                                ids.retain_mut(|elem| *elem != id);
+                            });
                             None
                         }
                     })
@@ -466,6 +490,9 @@ impl LogMatcher {
                 extract_logging_guarded(&sources, &guard)
                     .into_iter()
                     .for_each(|sif| {
+                        sif.to_lookup_pair().into_iter().for_each(|(name, sid)| {
+                            coll.file_name_to_sources.entry(name).or_default().push(sid);
+                        });
                         coll.files_with_statements.insert(sif.id, sif);
                     });
             }
@@ -491,19 +518,34 @@ impl LogMatcher {
                 ..
             }) = log_ref.details
             {
-                // XXX this block and the else are basically the same, try to refactor
-                coll.files_with_statements
-                    .values()
-                    .filter(|stmts| stmts.path.contains(filename))
-                    .flat_map(|stmts| {
-                        let file_matches =
-                            stmts.matcher.as_ref().expect("have RegexSet").matches(body);
-                        match file_matches.iter().next() {
-                            None => None,
-                            Some(index) => stmts.log_statements.get(index),
-                        }
-                    })
-                    .collect::<Vec<&SourceRef>>()
+                if let Some(sources) = coll.file_name_to_sources.get(filename) {
+                    sources
+                        .iter()
+                        .flat_map(|path| coll.files_with_statements.get(path))
+                        .flat_map(|stmts| {
+                            let file_matches =
+                                stmts.matcher.as_ref().expect("have RegexSet").matches(body);
+                            match file_matches.iter().next() {
+                                None => None,
+                                Some(index) => stmts.log_statements.get(index),
+                            }
+                        })
+                        .collect::<Vec<&SourceRef>>()
+                } else {
+                    // XXX this block and the else are basically the same, try to refactor
+                    coll.files_with_statements
+                        .values()
+                        .filter(|stmts| stmts.path.contains(filename))
+                        .flat_map(|stmts| {
+                            let file_matches =
+                                stmts.matcher.as_ref().expect("have RegexSet").matches(body);
+                            match file_matches.iter().next() {
+                                None => None,
+                                Some(index) => stmts.log_statements.get(index),
+                            }
+                        })
+                        .collect::<Vec<&SourceRef>>()
+                }
             } else {
                 coll.files_with_statements
                     .par_iter()
@@ -589,6 +631,9 @@ static CPP_PLACEHOLDER_REGEX: LazyLock<Regex> = LazyLock::new(|| {
 static PYTHON_PLACEHOLDER_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"%[-+ #0]*\d*(?:\.\d+)?[hlLzjt]*[diuoxXfFeEgGaAcspn%]"#).unwrap()
 });
+
+static PATH_TO_NAME_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"[/\\]([^/\\]+)$"#).unwrap());
 
 static BACKTRACE_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
