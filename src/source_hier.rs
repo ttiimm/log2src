@@ -1,4 +1,5 @@
 use crate::{LogError, SourceLanguage};
+use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -9,6 +10,16 @@ use std::{fs, io};
 
 fn is_ignored_dir(name: &OsStr) -> bool {
     name == ".git" || name == ".hg" || name == ".svn" || name == ".vscode"
+}
+
+fn build_gitignore(root: &Path) -> Gitignore {
+    let mut builder = GitignoreBuilder::new(root);
+    builder.add(root.join(".gitignore"));
+    builder.build().unwrap_or_else(|_| Gitignore::empty())
+}
+
+fn is_gitignored(gi: &Gitignore, path: &Path, is_dir: bool) -> bool {
+    gi.matched_path_or_any_parents(path, is_dir).is_ignore()
 }
 
 /// Result of a shallow check of a file system path.  Mainly interested in getting a directory
@@ -80,16 +91,26 @@ impl SourceHierContent {
             .collect())
     }
 
-    fn from_dir(path: &Path) -> Self {
+    fn from_dir(path: &Path, gi: &Gitignore) -> Self {
         match Self::entries_of(path) {
             Ok(entries) => Self::Directory {
                 entries: entries
                     .into_iter()
-                    .filter(|entry| !is_ignored_dir(&entry.0))
+                    .filter(|entry| {
+                        !is_ignored_dir(&entry.0) && {
+                            let child_path = path.join(&entry.0);
+                            let is_dir = entry
+                                .1
+                                .as_ref()
+                                .map(|m| m.is_dir())
+                                .unwrap_or(false);
+                            !is_gitignored(gi, &child_path, is_dir)
+                        }
+                    })
                     .map(|(entry_name, meta)| {
                         (
                             entry_name.to_os_string(),
-                            SourceHierNode::from_int(&path.join(entry_name), meta),
+                            SourceHierNode::from_int(&path.join(entry_name), meta, gi),
                         )
                     })
                     .collect(),
@@ -103,11 +124,11 @@ impl SourceHierContent {
         }
     }
 
-    fn from(path: &Path, metadata: Result<fs::Metadata, io::Error>) -> Self {
+    fn from(path: &Path, metadata: Result<fs::Metadata, io::Error>, gi: &Gitignore) -> Self {
         match metadata {
             Ok(meta) => {
                 if meta.is_dir() {
-                    Self::from_dir(path)
+                    Self::from_dir(path, gi)
                 } else if meta.is_file() {
                     match SourceLanguage::from_path(&path) {
                         Some(language) => match meta.modified() {
@@ -183,6 +204,7 @@ impl SourceHierContent {
         path: &Path,
         latest_meta: Result<fs::Metadata, io::Error>,
         deleted_events: &mut Vec<ScanEvent>,
+        gi: &Gitignore,
     ) -> bool {
         let latest_content = Self::shallow_check(path, &latest_meta);
         *self = match self {
@@ -199,7 +221,7 @@ impl SourceHierContent {
                 }
                 _ => {
                     deleted_events.push(ScanEvent::DeletedFile(PathBuf::from(path), info.id));
-                    Self::from(path, latest_meta)
+                    Self::from(path, latest_meta, gi)
                 }
             },
             SourceHierContent::Directory { ref mut entries } => match latest_content {
@@ -216,23 +238,27 @@ impl SourceHierContent {
                     let mut new_entries: Vec<(OsString, Result<fs::Metadata, io::Error>)> =
                         Vec::new();
                     for (name, meta) in latest_entries {
-                        if is_ignored_dir(&name.as_os_str()) {
+                        let child_path = path.join(&name);
+                        let is_dir = meta.as_ref().map(|m| m.is_dir()).unwrap_or(false);
+                        if is_ignored_dir(&name.as_os_str())
+                            || is_gitignored(gi, &child_path, is_dir)
+                        {
                         } else if let Some(existing_entry) = entries.get_mut(&name) {
-                            existing_entry.sync(&path.join(&name), meta, deleted_events)
+                            existing_entry.sync(&child_path, meta, deleted_events, gi)
                         } else {
                             new_entries.push((name, meta));
                             changed = true;
                         }
                     }
                     new_entries.into_iter().for_each(|(name, meta)| {
-                        let node = SourceHierNode::from_int(&path.join(&name), meta);
+                        let node = SourceHierNode::from_int(&path.join(&name), meta, gi);
                         entries.insert(name, node);
                     });
                     return changed;
                 }
-                _ => Self::from(path, latest_meta),
+                _ => Self::from(path, latest_meta, gi),
             },
-            _ => Self::from(path, latest_meta),
+            _ => Self::from(path, latest_meta, gi),
         };
         true
     }
@@ -275,13 +301,13 @@ pub struct SourceHierNode {
 }
 
 impl SourceHierNode {
-    fn from_int(path: &Path, metadata: Result<fs::Metadata, io::Error>) -> Self {
+    fn from_int(path: &Path, metadata: Result<fs::Metadata, io::Error>, gi: &Gitignore) -> Self {
         match metadata {
             Ok(meta) => {
                 if meta.is_dir() {
                     Self {
                         last_scan_time: None,
-                        content: SourceHierContent::from_dir(path),
+                        content: SourceHierContent::from_dir(path, gi),
                     }
                 } else if meta.is_file() {
                     match SourceLanguage::from_path(&path) {
@@ -357,8 +383,9 @@ impl SourceHierNode {
         path: &Path,
         meta: Result<fs::Metadata, io::Error>,
         deleted_events: &mut Vec<ScanEvent>,
+        gi: &Gitignore,
     ) {
-        if self.content.sync_int(path, meta, deleted_events) {
+        if self.content.sync_int(path, meta, deleted_events, gi) {
             self.last_scan_time = None;
         }
     }
@@ -446,6 +473,7 @@ impl SourceHierTree {
 
     /// Synchronize the state of this tree with the file system.
     pub fn sync(&mut self) {
+        let gi = build_gitignore(&self.root_path);
         SourceFileInfo::NEXT_ID.with(|id_opt| {
             *id_opt.borrow_mut() = self.next_id;
         });
@@ -453,6 +481,7 @@ impl SourceHierTree {
             &self.root_path,
             fs::metadata(&self.root_path),
             &mut self.deleted_events,
+            &gi,
         );
         self.next_id = SourceFileInfo::NEXT_ID.with(|id_opt| *id_opt.borrow());
         self.stats = self.compute_stats();
@@ -616,5 +645,52 @@ mod test {
         tree.sync();
         let deleted_dir_events: Vec<ScanEvent> = tree.scan().map(redact_event).collect();
         assert_yaml_snapshot!(deleted_dir_events);
+    }
+
+    #[test]
+    fn test_gitignore_filtering() {
+        let temp_dir = tempdir().expect("Failed to create temporary directory");
+        let root = temp_dir.path();
+
+        // Create a .gitignore that ignores *.log files and the "build/" directory
+        let mut gitignore = File::create(root.join(".gitignore")).unwrap();
+        writeln!(gitignore, "*.log").unwrap();
+        writeln!(gitignore, "build/").unwrap();
+        drop(gitignore);
+
+        // Create files: one that should be found, ones that should be ignored
+        fs::create_dir(root.join("src")).unwrap();
+        File::create(root.join("src/main.rs"))
+            .unwrap()
+            .write(b"fn main() {}")
+            .unwrap();
+        File::create(root.join("debug.log"))
+            .unwrap()
+            .write(b"some log")
+            .unwrap();
+        fs::create_dir(root.join("build")).unwrap();
+        File::create(root.join("build/output.rs"))
+            .unwrap()
+            .write(b"generated")
+            .unwrap();
+
+        let mut tree = SourceHierTree::from(root);
+        tree.sync();
+        let events: Vec<ScanEvent> = tree.scan().map(redact_event).collect();
+
+        // Only main.rs should appear as a NewFile event
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, ScanEvent::NewFile(p, _) if p == Path::new("main.rs"))));
+        assert!(!events
+            .iter()
+            .any(|e| matches!(e, ScanEvent::NewFile(p, _) if p == Path::new("debug.log"))));
+        assert!(!events
+            .iter()
+            .any(|e| matches!(e, ScanEvent::NewFile(p, _) if p == Path::new("output.rs"))));
+
+        // Verify stats don't count ignored files
+        let stats = tree.stats();
+        assert_eq!(stats.files, 1);
     }
 }
