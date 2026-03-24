@@ -629,7 +629,7 @@ static CPP_PLACEHOLDER_REGEX: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 static PYTHON_PLACEHOLDER_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"%[-+ #0]*(?:\d+|\*)?(?:\.(?:\d+|\*))?[hlLzjt]*[diuoxXfFeEgGaAcspn%]"#).unwrap()
+    Regex::new(r#"%[-+ #0]*(?:\d+|\*)?(?:\.(?:\d+|\*))?[hlLzjt]*[diuoxXfFeEgGaAcrspn%]"#).unwrap()
 });
 
 static PATH_TO_NAME_REGEX: LazyLock<Regex> =
