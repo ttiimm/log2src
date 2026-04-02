@@ -1,9 +1,6 @@
 /**
  * debugAdapter.ts implements the Debug Adapter protocol and integrates it with the log2src
  * "debugger".
- * 
- * Care should be given to make sure that this module is independent from VS Code so that it
- * could potentially be used in other IDE.
  */
 
 import {
@@ -18,6 +15,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 
 import { outputChannel } from './extension';
+import { LogDebugger } from './logDebugger';
 
 interface CallSite {
     name: string,
@@ -43,7 +41,7 @@ interface SourceRef {
     name: string,
 }
 
-interface ILaunchRequestArguments extends DebugProtocol.LaunchRequestArguments {
+export interface ILaunchRequestArguments extends DebugProtocol.LaunchRequestArguments {
     // the source to debug, currently a single file
     source: string;
     // the log files to use for "debugging"
@@ -81,18 +79,16 @@ export class DebugSession extends LoggingDebugSession {
 
     private static _threadID = 1;
     private _binaryPath: string;
-    private _breakPoints = new Map<string, DebugProtocol.Breakpoint[]>();
-    private _variableHandles = new Handles<'locals'>();
-    private _line = 1;
+    private readonly _variableHandles = new Handles<'locals'>();
     private _launchArgs: ILaunchRequestArguments = { source: "", log: "", log_format: "" };
-    private _logLines = Number.MAX_SAFE_INTEGER;
-    private _highlightDecoration: vscode.TextEditorDecorationType;
+    private readonly _highlightDecoration: vscode.TextEditorDecorationType;
     private _mapping?: LogMapping = undefined;
+    private readonly _logDebugger: LogDebugger;
 
     /**
      * Create a new debug adapter to use with a debug session.
      */
-    public constructor() {
+    public constructor(logDebugger: LogDebugger) {
         super("log2src-dap.txt");
 
         this._binaryPath = PLATFORM_TO_BINARY.get(`${process.platform}-${process.arch}`)!;
@@ -103,6 +99,7 @@ export class DebugSession extends LoggingDebugSession {
             );
         }
 
+        this._logDebugger = logDebugger;
         this.setDebuggerLinesStartAt1(true);
         this.setDebuggerColumnsStartAt1(true);
 
@@ -136,19 +133,10 @@ export class DebugSession extends LoggingDebugSession {
     protected setBreakPointsRequest(response: DebugProtocol.SetBreakpointsResponse, args: DebugProtocol.SetBreakpointsArguments) {
         console.log(`setBreakPointsRequest ${JSON.stringify(args)}`);
 
-        const bpPath = args.source.path as string;
-        // TODO handle lines?
+        const source = args.source.path as string;
         const bps = args.breakpoints || [];
-        this._breakPoints.set(bpPath, new Array<DebugProtocol.Breakpoint>());
-        bps.forEach((sourceBp) => {
-            if (this._line === 1) {
-                this._line = sourceBp.line;
-            }
-            let bps = this._breakPoints.get(bpPath) || [];
-            const verified = sourceBp.line > 0 && sourceBp.line < this._logLines;
-            bps.push({ line: sourceBp.line, verified: verified });
-        });
-        const breakpoints = this._breakPoints.get(bpPath) || [];
+        const breakpoints = this._logDebugger.setBreakPoint(source, bps);
+
         response.body = {
             breakpoints: breakpoints
         };
@@ -168,18 +156,16 @@ export class DebugSession extends LoggingDebugSession {
         outputChannel.appendLine(`launchRequest ${JSON.stringify(args)}`);
 
         // make sure to 'Stop' the buffered logging if 'trace' is not set
-        logger.setup(args.trace ? Logger.LogLevel.Verbose : Logger.LogLevel.Verbose, false);
+        logger.setup(args.trace ? Logger.LogLevel.Verbose : Logger.LogLevel.Error, false);
 
         this._launchArgs = args;
         this.openLogAndFocus();
-        var execFile = require('child_process').execFileSync;
+        const execFile = require('child_process').execFileSync;
         let stdout = execFile('wc', ['-l', this._launchArgs.log]);
-        this._logLines = +stdout.toString().trim().split(" ")[0] || Number.MAX_VALUE;
+        const logLines = +stdout.toString().trim().split(" ")[0] || Number.MAX_VALUE
+        this._logDebugger.setToLog(this._launchArgs.log, logLines);
 
-        // TODO do we need this?
-        // wait 1 second until configuration has finished (and configurationDoneRequest has been called)
-        // await this._configurationDone.wait(1000);
-        if (this._breakPoints.size === 0) {
+        if (!this._logDebugger.hasBreakpoints()) {
             this.sendEvent(new StoppedEvent('entry', DebugSession._threadID));
         }
         this.sendResponse(response);
@@ -190,15 +176,22 @@ export class DebugSession extends LoggingDebugSession {
         if (editors.length >= 1) {
             this.focusEditor(editors[0]);
         } else {
-            vscode.workspace
-                .openTextDocument(this._launchArgs.log)
+            Promise.resolve(vscode.workspace.openTextDocument(this._launchArgs.log))
                 .then(doc => {
                     return vscode.window.showTextDocument(doc, {
                         viewColumn: vscode.ViewColumn.Beside,
                         preserveFocus: false
                     });
                 })
-                .then(editor => this.focusEditor(editor));
+                .then(editor => {
+                    this.focusEditor(editor);
+                    return editor;
+                })
+                .catch(error => {
+                    const message = `Failed to open log file: ${error.message}`;
+                    outputChannel.appendLine(message);
+                    console.error(message);
+                });
         }
     }
 
@@ -217,8 +210,7 @@ export class DebugSession extends LoggingDebugSession {
     protected continueRequest(response: DebugProtocol.ContinueResponse, args: DebugProtocol.ContinueArguments): void {
         console.log(`continueRequest ${JSON.stringify(args)}`);
 
-        const next = this.findNextLineToStop();
-        this._line = next;
+        this._logDebugger.gotoNextBreakpoint();
         this.sendEvent(new StoppedEvent('breakpoint', DebugSession._threadID));
         this.sendResponse(response);
     }
@@ -226,46 +218,21 @@ export class DebugSession extends LoggingDebugSession {
     protected reverseContinueRequest(response: DebugProtocol.ReverseContinueResponse, args: DebugProtocol.ReverseContinueArguments): void {
         console.log(`reverseContinueRequest ${JSON.stringify(args)}`);
 
-        const next = this.findNextLineToStop(true);
-        this._line = next;
+        this._logDebugger.gotoNextBreakpoint(true);
         this.sendEvent(new StoppedEvent('breakpoint', DebugSession._threadID));
         this.sendResponse(response);
     }
 
-    private findNextLineToStop(reverse = false): number {
-        const bps = this._breakPoints.get(this._launchArgs.log) || [];
-        let bp;
-        if (reverse) {
-            bp = bps.findLast((bp) => {
-                return reverse ?
-                    (bp.line !== undefined && this._line > bp.line) :
-                    (bp.line !== undefined && this._line < bp.line);
-            });
-        } else {
-            bp = bps.find((bp) => {
-                return reverse ?
-                    (bp.line !== undefined && this._line > bp.line) :
-                    (bp.line !== undefined && this._line < bp.line);
-            });
-        }
-
-        if (bp !== undefined && bp.line !== undefined) {
-            return bp.line;
-        } else {
-            return reverse ? 1 : this._logLines;
-        }
-    }
-
     protected nextRequest(response: DebugProtocol.NextResponse, args: DebugProtocol.NextArguments): void {
-        console.log(`nextRequest ${JSON.stringify(args)} line=${this._line}`);
-        this._line = Math.min(this._logLines, this._line + 1);
+        console.log(`nextRequest ${JSON.stringify(args)} line=${this._logDebugger.linenum()}`);
+        this._logDebugger.stepForward()
         this.sendEvent(new StoppedEvent('step', DebugSession._threadID));
         this.sendResponse(response);
     }
 
     protected stepBackRequest(response: DebugProtocol.StepBackResponse, args: DebugProtocol.StepBackArguments): void {
-        console.log(`stepBackRequest ${JSON.stringify(args)} line=${this._line}`);
-        this._line = Math.max(1, this._line - 1);
+        console.log(`stepBackRequest ${JSON.stringify(args)} line=${this._logDebugger.linenum()}`);
+        this._logDebugger.stepBackward();
         this.sendEvent(new StoppedEvent('step', DebugSession._threadID));
         this.sendResponse(response);
     }
@@ -275,7 +242,7 @@ export class DebugSession extends LoggingDebugSession {
 
         const log2srcPath = path.resolve(__dirname, this._binaryPath);
         const execFile = require('child_process').execFileSync;
-        const start = this._line - 1;
+        const start = this._logDebugger.linenum() - 1;
 
         const editors = this.findEditors();
         if (editors.length > 0) {
@@ -292,7 +259,7 @@ export class DebugSession extends LoggingDebugSession {
         }
         outputChannel.appendLine(`args ${l2sArgs.join(" ")}`);
         let stdout = execFile(log2srcPath, l2sArgs);
-        this._mapping = JSON.parse(stdout);
+        this._mapping = JSON.parse(stdout.toString('utf8'));
         outputChannel.appendLine(`mapped ${JSON.stringify(this._mapping)}`);
 
         let index = 0;
@@ -309,11 +276,12 @@ export class DebugSession extends LoggingDebugSession {
     }
 
     private findEditors(): vscode.TextEditor[] {
-        return vscode.window.visibleTextEditors.filter((editor) => editor.document.fileName === this._launchArgs.log);
+        const target = path.resolve(this._launchArgs.log);
+        return vscode.window.visibleTextEditors.filter((editor) => editor.document.fileName === target);
     }
 
     private focusEditor(editor: vscode.TextEditor) {
-        const start = this._line - 1;
+        const start = this._logDebugger.linenum() - 1;
         let range = new vscode.Range(
             new vscode.Position(start, 0),
             new vscode.Position(start, Number.MAX_VALUE)
@@ -367,11 +335,11 @@ export class DebugSession extends LoggingDebugSession {
         const v = this._variableHandles.get(args.variablesReference);
         if (v === 'locals' && this._mapping !== undefined) {
             for (let pair of this._mapping.variables) {
-                    vs.push({
-                        name: pair.expr,
-                        value: pair.value,
-                        variablesReference: 0
-                    });
+                vs.push({
+                    name: pair.expr,
+                    value: pair.value,
+                    variablesReference: 0
+                });
             }
         }
 
