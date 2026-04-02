@@ -10,6 +10,35 @@ type PatchedSession = DebugSession & {
     dispose?: () => void;
 };
 
+interface RequestCapture<R extends DebugProtocol.Response> {
+    response: R | undefined;
+    eventCount: number;
+}
+
+/**
+ * Patches sendResponse and sendEvent on a session, invokes fn, then restores
+ * the originals. Returns the captured response and number of events sent.
+ */
+function captureRequest<R extends DebugProtocol.Response>(
+    session: PatchedSession,
+    fn: () => void
+): RequestCapture<R> {
+    let response: R | undefined;
+    let eventCount = 0;
+
+    const originalSendResponse = session.sendResponse.bind(session);
+    const originalSendEvent = session.sendEvent.bind(session);
+    session.sendResponse = (resp: DebugProtocol.Response) => { response = resp as R; };
+    session.sendEvent = () => { eventCount++; };
+    try {
+        fn();
+    } finally {
+        session.sendResponse = originalSendResponse;
+        session.sendEvent = originalSendEvent;
+    }
+    return { response, eventCount };
+}
+
 function setPlatformArch(platform: NodeJS.Platform | string, arch: string): void {
     Object.defineProperty(process, 'platform', {
         value: platform,
@@ -98,7 +127,6 @@ suite('DebugAdapter Test Suite', () => {
                 adapterID: 'log2src',
                 pathFormat: 'path'
             };
-
             const response: DebugProtocol.InitializeResponse = {
                 request_seq: 1,
                 success: true,
@@ -108,32 +136,17 @@ suite('DebugAdapter Test Suite', () => {
                 body: {}
             };
 
-            let capturedResponse: DebugProtocol.InitializeResponse | undefined;
             const session = debugSession as PatchedSession;
-            const originalSendResponse = session.sendResponse.bind(session);
-            session.sendResponse = (resp: DebugProtocol.Response) => {
-                capturedResponse = resp as DebugProtocol.InitializeResponse;
-            };
+            const { response: captured, eventCount } = captureRequest<DebugProtocol.InitializeResponse>(
+                session,
+                () => (session as any).initializeRequest(response, args)
+            );
 
-            let eventSent = false;
-            const originalSendEvent = session.sendEvent.bind(session);
-            session.sendEvent = () => {
-                eventSent = true;
-            };
-
-            try {
-                (session as any).initializeRequest(response, args);
-
-                assert.ok(capturedResponse, 'Response should be sent');
-                assert.ok(eventSent, 'Event should be sent');
-
-                assert.ok(capturedResponse!.body, 'Response should have body');
-                assert.strictEqual(capturedResponse!.body.supportsStepBack, true);
-                assert.strictEqual(capturedResponse!.body.supportTerminateDebuggee, true);
-            } finally {
-                session.sendResponse = originalSendResponse;
-                session.sendEvent = originalSendEvent;
-            }
+            assert.ok(captured, 'Response should be sent');
+            assert.ok(captured!.body, 'Response should have body');
+            assert.strictEqual(captured!.body.supportsStepBack, true);
+            assert.strictEqual(captured!.body.supportTerminateDebuggee, true);
+            assert.strictEqual(eventCount, 1, 'InitializedEvent should be sent');
         });
     });
 
@@ -146,53 +159,26 @@ suite('DebugAdapter Test Suite', () => {
             const sourcePath = '/test/source/file.log';
             const args: DebugProtocol.SetBreakpointsArguments = {
                 source: { path: sourcePath },
-                breakpoints: [
-                    { line: 10 },
-                    { line: 20 },
-                    { line: 30 }
-                ]
+                breakpoints: [{ line: 10 }, { line: 20 }, { line: 30 }]
             };
-
             const response: DebugProtocol.SetBreakpointsResponse = {
-                request_seq: 1,
-                success: true,
-                command: 'setBreakpoints',
-                seq: 1,
-                type: 'response',
-                body: { breakpoints: [] }
+                request_seq: 1, success: true, command: 'setBreakpoints',
+                seq: 1, type: 'response', body: { breakpoints: [] }
             };
 
-            let capturedResponse: DebugProtocol.SetBreakpointsResponse | undefined;
             const session = debugSession as PatchedSession;
-            const originalSendResponse = session.sendResponse.bind(session);
-            session.sendResponse = (resp: DebugProtocol.Response) => {
-                capturedResponse = resp as DebugProtocol.SetBreakpointsResponse;
-            };
+            const { response: captured, eventCount } = captureRequest<DebugProtocol.SetBreakpointsResponse>(
+                session,
+                () => (session as any).setBreakPointsRequest(response, args)
+            );
 
-            let eventSent = false;
-            const originalSendEvent = session.sendEvent.bind(session);
-            session.sendEvent = () => {
-                eventSent = true;
-            };
-
-            try {
-                (session as any).setBreakPointsRequest(response, args);
-
-                assert.ok(capturedResponse, 'Response should be sent');
-
-                assert.ok(capturedResponse!.body, 'Response should have body');
-                assert.ok(capturedResponse!.body.breakpoints, 'Response should have breakpoints');
-                assert.strictEqual(capturedResponse!.body.breakpoints.length, 3, 'Should have 3 breakpoints');
-
-                capturedResponse!.body.breakpoints.forEach((bp, index) => {
-                    assert.strictEqual(bp.line, args.breakpoints![index].line, `Breakpoint ${index} should have correct line`);
-                });
-
-                assert.ok(eventSent, 'Should send stopped event');
-            } finally {
-                session.sendResponse = originalSendResponse;
-                session.sendEvent = originalSendEvent;
-            }
+            assert.ok(captured, 'Response should be sent');
+            assert.ok(captured!.body.breakpoints, 'Response should have breakpoints');
+            assert.strictEqual(captured!.body.breakpoints.length, 3, 'Should have 3 breakpoints');
+            captured!.body.breakpoints.forEach((bp, index) => {
+                assert.strictEqual(bp.line, args.breakpoints![index].line, `Breakpoint ${index} should have correct line`);
+            });
+            assert.strictEqual(eventCount, 1, 'Should send stopped event');
         });
 
         test('Should handle empty breakpoints array', () => {
@@ -201,42 +187,21 @@ suite('DebugAdapter Test Suite', () => {
                 source: { path: sourcePath },
                 breakpoints: []
             };
-
             const response: DebugProtocol.SetBreakpointsResponse = {
-                request_seq: 1,
-                success: true,
-                command: 'setBreakpoints',
-                seq: 1,
-                type: 'response',
-                body: { breakpoints: [] }
+                request_seq: 1, success: true, command: 'setBreakpoints',
+                seq: 1, type: 'response', body: { breakpoints: [] }
             };
-
-            let capturedResponse: DebugProtocol.SetBreakpointsResponse | undefined;
-            let eventSent = false;
 
             const session = debugSession as PatchedSession;
-            const originalSendResponse = session.sendResponse.bind(session);
-            session.sendResponse = (resp: DebugProtocol.Response) => {
-                capturedResponse = resp as DebugProtocol.SetBreakpointsResponse;
-            };
+            const { response: captured, eventCount } = captureRequest<DebugProtocol.SetBreakpointsResponse>(
+                session,
+                () => (session as any).setBreakPointsRequest(response, args)
+            );
 
-            const originalSendEvent = session.sendEvent.bind(session);
-            session.sendEvent = () => {
-                eventSent = true;
-            };
-
-            try {
-                (session as any).setBreakPointsRequest(response, args);
-
-                assert.ok(capturedResponse, 'Response should be sent');
-                assert.ok(capturedResponse!.body, 'Response should have body');
-                assert.ok(capturedResponse!.body.breakpoints, 'Response should have breakpoints array');
-                assert.strictEqual(capturedResponse!.body.breakpoints.length, 0, 'Should have no breakpoints');
-                assert.strictEqual(eventSent, false, 'Should not send stopped event for empty breakpoints');
-            } finally {
-                session.sendResponse = originalSendResponse;
-                session.sendEvent = originalSendEvent;
-            }
+            assert.ok(captured, 'Response should be sent');
+            assert.strictEqual(captured!.body.breakpoints.length, 0, 'Should have no breakpoints');
+            assert.strictEqual(eventCount, 0, 'Should not send stopped event for empty breakpoints');
+            assert.strictEqual(logDebugger.hasBreakpoints(), false, 'LogDebugger should report no breakpoints');
         });
     });
 });
