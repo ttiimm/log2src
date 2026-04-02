@@ -2,31 +2,49 @@ import * as assert from 'assert';
 import { DebugProtocol } from '@vscode/debugprotocol';
 
 import { DebugSession, BinaryNotFoundError } from '../../debugAdapter';
+import { LogDebugger } from '../../logDebugger';
+
+type PatchedSession = DebugSession & {
+    sendResponse: (response: DebugProtocol.Response) => void;
+    sendEvent: (...args: unknown[]) => void;
+    dispose?: () => void;
+};
+
+function setPlatformArch(platform: NodeJS.Platform | string, arch: string): void {
+    Object.defineProperty(process, 'platform', {
+        value: platform,
+        configurable: true
+    });
+    Object.defineProperty(process, 'arch', {
+        value: arch,
+        configurable: true
+    });
+}
+
+function createSession(logDebugger: LogDebugger): DebugSession {
+    setPlatformArch('darwin', 'arm64');
+    return new DebugSession(logDebugger);
+}
 
 
 suite('DebugAdapter Test Suite', () => {
     let debugSession: DebugSession | undefined;
+    let logDebugger: LogDebugger;
     let originalPlatform: string;
     let originalArch: string;
 
     setup(() => {
         originalPlatform = process.platform;
         originalArch = process.arch;
+        logDebugger = new LogDebugger();
     });
 
     teardown(() => {
-        Object.defineProperty(process, 'platform', {
-            value: originalPlatform,
-            configurable: true
-        });
-        Object.defineProperty(process, 'arch', {
-            value: originalArch,
-            configurable: true
-        });
+        setPlatformArch(originalPlatform, originalArch);
 
         if (debugSession) {
             try {
-                (debugSession as any).dispose?.();
+                (debugSession as PatchedSession).dispose?.();
             } catch (e) {
                 // Ignore
             }
@@ -36,77 +54,41 @@ suite('DebugAdapter Test Suite', () => {
 
     suite('Constructor Tests', () => {
         test('Should create debug session with correct binary path for darwin-arm64', () => {
-            Object.defineProperty(process, 'platform', {
-                value: 'darwin',
-                configurable: true
-            });
-            Object.defineProperty(process, 'arch', {
-                value: 'arm64',
-                configurable: true
-            });
+            setPlatformArch('darwin', 'arm64');
 
-            debugSession = new DebugSession();
+            debugSession = new DebugSession(logDebugger);
 
             assert.ok(debugSession, 'Debug session should be created');
         });
 
         test('Should create debug session with correct binary path for linux-x64', () => {
-            Object.defineProperty(process, 'platform', {
-                value: 'linux',
-                configurable: true
-            });
-            Object.defineProperty(process, 'arch', {
-                value: 'x64',
-                configurable: true
-            });
+            setPlatformArch('linux', 'x64');
 
-            debugSession = new DebugSession();
+            debugSession = new DebugSession(logDebugger);
 
             assert.ok(debugSession, 'Debug session should be created');
         });
 
         test('Should create debug session with correct binary path for win32-x64', () => {
-            Object.defineProperty(process, 'platform', {
-                value: 'win32',
-                configurable: true
-            });
-            Object.defineProperty(process, 'arch', {
-                value: 'x64',
-                configurable: true
-            });
+            setPlatformArch('win32', 'x64');
 
-            debugSession = new DebugSession();
+            debugSession = new DebugSession(logDebugger);
 
             assert.ok(debugSession, 'Debug session should be created');
         });
 
         test('Should throw BinaryNotFoundError for unsupported platform', () => {
-            Object.defineProperty(process, 'platform', {
-                value: 'unsupported',
-                configurable: true
-            });
-            Object.defineProperty(process, 'arch', {
-                value: 'unsupported',
-                configurable: true
-            });
+            setPlatformArch('unsupported', 'unsupported');
 
             assert.throws(() => {
-                new DebugSession();
+                new DebugSession(logDebugger);
             }, BinaryNotFoundError, 'Should throw BinaryNotFoundError for unsupported platform');
         });
     });
 
     suite('Initialize Request Tests', () => {
         setup(() => {
-            Object.defineProperty(process, 'platform', {
-                value: 'darwin',
-                configurable: true
-            });
-            Object.defineProperty(process, 'arch', {
-                value: 'arm64',
-                configurable: true
-            });
-            debugSession = new DebugSession();
+            debugSession = createSession(logDebugger);
         });
 
         test('Should handle initialize request correctly', () => {
@@ -127,19 +109,20 @@ suite('DebugAdapter Test Suite', () => {
             };
 
             let capturedResponse: DebugProtocol.InitializeResponse | undefined;
-            const originalSendResponse = (debugSession as any).sendResponse.bind(debugSession);
-            (debugSession as any).sendResponse = (resp: any) => {
-                capturedResponse = resp;
+            const session = debugSession as PatchedSession;
+            const originalSendResponse = session.sendResponse.bind(session);
+            session.sendResponse = (resp: DebugProtocol.Response) => {
+                capturedResponse = resp as DebugProtocol.InitializeResponse;
             };
 
             let eventSent = false;
-            const originalSendEvent = (debugSession as any).sendEvent.bind(debugSession);
-            (debugSession as any).sendEvent = () => {
+            const originalSendEvent = session.sendEvent.bind(session);
+            session.sendEvent = () => {
                 eventSent = true;
             };
 
             try {
-                (debugSession as any).initializeRequest(response, args);
+                (session as any).initializeRequest(response, args);
 
                 assert.ok(capturedResponse, 'Response should be sent');
                 assert.ok(eventSent, 'Event should be sent');
@@ -148,23 +131,15 @@ suite('DebugAdapter Test Suite', () => {
                 assert.strictEqual(capturedResponse!.body.supportsStepBack, true);
                 assert.strictEqual(capturedResponse!.body.supportTerminateDebuggee, true);
             } finally {
-                (debugSession as any).sendResponse = originalSendResponse;
-                (debugSession as any).sendEvent = originalSendEvent;
+                session.sendResponse = originalSendResponse;
+                session.sendEvent = originalSendEvent;
             }
         });
     });
 
     suite('Breakpoint Tests', () => {
         setup(() => {
-            Object.defineProperty(process, 'platform', {
-                value: 'darwin',
-                configurable: true
-            });
-            Object.defineProperty(process, 'arch', {
-                value: 'arm64',
-                configurable: true
-            });
-            debugSession = new DebugSession();
+            debugSession = createSession(logDebugger);
         });
 
         test('Should set breakpoints correctly', () => {
@@ -188,19 +163,20 @@ suite('DebugAdapter Test Suite', () => {
             };
 
             let capturedResponse: DebugProtocol.SetBreakpointsResponse | undefined;
-            const originalSendResponse = (debugSession as any).sendResponse.bind(debugSession);
-            (debugSession as any).sendResponse = (resp: any) => {
-                capturedResponse = resp;
+            const session = debugSession as PatchedSession;
+            const originalSendResponse = session.sendResponse.bind(session);
+            session.sendResponse = (resp: DebugProtocol.Response) => {
+                capturedResponse = resp as DebugProtocol.SetBreakpointsResponse;
             };
 
             let eventSent = false;
-            const originalSendEvent = (debugSession as any).sendEvent.bind(debugSession);
-            (debugSession as any).sendEvent = () => {
+            const originalSendEvent = session.sendEvent.bind(session);
+            session.sendEvent = () => {
                 eventSent = true;
             };
 
             try {
-                (debugSession as any).setBreakPointsRequest(response, args);
+                (session as any).setBreakPointsRequest(response, args);
 
                 assert.ok(capturedResponse, 'Response should be sent');
 
@@ -214,8 +190,8 @@ suite('DebugAdapter Test Suite', () => {
 
                 assert.ok(eventSent, 'Should send stopped event');
             } finally {
-                (debugSession as any).sendResponse = originalSendResponse;
-                (debugSession as any).sendEvent = originalSendEvent;
+                session.sendResponse = originalSendResponse;
+                session.sendEvent = originalSendEvent;
             }
         });
 
@@ -238,18 +214,19 @@ suite('DebugAdapter Test Suite', () => {
             let capturedResponse: DebugProtocol.SetBreakpointsResponse | undefined;
             let eventSent = false;
 
-            const originalSendResponse = (debugSession as any).sendResponse.bind(debugSession);
-            (debugSession as any).sendResponse = (resp: any) => {
-                capturedResponse = resp;
+            const session = debugSession as PatchedSession;
+            const originalSendResponse = session.sendResponse.bind(session);
+            session.sendResponse = (resp: DebugProtocol.Response) => {
+                capturedResponse = resp as DebugProtocol.SetBreakpointsResponse;
             };
 
-            const originalSendEvent = (debugSession as any).sendEvent.bind(debugSession);
-            (debugSession as any).sendEvent = () => {
+            const originalSendEvent = session.sendEvent.bind(session);
+            session.sendEvent = () => {
                 eventSent = true;
             };
 
             try {
-                (debugSession as any).setBreakPointsRequest(response, args);
+                (session as any).setBreakPointsRequest(response, args);
 
                 assert.ok(capturedResponse, 'Response should be sent');
                 assert.ok(capturedResponse!.body, 'Response should have body');
@@ -257,8 +234,8 @@ suite('DebugAdapter Test Suite', () => {
                 assert.strictEqual(capturedResponse!.body.breakpoints.length, 0, 'Should have no breakpoints');
                 assert.strictEqual(eventSent, false, 'Should not send stopped event for empty breakpoints');
             } finally {
-                (debugSession as any).sendResponse = originalSendResponse;
-                (debugSession as any).sendEvent = originalSendEvent;
+                session.sendResponse = originalSendResponse;
+                session.sendEvent = originalSendEvent;
             }
         });
     });
