@@ -22,14 +22,11 @@ export class LogDebugger {
         this._logLines = logLines;
     }
 
-    setBreakPoint(source: string, breakpoints: DebugProtocol.SourceBreakpoint[]): DebugProtocol.Breakpoint[] {
+    setBreakpoints(source: string, breakpoints: DebugProtocol.SourceBreakpoint[]): DebugProtocol.Breakpoint[] {
         const bps = new Array<DebugProtocol.Breakpoint>();
         const sourcePath = path.resolve(source);
         this._breakPoints.set(sourcePath, bps);
         breakpoints.forEach((breakpoint) => {
-            if (this._line === 1) {
-                this._line = breakpoint.line;
-            }
             const verified = breakpoint.line > 0 && breakpoint.line < this._logLines;
             bps.push({ line: breakpoint.line, verified: verified });
         });
@@ -53,7 +50,7 @@ export class LogDebugger {
         this._line = Math.max(1, this._line - 1);
     }
 
-    gotoNextBreakpoint(reverse = false): void {
+    gotoBreakpoint(reverse = false): void {
         this._line = this.findNextLineToStop(reverse);
     }
 

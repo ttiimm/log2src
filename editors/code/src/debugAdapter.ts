@@ -135,7 +135,7 @@ export class DebugSession extends LoggingDebugSession {
 
         const source = args.source.path as string;
         const bps = args.breakpoints || [];
-        const breakpoints = this._logDebugger.setBreakPoint(source, bps);
+        const breakpoints = this._logDebugger.setBreakpoints(source, bps);
 
         response.body = {
             breakpoints: breakpoints
@@ -210,7 +210,7 @@ export class DebugSession extends LoggingDebugSession {
     protected continueRequest(response: DebugProtocol.ContinueResponse, args: DebugProtocol.ContinueArguments): void {
         console.log(`continueRequest ${JSON.stringify(args)}`);
 
-        this._logDebugger.gotoNextBreakpoint();
+        this._logDebugger.gotoBreakpoint();
         this.sendEvent(new StoppedEvent('breakpoint', DebugSession._threadID));
         this.sendResponse(response);
     }
@@ -218,7 +218,7 @@ export class DebugSession extends LoggingDebugSession {
     protected reverseContinueRequest(response: DebugProtocol.ReverseContinueResponse, args: DebugProtocol.ReverseContinueArguments): void {
         console.log(`reverseContinueRequest ${JSON.stringify(args)}`);
 
-        this._logDebugger.gotoNextBreakpoint(true);
+        this._logDebugger.gotoBreakpoint(true);
         this.sendEvent(new StoppedEvent('breakpoint', DebugSession._threadID));
         this.sendResponse(response);
     }
