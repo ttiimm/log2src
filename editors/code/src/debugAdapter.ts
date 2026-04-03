@@ -11,11 +11,95 @@ import {
     Handles,
 } from '@vscode/debugadapter';
 import { DebugProtocol } from '@vscode/debugprotocol';
+import { execFileSync as nodeExecFileSync } from 'child_process';
+import * as fs from 'fs';
 import * as vscode from 'vscode';
 import * as path from 'path';
 
 import { outputChannel } from './extension';
 import { LogDebugger } from './logDebugger';
+
+export interface ProcessRunner {
+    execFileSync(file: string, args: string[]): Buffer;
+    readFile(path: string): Buffer;
+}
+
+const defaultProcessRunner: ProcessRunner = {
+    execFileSync: (file: string, args: string[]): Buffer =>
+        nodeExecFileSync(file, args) as Buffer,
+    readFile: (path: string): Buffer =>
+        fs.readFileSync(path)
+};
+
+export interface EditorEffects {
+    openAndFocus(log: string, line: number): void;
+    highlightLine(log: string, line: number): void;
+    clearHighlights(): void;
+}
+
+class DefaultEditorEffects implements EditorEffects {
+    private readonly _highlightDecoration: vscode.TextEditorDecorationType;
+
+    constructor() {
+        const focusColor = new vscode.ThemeColor('editor.focusedStackFrameHighlightBackground');
+        this._highlightDecoration = vscode.window.createTextEditorDecorationType({
+            backgroundColor: focusColor
+        });
+    }
+
+    public openAndFocus(log: string, line: number): void {
+        const editors = this.findEditors(log);
+        if (editors.length >= 1) {
+            this.focusEditor(editors[0], line);
+        } else {
+            Promise.resolve(vscode.workspace.openTextDocument(log))
+                .then(doc => {
+                    return vscode.window.showTextDocument(doc, {
+                        viewColumn: vscode.ViewColumn.Beside,
+                        preserveFocus: false
+                    });
+                })
+                .then(editor => {
+                    this.focusEditor(editor, line);
+                    return editor;
+                })
+                .catch(error => {
+                    const message = `Failed to open log file: ${error.message}`;
+                    outputChannel.appendLine(message);
+                    console.error(message);
+                });
+        }
+    }
+
+    public highlightLine(log: string, line: number): void {
+        const editor = this.findEditors(log);
+        if (editor.length > 0) {
+            this.focusEditor(editor[0], line);
+        }
+    }
+
+    public clearHighlights(): void {
+        vscode.window.visibleTextEditors.forEach((editor) => editor.setDecorations(this._highlightDecoration, []));
+    }
+
+    private findEditors(log: string): vscode.TextEditor[] {
+        const target = path.resolve(log);
+        return vscode.window.visibleTextEditors.filter((editor) => path.resolve(editor.document.fileName) === target);
+    }
+
+    private focusEditor(editor: vscode.TextEditor, line: number): void {
+        const start = Math.max(0, line - 1);
+        let range = new vscode.Range(
+            new vscode.Position(start, 0),
+            new vscode.Position(start, Number.MAX_VALUE)
+        );
+        editor.setDecorations(this._highlightDecoration, [range]);
+        editor.revealRange(
+            range,
+            vscode.TextEditorRevealType.InCenter
+        );
+    }
+}
 
 interface CallSite {
     name: string,
@@ -77,20 +161,29 @@ export class BinaryNotFoundError extends Error {
 
 export class DebugSession extends LoggingDebugSession {
 
-    private static _threadID = 1;
+    // prefer constant to be all caps
+    // eslint-disable-next-line 
+    private static readonly NEWLINE = '\n'.charCodeAt(0);
+
+    private static readonly _threadID = 1;
     private _binaryPath: string;
     private readonly _variableHandles = new Handles<'locals'>();
     private _launchArgs: ILaunchRequestArguments = { source: "", log: "", log_format: "" };
-    private readonly _highlightDecoration: vscode.TextEditorDecorationType;
     private _mapping?: LogMapping = undefined;
     private readonly _logDebugger: LogDebugger;
+    private readonly _processRunner: ProcessRunner;
+    private readonly _editorEffects: EditorEffects;
 
     /**
      * Create a new debug adapter to use with a debug session.
      */
-    public constructor(logDebugger: LogDebugger) {
+    public constructor(
+        logDebugger: LogDebugger,
+        processRunner: ProcessRunner = defaultProcessRunner,
+        editorEffects: EditorEffects = new DefaultEditorEffects()
+    ) {
         super("log2src-dap.txt");
-
+        this._editorEffects = editorEffects;
         this._binaryPath = PLATFORM_TO_BINARY.get(`${process.platform}-${process.arch}`)!;
 
         if (!this._binaryPath) {
@@ -100,17 +193,15 @@ export class DebugSession extends LoggingDebugSession {
         }
 
         this._logDebugger = logDebugger;
+        this._processRunner = processRunner;
         this.setDebuggerLinesStartAt1(true);
         this.setDebuggerColumnsStartAt1(true);
-
-        const focusColor = new vscode.ThemeColor('editor.focusedStackFrameHighlightBackground');
-        this._highlightDecoration = vscode.window.createTextEditorDecorationType({ "backgroundColor": focusColor });
         outputChannel.appendLine("Starting up...");
     }
 
     protected disconnectRequest(response: DebugProtocol.DisconnectResponse, args: DebugProtocol.DisconnectArguments, request?: DebugProtocol.Request): void {
         console.log(`disconnectRequest suspend: ${args.suspendDebuggee}, terminate: ${args.terminateDebuggee}`);
-        vscode.window.visibleTextEditors.forEach((editor) => editor.setDecorations(this._highlightDecoration, []));
+        this._editorEffects.clearHighlights();
         this.sendResponse(response);
     }
 
@@ -133,7 +224,12 @@ export class DebugSession extends LoggingDebugSession {
     protected setBreakPointsRequest(response: DebugProtocol.SetBreakpointsResponse, args: DebugProtocol.SetBreakpointsArguments) {
         console.log(`setBreakPointsRequest ${JSON.stringify(args)}`);
 
-        const source = args.source.path as string;
+        const source = args.source.path;
+        if (!source) {
+            response.body = { breakpoints: [] };
+            this.sendResponse(response);
+            return;
+        }
         const bps = args.breakpoints || [];
         const breakpoints = this._logDebugger.setBreakpoints(source, bps);
 
@@ -159,40 +255,16 @@ export class DebugSession extends LoggingDebugSession {
         logger.setup(args.trace ? Logger.LogLevel.Verbose : Logger.LogLevel.Error, false);
 
         this._launchArgs = args;
-        this.openLogAndFocus();
-        const execFile = require('child_process').execFileSync;
-        let stdout = execFile('wc', ['-l', this._launchArgs.log]);
-        const logLines = +stdout.toString().trim().split(" ")[0] || Number.MAX_VALUE
-        this._logDebugger.setToLog(this._launchArgs.log, logLines);
+        const log = this._launchArgs.log;
+        const logContent = this._processRunner.readFile(log);
+        const logLines = logContent.reduce((count, byte) => byte === DebugSession.NEWLINE ? count + 1 : count, 0) || Number.MAX_VALUE;
+        this._logDebugger.setToLog(log, logLines);
+        this._editorEffects.openAndFocus(log, this._logDebugger.linenum());
 
         if (!this._logDebugger.hasBreakpoints()) {
             this.sendEvent(new StoppedEvent('entry', DebugSession._threadID));
         }
         this.sendResponse(response);
-    }
-
-    private openLogAndFocus() {
-        const editors = this.findEditors();
-        if (editors.length >= 1) {
-            this.focusEditor(editors[0]);
-        } else {
-            Promise.resolve(vscode.workspace.openTextDocument(this._launchArgs.log))
-                .then(doc => {
-                    return vscode.window.showTextDocument(doc, {
-                        viewColumn: vscode.ViewColumn.Beside,
-                        preserveFocus: false
-                    });
-                })
-                .then(editor => {
-                    this.focusEditor(editor);
-                    return editor;
-                })
-                .catch(error => {
-                    const message = `Failed to open log file: ${error.message}`;
-                    outputChannel.appendLine(message);
-                    console.error(message);
-                });
-        }
     }
 
     protected threadsRequest(response: DebugProtocol.ThreadsResponse): void {
@@ -241,24 +313,20 @@ export class DebugSession extends LoggingDebugSession {
         console.log(`stackTraceRequest ${JSON.stringify(args)}`);
 
         const log2srcPath = path.resolve(__dirname, this._binaryPath);
-        const execFile = require('child_process').execFileSync;
         const start = this._logDebugger.linenum() - 1;
 
-        const editors = this.findEditors();
-        if (editors.length > 0) {
-            this.focusEditor(editors[0]);
-        }
+        this._editorEffects.openAndFocus(this._launchArgs.log, this._logDebugger.linenum());
 
-        let l2sArgs = ['-d', this._launchArgs.source,
+        const l2sArgs: string[] = ['-d', this._launchArgs.source,
             '--log', this._launchArgs.log,
-            '--start', start,
-            '--count', 1]
+            '--start', String(start),
+            '--count', '1'];
         if (this._launchArgs.log_format !== undefined && this._launchArgs.log_format !== "") {
             l2sArgs.push("-f");
             l2sArgs.push(this._launchArgs.log_format);
         }
         outputChannel.appendLine(`args ${l2sArgs.join(" ")}`);
-        let stdout = execFile(log2srcPath, l2sArgs);
+        const stdout = this._processRunner.execFileSync(log2srcPath, l2sArgs);
         this._mapping = JSON.parse(stdout.toString('utf8'));
         outputChannel.appendLine(`mapped ${JSON.stringify(this._mapping)}`);
 
@@ -273,24 +341,6 @@ export class DebugSession extends LoggingDebugSession {
         };
 
         this.sendResponse(response);
-    }
-
-    private findEditors(): vscode.TextEditor[] {
-        const target = path.resolve(this._launchArgs.log);
-        return vscode.window.visibleTextEditors.filter((editor) => editor.document.fileName === target);
-    }
-
-    private focusEditor(editor: vscode.TextEditor) {
-        const start = this._logDebugger.linenum() - 1;
-        let range = new vscode.Range(
-            new vscode.Position(start, 0),
-            new vscode.Position(start, Number.MAX_VALUE)
-        );
-        editor.setDecorations(this._highlightDecoration, [range]);
-        editor.revealRange(
-            range,
-            vscode.TextEditorRevealType.InCenter
-        );
     }
 
     private buildStackFrame(index: number, srcRef?: SourceRef): StackFrame {

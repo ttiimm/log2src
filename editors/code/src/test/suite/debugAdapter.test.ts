@@ -1,7 +1,13 @@
 import * as assert from 'assert';
 import { DebugProtocol } from '@vscode/debugprotocol';
 
-import { DebugSession, BinaryNotFoundError } from '../../debugAdapter';
+import {
+    BinaryNotFoundError,
+    DebugSession,
+    EditorEffects,
+    ILaunchRequestArguments,
+    ProcessRunner
+} from '../../debugAdapter';
 import { LogDebugger } from '../../logDebugger';
 
 type PatchedSession = DebugSession & {
@@ -50,9 +56,22 @@ function setPlatformArch(platform: NodeJS.Platform | string, arch: string): void
     });
 }
 
-function createSession(logDebugger: LogDebugger): DebugSession {
+function createSession(
+    logDebugger: LogDebugger,
+    processRunner?: ProcessRunner,
+    editorEffects?: EditorEffects
+): DebugSession {
     setPlatformArch('darwin', 'arm64');
-    return new DebugSession(logDebugger);
+    const runner = processRunner ?? {
+        execFileSync: (_file: string, _args: string[]): Buffer => Buffer.alloc(0),
+        readFile: (_path: string): Buffer => Buffer.alloc(0)
+    };
+    const effects = editorEffects ?? {
+        openAndFocus: (_log: string, _line: number): void => { },
+        highlightLine: (_log: string, _line: number): void => { },
+        clearHighlights: (): void => { }
+    };
+    return new DebugSession(logDebugger, runner, effects);
 }
 
 
@@ -202,6 +221,58 @@ suite('DebugAdapter Test Suite', () => {
             assert.strictEqual(captured!.body.breakpoints.length, 0, 'Should have no breakpoints');
             assert.strictEqual(eventCount, 0, 'Should not send stopped event for empty breakpoints');
             assert.strictEqual(logDebugger.hasBreakpoints(), false, 'LogDebugger should report no breakpoints');
+        });
+    });
+
+    suite('Launch Request Tests', () => {
+        test('Launch request should set log state and send entry event', () => {
+            const logPath = '/test/source/file.log';
+            const args: ILaunchRequestArguments = {
+                source: '/test/source/file.rs',
+                log: logPath,
+                log_format: '',
+                trace: false,
+                noDebug: false
+            };
+
+            const response: DebugProtocol.LaunchResponse = {
+                request_seq: 1,
+                success: true,
+                command: 'launch',
+                seq: 1,
+                type: 'response'
+            };
+
+            const processRunner: ProcessRunner = {
+                execFileSync: (_file: string, _args: string[]): Buffer => Buffer.alloc(0),
+                readFile: (_path: string): Buffer => Buffer.from('line1\nline2\n')
+            };
+
+            let openAndFocusCalled = 0;
+            let focusedLog: string | undefined;
+            let focusedLine: number | undefined;
+            const editorEffects: EditorEffects = {
+                openAndFocus: (log: string, line: number): void => {
+                    openAndFocusCalled++;
+                    focusedLog = log;
+                    focusedLine = line;
+                },
+                highlightLine: (_log: string, _line: number): void => { },
+                clearHighlights: (): void => { }
+            };
+
+            debugSession = createSession(logDebugger, processRunner, editorEffects);
+            const session = debugSession as PatchedSession;
+            const { response: captured, eventCount } = captureRequest<DebugProtocol.LaunchResponse>(
+                session,
+                () => (session as any).launchRequest(response, args)
+            );
+
+            assert.ok(captured, 'Launch response should be sent');
+            assert.strictEqual(eventCount, 1, 'Should send entry stopped event when no breakpoints are set');
+            assert.strictEqual(openAndFocusCalled, 1, 'Should open and focus log once');
+            assert.strictEqual(focusedLog, logPath, 'Should focus the launched log file');
+            assert.strictEqual(focusedLine, logDebugger.linenum(), 'Should focus current debugger line');
         });
     });
 });
