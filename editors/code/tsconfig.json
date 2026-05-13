@@ -6,6 +6,7 @@
 		"lib": [
 			"ES2023"
 		],
+		"types": ["node", "mocha", "vscode"],
 		"sourceMap": true,
 		"rootDir": "src",
 		"strict": true   /* enable all strict type-checking options */
