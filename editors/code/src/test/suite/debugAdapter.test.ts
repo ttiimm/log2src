@@ -225,9 +225,18 @@ suite('DebugAdapter Test Suite', () => {
     });
 
     suite('Launch Request Tests', () => {
-        test('Launch request should set log state and send entry event', () => {
-            const logPath = '/test/source/file.log';
-            const args: ILaunchRequestArguments = {
+        let logPath: string;
+        let args: ILaunchRequestArguments;
+        let response: DebugProtocol.LaunchResponse;
+        let processRunner: ProcessRunner;
+        let openAndFocusCalled: number;
+        let focusedLog: string | undefined;
+        let focusedLine: number | undefined;
+        let editorEffects: EditorEffects;
+
+        setup(() => {
+            logPath = '/test/source/file.log';
+            args = {
                 source: '/test/source/file.rs',
                 log: logPath,
                 log_format: '',
@@ -235,7 +244,7 @@ suite('DebugAdapter Test Suite', () => {
                 noDebug: false
             };
 
-            const response: DebugProtocol.LaunchResponse = {
+            response = {
                 request_seq: 1,
                 success: true,
                 command: 'launch',
@@ -243,15 +252,13 @@ suite('DebugAdapter Test Suite', () => {
                 type: 'response'
             };
 
-            const processRunner: ProcessRunner = {
+            processRunner = {
                 execFileSync: (_file: string, _args: string[]): Buffer => Buffer.alloc(0),
                 readFile: (_path: string): Buffer => Buffer.from('line1\nline2\n')
             };
 
-            let openAndFocusCalled = 0;
-            let focusedLog: string | undefined;
-            let focusedLine: number | undefined;
-            const editorEffects: EditorEffects = {
+            openAndFocusCalled = 0;
+            editorEffects = {
                 openAndFocus: (log: string, line: number): void => {
                     openAndFocusCalled++;
                     focusedLog = log;
@@ -260,7 +267,9 @@ suite('DebugAdapter Test Suite', () => {
                 highlightLine: (_log: string, _line: number): void => { },
                 clearHighlights: (): void => { }
             };
+        });
 
+        test('sends entry event when no breakpoints', () => {
             debugSession = createSession(logDebugger, processRunner, editorEffects);
             const session = debugSession as PatchedSession;
             const { response: captured, eventCount } = captureRequest<DebugProtocol.LaunchResponse>(
@@ -270,6 +279,23 @@ suite('DebugAdapter Test Suite', () => {
 
             assert.ok(captured, 'Launch response should be sent');
             assert.strictEqual(eventCount, 1, 'Should send entry stopped event when no breakpoints are set');
+            assert.strictEqual(openAndFocusCalled, 1, 'Should open and focus log once');
+            assert.strictEqual(focusedLog, logPath, 'Should focus the launched log file');
+            assert.strictEqual(focusedLine, logDebugger.linenum(), 'Should focus current debugger line');
+        });
+
+        test('does not send entry event when breakpoint', () => {
+            logDebugger.setBreakpoints(logPath, [{ line: 1 }]);
+
+            debugSession = createSession(logDebugger, processRunner, editorEffects);
+            const session = debugSession as PatchedSession;
+            const { response: captured, eventCount } = captureRequest<DebugProtocol.LaunchResponse>(
+                session,
+                () => (session as any).launchRequest(response, args)
+            );
+
+            assert.ok(captured, 'Launch response should be sent');
+            assert.strictEqual(eventCount, 0, 'Should not send entry stopped event when no breakpoints are set');
             assert.strictEqual(openAndFocusCalled, 1, 'Should open and focus log once');
             assert.strictEqual(focusedLog, logPath, 'Should focus the launched log file');
             assert.strictEqual(focusedLine, logDebugger.linenum(), 'Should focus current debugger line');
