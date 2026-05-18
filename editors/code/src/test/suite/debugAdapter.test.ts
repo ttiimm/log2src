@@ -301,4 +301,63 @@ suite('DebugAdapter Test Suite', () => {
             assert.strictEqual(focusedLine, logDebugger.linenum(), 'Should focus current debugger line');
         });
     });
+
+    suite('Continue/Stepping Request Tests', () => {
+        setup(() => {
+            const logPath = "path-to-log";
+            debugSession = createSession(logDebugger);
+            logDebugger.setToLog(logPath, 5);
+            logDebugger.setBreakpoints(logPath, [{line: 1}, {line: 3}]);
+        });
+
+        test('continue moves to next breakpoint', () => {
+            const session = debugSession as PatchedSession;
+            const { response: captured, eventCount } = captureRequest(
+                session,
+                () => (session as any).continueRequest({body: undefined}, {threadId: 1})
+            );
+
+            assert.ok(captured);
+            assert.strictEqual(eventCount, 1);
+            assert.strictEqual(logDebugger.linenum(), 3);
+        });
+
+        test('reverse continue moves to previous breakpoint', () => {
+            logDebugger.gotoBreakpoint();
+            const session = debugSession as PatchedSession;
+            const { response: captured, eventCount } = captureRequest(
+                session,
+                () => (session as any).reverseContinueRequest({body: undefined}, {threadId: 1})
+            );
+
+            assert.ok(captured);
+            assert.strictEqual(eventCount, 1);
+            assert.strictEqual(logDebugger.linenum(), 1);
+        });
+
+        test('next request moves to next line', () => {
+            const session = debugSession as PatchedSession;
+            const { response: captured, eventCount } = captureRequest(
+                session,
+                () => (session as any).nextRequest({body: undefined}, {threadId: 1})
+            );
+
+            assert.ok(captured);
+            assert.strictEqual(eventCount, 1);
+            assert.strictEqual(logDebugger.linenum(), 2);
+        });
+
+        test('step back request moves to previous line', () => {
+            logDebugger.gotoBreakpoint();
+            const session = debugSession as PatchedSession;
+            const { response: captured, eventCount } = captureRequest(
+                session,
+                () => (session as any).stepBackRequest({body: undefined}, {threadId: 1})
+            );
+
+            assert.ok(captured);
+            assert.strictEqual(eventCount, 1);
+            assert.strictEqual(logDebugger.linenum(), 2);
+        });
+    });
 });

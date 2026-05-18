@@ -281,7 +281,6 @@ export class DebugSession extends LoggingDebugSession {
 
     protected continueRequest(response: DebugProtocol.ContinueResponse, args: DebugProtocol.ContinueArguments): void {
         console.log(`continueRequest ${JSON.stringify(args)}`);
-
         this._logDebugger.gotoBreakpoint();
         this.sendEvent(new StoppedEvent('breakpoint', DebugSession._threadID));
         this.sendResponse(response);
@@ -289,7 +288,6 @@ export class DebugSession extends LoggingDebugSession {
 
     protected reverseContinueRequest(response: DebugProtocol.ReverseContinueResponse, args: DebugProtocol.ReverseContinueArguments): void {
         console.log(`reverseContinueRequest ${JSON.stringify(args)}`);
-
         this._logDebugger.gotoBreakpoint(true);
         this.sendEvent(new StoppedEvent('breakpoint', DebugSession._threadID));
         this.sendResponse(response);
