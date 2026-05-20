@@ -118,15 +118,19 @@
     "pretest": "pnpm run compile && pnpm run lint",
     "pretest:ci": "pnpm run pretest",
     "lint": "eslint src --ext ts",
-    "test": "node ./out/test/runTest.js",
-    "test:ci": "xvfb-run -a node ./out/test/runTest.js",
+    "test:unit": "mocha --ui tdd ./out/test/unit/**/*.test.js",
+    "test:unit:grep": "mocha --ui tdd ./out/test/unit/**/*.test.js --grep \"$GREP\"",
+    "test:ui": "node ./out/test/runTest.js",
+    "test:ui:ci": "xvfb-run -a node ./out/test/runTest.js",
+    "test": "pnpm run test:unit && pnpm run test:ui",
+    "test:ci": "pnpm run test:unit && pnpm run test:ui:ci",
     "vscode:prepublish": "pnpm run esbuild-base --minify",
     "esbuild-base": "esbuild ./src/extension.ts ./src/debugAdapter.ts --bundle --outdir=out --external:vscode --format=cjs --platform=node",
     "esbuild": "pnpm run esbuild-base --sourcemap",
     "esbuild-watch": "pnpm run esbuild-base --sourcemap --watch"
   },
   "devDependencies": {
-    "@types/mocha": "^10.0.2",
+    "@types/mocha": "^10.0.10",
     "@types/node": "22.14.1",
     "@types/vscode": "^1.83.0",
     "@typescript-eslint/eslint-plugin": "^8.30.1",
@@ -137,7 +141,7 @@
     "esbuild": "^0.25.4",
     "eslint": "^9.24.0",
     "glob": "^11.0.2",
-    "mocha": "^10.2.0",
+    "mocha": "^11.7.5",
     "typescript": "5.8.3"
   },
   "dependencies": {

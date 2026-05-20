@@ -13,10 +13,8 @@ import {
 import { DebugProtocol } from '@vscode/debugprotocol';
 import { execFileSync as nodeExecFileSync } from 'child_process';
 import * as fs from 'fs';
-import * as vscode from 'vscode';
 import * as path from 'path';
 
-import { outputChannel } from './extension';
 import { LogDebugger } from './logDebugger';
 
 export interface ProcessRunner {
@@ -37,69 +35,19 @@ export interface EditorEffects {
     clearHighlights(): void;
 }
 
-class DefaultEditorEffects implements EditorEffects {
-    private readonly _highlightDecoration: vscode.TextEditorDecorationType;
+const noopEditorEffects: EditorEffects = {
+    openAndFocus: () => {},
+    highlightLine: () => {},
+    clearHighlights: () => {}
+};
 
-    constructor() {
-        const focusColor = new vscode.ThemeColor('editor.focusedStackFrameHighlightBackground');
-        this._highlightDecoration = vscode.window.createTextEditorDecorationType({
-            backgroundColor: focusColor
-        });
-    }
-
-    public openAndFocus(log: string, line: number): void {
-        const editors = this.findEditors(log);
-        if (editors.length >= 1) {
-            this.focusEditor(editors[0], line);
-        } else {
-            Promise.resolve(vscode.workspace.openTextDocument(log))
-                .then(doc => {
-                    return vscode.window.showTextDocument(doc, {
-                        viewColumn: vscode.ViewColumn.Beside,
-                        preserveFocus: false
-                    });
-                })
-                .then(editor => {
-                    this.focusEditor(editor, line);
-                    return editor;
-                })
-                .catch(error => {
-                    const message = `Failed to open log file: ${error.message}`;
-                    outputChannel.appendLine(message);
-                    console.error(message);
-                });
-        }
-    }
-
-    public highlightLine(log: string, line: number): void {
-        const editor = this.findEditors(log);
-        if (editor.length > 0) {
-            this.focusEditor(editor[0], line);
-        }
-    }
-
-    public clearHighlights(): void {
-        vscode.window.visibleTextEditors.forEach((editor) => editor.setDecorations(this._highlightDecoration, []));
-    }
-
-    private findEditors(log: string): vscode.TextEditor[] {
-        const target = path.resolve(log);
-        return vscode.window.visibleTextEditors.filter((editor) => path.resolve(editor.document.fileName) === target);
-    }
-
-    private focusEditor(editor: vscode.TextEditor, line: number): void {
-        const start = Math.max(0, line - 1);
-        let range = new vscode.Range(
-            new vscode.Position(start, 0),
-            new vscode.Position(start, Number.MAX_VALUE)
-        );
-        editor.setDecorations(this._highlightDecoration, [range]);
-        editor.revealRange(
-            range,
-            vscode.TextEditorRevealType.InCenter
-        );
-    }
+export interface OutputSink {
+    appendLine(message: string): void;
 }
+
+const noopOutput: OutputSink = {
+    appendLine: () => {}
+};
 
 interface CallSite {
     name: string,
@@ -173,14 +121,16 @@ export class DebugSession extends LoggingDebugSession {
     private readonly _logDebugger: LogDebugger;
     private readonly _processRunner: ProcessRunner;
     private readonly _editorEffects: EditorEffects;
+    private readonly _output: OutputSink;
 
     /**
      * Create a new debug adapter to use with a debug session.
      */
     public constructor(
         logDebugger: LogDebugger,
+        editorEffects: EditorEffects = noopEditorEffects,
+        outputSink: OutputSink = noopOutput,
         processRunner: ProcessRunner = defaultProcessRunner,
-        editorEffects: EditorEffects = new DefaultEditorEffects()
     ) {
         super("log2src-dap.txt");
         this._editorEffects = editorEffects;
@@ -193,10 +143,11 @@ export class DebugSession extends LoggingDebugSession {
         }
 
         this._logDebugger = logDebugger;
+        this._output = outputSink;
         this._processRunner = processRunner;
         this.setDebuggerLinesStartAt1(true);
         this.setDebuggerColumnsStartAt1(true);
-        outputChannel.appendLine("Starting up...");
+        this._output.appendLine("Starting up...");
     }
 
     protected disconnectRequest(response: DebugProtocol.DisconnectResponse, args: DebugProtocol.DisconnectArguments, request?: DebugProtocol.Request): void {
@@ -249,22 +200,25 @@ export class DebugSession extends LoggingDebugSession {
     }
 
     protected launchRequest(response: DebugProtocol.LaunchResponse, args: ILaunchRequestArguments) {
-        outputChannel.appendLine(`launchRequest ${JSON.stringify(args)}`);
+        this._output.appendLine(`launchRequest ${JSON.stringify(args)}`);
 
         // make sure to 'Stop' the buffered logging if 'trace' is not set
         logger.setup(args.trace ? Logger.LogLevel.Verbose : Logger.LogLevel.Error, false);
+        this.primeLaunchState(args);
 
+        if (!this._logDebugger.hasBreakpoints()) {
+            this.sendEvent(new StoppedEvent('entry', DebugSession._threadID));
+        }
+        this.sendResponse(response);
+    }
+
+    protected primeLaunchState(args: ILaunchRequestArguments): void {
         this._launchArgs = args;
         const log = this._launchArgs.log;
         const logContent = this._processRunner.readFile(log);
         const logLines = logContent.reduce((count, byte) => byte === DebugSession.NEWLINE ? count + 1 : count, 0) || Number.MAX_VALUE;
         this._logDebugger.setToLog(log, logLines);
         this._editorEffects.openAndFocus(log, this._logDebugger.linenum());
-
-        if (!this._logDebugger.hasBreakpoints()) {
-            this.sendEvent(new StoppedEvent('entry', DebugSession._threadID));
-        }
-        this.sendResponse(response);
     }
 
     protected threadsRequest(response: DebugProtocol.ThreadsResponse): void {
@@ -323,10 +277,10 @@ export class DebugSession extends LoggingDebugSession {
             l2sArgs.push("-f");
             l2sArgs.push(this._launchArgs.log_format);
         }
-        outputChannel.appendLine(`args ${l2sArgs.join(" ")}`);
+        this._output.appendLine(`args ${l2sArgs.join(" ")}`);
         const stdout = this._processRunner.execFileSync(log2srcPath, l2sArgs);
         this._mapping = JSON.parse(stdout.toString('utf8'));
-        outputChannel.appendLine(`mapped ${JSON.stringify(this._mapping)}`);
+        this._output.appendLine(`mapped ${JSON.stringify(this._mapping)}`);
 
         let index = 0;
         const currentFrame = this.buildStackFrame(index++, this._mapping?.srcRef);

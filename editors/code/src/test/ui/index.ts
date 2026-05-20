@@ -1,5 +1,5 @@
 import * as path from 'path';
-import * as Mocha from 'mocha';
+import Mocha = require('mocha');
 import * as glob from 'glob';
 
 export function run(): Promise<void> {
@@ -7,6 +7,11 @@ export function run(): Promise<void> {
         ui: 'tdd',
         color: true
     });
+
+    const grepPattern = process.env.GREP;
+    if (grepPattern) {
+        mocha.grep(grepPattern);
+    }
 
     const testsRoot = path.resolve(__dirname, '..');
 
@@ -23,7 +28,7 @@ export function run(): Promise<void> {
         testFileStream.on("end", () => {
             try {
                 // Run the mocha test
-                mocha.run(failures => {
+                mocha.run((failures: number) => {
                     if (failures > 0) {
                         e(new Error(`${failures} tests failed.`));
                     } else {

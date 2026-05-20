@@ -6,6 +6,7 @@ import {
     DebugSession,
     EditorEffects,
     ILaunchRequestArguments,
+    OutputSink,
     ProcessRunner
 } from '../../debugAdapter';
 import { LogDebugger } from '../../logDebugger';
@@ -62,16 +63,19 @@ function createSession(
     editorEffects?: EditorEffects
 ): DebugSession {
     setPlatformArch('darwin', 'arm64');
-    const runner = processRunner ?? {
-        execFileSync: (_file: string, _args: string[]): Buffer => Buffer.alloc(0),
-        readFile: (_path: string): Buffer => Buffer.alloc(0)
-    };
     const effects = editorEffects ?? {
         openAndFocus: (_log: string, _line: number): void => { },
         highlightLine: (_log: string, _line: number): void => { },
         clearHighlights: (): void => { }
     };
-    return new DebugSession(logDebugger, runner, effects);
+    const runner = processRunner ?? {
+        execFileSync: (_file: string, _args: string[]): Buffer => Buffer.alloc(0),
+        readFile: (_path: string): Buffer => Buffer.alloc(0)
+    };
+    const output: OutputSink = {
+        appendLine: (message: string): void => console.log(message)
+    }
+    return new DebugSession(logDebugger, effects, output, runner);
 }
 
 
@@ -358,6 +362,114 @@ suite('DebugAdapter Test Suite', () => {
             assert.ok(captured);
             assert.strictEqual(eventCount, 1);
             assert.strictEqual(logDebugger.linenum(), 2);
+        });
+    });
+
+    suite('Stack Trace Request Tests', () => {
+        let logPath: string;
+        let launchArgs: ILaunchRequestArguments;
+        let args: DebugProtocol.StackTraceArguments;
+        let response: DebugProtocol.StackTraceResponse;
+        let processRunner: ProcessRunner;
+        let openAndFocusCalled: number;
+        let focusedLog: string | undefined;
+        let focusedLine: number | undefined;
+        let editorEffects: EditorEffects;
+
+        setup(() => {
+            logPath = '/test/source/file.log';
+            args = {
+                threadId: 1
+            };
+
+            response = {
+                request_seq: 2,
+                success: true,
+                command: 'stackTrace',
+                seq: 2,
+                type: 'response',
+                body: {
+                    stackFrames: [],
+                    totalFrames: 0
+                }
+            };
+
+            processRunner = {
+                execFileSync: (_file: string, _args: string[]): Buffer => Buffer.from(
+`
+{
+    "logRef": {},
+    "srcRef": {
+        "sourcePath": "l2s-example/examples/basic.rs",
+        "language": "Rust",
+        "lineNumber": 13,
+        "endLineNumber": 13,
+        "column": 11,
+        "name": "foo",
+        "text": "\\"Hello from foo i={}\\"",
+        "quality": 14,
+        "pattern": "(?s)^Hello from foo i=(.+)$",
+        "args": ["Placeholder"],
+        "vars": ["i"]
+    },
+    "variables": [
+        {
+            "expr": "i",
+            "value": "1"
+        }
+    ]
+}
+`
+                ),
+                readFile: (_path: string): Buffer => Buffer.alloc(0),
+            };
+
+            openAndFocusCalled = 0;
+            editorEffects = {
+                openAndFocus: (log: string, line: number): void => {
+                    openAndFocusCalled++;
+                    focusedLog = log;
+                    focusedLine = line;
+                },
+                highlightLine: (_log: string, _line: number): void => { },
+                clearHighlights: (): void => { }
+            };
+            launchArgs = {
+                source: 'l2s-example/examples/basic.rs',
+                log: logPath,
+                log_format: '^\\[\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z \\w+ \\w+\\]\\s+(?<body>.*)$',
+                trace: false,
+                noDebug: false
+            };
+        });
+
+        test('stack trace request with log format', () => {
+            debugSession = createSession(logDebugger, processRunner, editorEffects);
+            const session = debugSession as PatchedSession;
+            (session as any).primeLaunchState(launchArgs);
+
+            const { response: captured, eventCount } = captureRequest<DebugProtocol.StackTraceResponse>(
+                session,
+                () => (session as any).stackTraceRequest(response, args)
+            );
+
+            assert.ok(captured, 'Stack trace response should be sent');
+            assert.ok(captured!.body, 'Stack trace response should include a body');
+            assert.strictEqual(captured!.body.stackFrames.length, 1, 'Should have one stack frame');
+            assert.strictEqual(captured!.body.totalFrames, 1, 'Should report one total frame');
+            assert.strictEqual(captured!.body.stackFrames[0].name, 'foo', 'Frame name should come from srcRef');
+            assert.strictEqual(
+                captured!.body.stackFrames[0].source?.path,
+                'l2s-example/examples/basic.rs',
+                'Frame source path should match srcRef'
+            );
+            assert.strictEqual(captured!.body.stackFrames[0].source?.name, 'basic.rs', 'Frame source name should be basename');
+            assert.strictEqual(captured!.body.stackFrames[0].line, 13, 'Frame line should match mapped line number');
+            assert.strictEqual(eventCount, 0, 'No events should be sent');
+            // once for primeLaunchState and another for when stackTraceRequest is called
+            assert.strictEqual(openAndFocusCalled, 2, 'Should open and focus log once');
+            assert.strictEqual(focusedLog, logPath, 'Should focus the launched log file');
+            assert.strictEqual(focusedLine, logDebugger.linenum(), 'Should focus current debugger line');
         });
     });
 });

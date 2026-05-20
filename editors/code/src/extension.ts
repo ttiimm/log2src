@@ -16,11 +16,10 @@ import * as vscode from 'vscode';
 import { ProviderResult } from 'vscode';
 import { BinaryNotFoundError, DebugSession } from './debugAdapter';
 import { LogDebugger } from './logDebugger';
+import { VscodeEditorEffects } from './vscodeEditorEffects';
 
 const runMode: 'external' | 'server' | 'namedPipeServer' | 'inline' = 'inline';
 const outputChannel = vscode.window.createOutputChannel("Log2Src");
-
-export { outputChannel }
 
 export function activate(context: vscode.ExtensionContext) {
 	// The microsoft debug adapter extension had several ways of starting up, but the default inline method
@@ -48,7 +47,12 @@ class InlineDebugAdapterFactory implements vscode.DebugAdapterDescriptorFactory 
 
 	createDebugAdapterDescriptor(_session: vscode.DebugSession): ProviderResult<vscode.DebugAdapterDescriptor> {
 		try {
-			return new vscode.DebugAdapterInlineImplementation(new DebugSession(new LogDebugger()));
+			const debugSession = new DebugSession(
+				new LogDebugger(),
+				new VscodeEditorEffects(outputChannel),
+				outputChannel
+			);
+			return new vscode.DebugAdapterInlineImplementation(debugSession);
 		} catch (error) {
 			if (error instanceof BinaryNotFoundError) {
 				vscode.window.showErrorMessage(`Log2Src Error: ${error.message}`);
