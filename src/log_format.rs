@@ -28,7 +28,7 @@ impl TryFrom<&str> for LogFormat {
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         fn check_captures(regex: &Regex) -> Result<(), LogError> {
             let mut seen = Vec::new();
-            for name in regex.capture_names().filter_map(|x| x) {
+            for name in regex.capture_names().flatten() {
                 match name {
                     "timestamp" | "thread" | "method" | "file" | "line" | "body" | "level" => {
                         seen.push(name)
@@ -48,7 +48,7 @@ impl TryFrom<&str> for LogFormat {
             Ok(())
         }
 
-        RegexBuilder::new(&value)
+        RegexBuilder::new(value)
             // XXX: This is kinda a hack to support multiline matching in lnav, but
             // not really useful for log2src atm because its still filtering line-by-line,
             // so this case would never come up

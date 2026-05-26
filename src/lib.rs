@@ -226,6 +226,7 @@ pub struct SourceTree {
 
 /// Collection of root paths to their tree of source files
 /// that contain log statements.
+#[derive(Default)]
 pub struct LogMatcher {
     roots: HashMap<PathBuf, SourceTree>,
 }
@@ -311,8 +312,8 @@ impl LogMatcher {
         for (root_path, old_root) in old_roots.into_iter() {
             let cached_name = to_cached_name(&root_path);
             let cached_path = cache.location.join(&cached_name);
-            let new_root = if let Ok(mut file) = File::open(&cached_path) {
-                match Self::load_cache_entry(&cached_path, &mut file) {
+            let new_root = if let Ok(file) = File::open(&cached_path) {
+                match Self::load_cache_entry(&cached_path, &file) {
                     Ok(new_root) => {
                         found += 1;
                         new_root
@@ -347,7 +348,7 @@ impl LogMatcher {
         let mut total_size: u64 = 0;
         let work_guard = tracker.doing_work(self.roots.len() as u64, "root".to_string());
         for (root_path, root) in &self.roots {
-            let cached_name = to_cached_name(&root_path);
+            let cached_name = to_cached_name(root_path);
             let tmp_path = {
                 fs::create_dir_all(&cache.location).map_err(to_write_cache_error)?;
                 let mut file =
@@ -415,8 +416,7 @@ impl LogMatcher {
     pub fn match_path(&self, path: &Path) -> Option<(&PathBuf, &SourceTree)> {
         self.roots
             .iter()
-            .filter(|(existing_path, _coll)| path.starts_with(existing_path))
-            .next()
+            .find(|(existing_path, _coll)| path.starts_with(existing_path))
     }
 
     pub fn find_source_file_statements(&self, path: &Path) -> Vec<&StatementsInFile> {
@@ -511,7 +511,7 @@ impl LogMatcher {
 
     /// Attempt to match the given log message.
     pub fn match_log_statement<'a>(&self, log_ref: &LogRef<'a>) -> Option<LogMapping<'a>> {
-        for (_path, coll) in &self.roots {
+        for coll in self.roots.values() {
             let matches = if let Some(LogDetails {
                 file: Some(filename),
                 body: Some(body),
@@ -580,7 +580,7 @@ impl LogMatcher {
                 };
                 let variables = extract_variables(log_ref, src_ref);
                 return Some(LogMapping {
-                    log_ref: log_ref.clone(),
+                    log_ref: *log_ref,
                     src_ref: Some((*src_ref).clone()),
                     variables,
                     exception_trace,
@@ -883,8 +883,8 @@ pub struct StackTrace<'a> {
     pub content: &'a str,
 }
 
-impl<'a> StackTrace<'a> {
-    fn to_exception_trace(&self, log_matcher: &LogMatcher) -> Vec<CallSite> {
+impl StackTrace<'_> {
+    fn to_exception_trace(self, log_matcher: &LogMatcher) -> Vec<CallSite> {
         let mut retval = Vec::new();
         match self.language {
             SourceLanguage::Rust => {}
@@ -903,7 +903,7 @@ impl<'a> StackTrace<'a> {
                         .values()
                         .filter_map(|root| {
                             if let Some((actual_path, _source_info)) =
-                                root.tree.find_file(&path_for_class).iter().next()
+                                root.tree.find_file(&path_for_class).first()
                             {
                                 Some(actual_path.clone())
                             } else {
@@ -951,7 +951,7 @@ pub struct LogDetails<'a> {
     pub trace: Option<StackTrace<'a>>,
 }
 
-impl<'a> LogDetails<'a> {
+impl LogDetails<'_> {
     fn is_empty(&self) -> bool {
         self.thread.is_none()
             && self.file.is_none()
@@ -963,6 +963,12 @@ impl<'a> LogDetails<'a> {
 
 pub struct LogRefBuilder<'a> {
     details: LogDetails<'a>,
+}
+
+impl Default for LogRefBuilder<'_> {
+    fn default() -> Self {
+        LogRefBuilder::new()
+    }
 }
 
 impl<'a> LogRefBuilder<'a> {
@@ -1009,7 +1015,7 @@ impl<'a> LogRefBuilder<'a> {
                 };
                 let cap0 = trace.get(0).unwrap();
                 (
-                    Some(*&body[0..cap0.range().start].trim_end()),
+                    Some(body[0..cap0.range().start].trim_end()),
                     Some(StackTrace {
                         language,
                         content: cap0.as_str(),

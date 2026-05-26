@@ -137,14 +137,14 @@ impl MessageAccumulator {
     fn consume_line(&mut self, line: &str) {
         match &self.log_format {
             Some(format) => {
-                if format.is_match(&line) {
-                    self.new_msg(&line);
+                if format.is_match(line) {
+                    self.new_msg(line);
                 } else {
-                    self.continued_line(&line);
+                    self.continued_line(line);
                 }
             }
             None => {
-                self.process_bare_msg(&line);
+                self.process_bare_msg(line);
             }
         }
     }
@@ -257,7 +257,7 @@ fn main() -> miette::Result<()> {
     let reader: Box<dyn io::Read> = match args.log {
         None => Box::new(io::stdin()),
         Some(filename) => {
-            let path = PathBuf::from(filename);
+            let path = filename;
             match fs::File::open(&path) {
                 Ok(file) => Box::new(file),
                 Err(err) => {
@@ -284,7 +284,7 @@ fn main() -> miette::Result<()> {
     }
 
     if let Ok(cache) = &cache_open_res {
-        let res = log_matcher.load_from_cache(&cache, &tracker);
+        let res = log_matcher.load_from_cache(cache, &tracker);
         for err in res {
             let report = Report::new(err);
             if args.verbose
@@ -306,7 +306,7 @@ fn main() -> miette::Result<()> {
 
     if extract_summary.changes() > 0 {
         if let Ok(cache) = &cache_open_res {
-            let res = log_matcher.cache_to(&cache, &tracker);
+            let res = log_matcher.cache_to(cache, &tracker);
             if let Err(err) = res {
                 eprintln!("{:?}", Report::new(err));
             }

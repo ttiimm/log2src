@@ -32,6 +32,7 @@ pub struct ProgressListener {
     receiver: Receiver<ProgressUpdate>,
 }
 
+#[derive(Default)]
 /// A mechanism for tracking progress.
 pub struct ProgressTracker {
     subscribers: Vec<Sender<ProgressUpdate>>,
