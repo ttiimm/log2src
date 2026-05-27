@@ -299,12 +299,18 @@ fn main() -> miette::Result<()> {
         .discover_sources(&tracker)
         .into_iter()
         .for_each(|err| eprintln!("{:?}", Report::new(err)));
-    let extract_summary = log_matcher.extract_log_statements(&tracker);
+    let result = log_matcher.extract_log_statements(&tracker);
     if log_matcher.is_empty() {
         return Err(LogError::NoLogStatements.into());
     }
 
-    if extract_summary.changes() > 0 {
+    if !result.errors.is_empty() {
+        for err in result.errors {
+            eprintln!("{:?}", Report::new(err));
+        }
+    }
+
+    if result.summary.changes() > 0 {
         if let Ok(cache) = &cache_open_res {
             let res = log_matcher.cache_to(cache, &tracker);
             if let Err(err) = res {

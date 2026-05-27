@@ -238,6 +238,13 @@ fn to_cached_name(path: &Path) -> String {
     )
 }
 
+/// The result of calling extract_log_statements() with the summary and errors.
+#[derive(Default)]
+pub struct ExtractLogResult {
+    pub summary: ExtractLogSummary,
+    pub errors: Vec<LogError>,
+}
+
 /// A summary of the work done by extract_log_statements().  Useful for knowing if there were
 /// any changes that need to be saved to the cache.
 #[derive(Default, Debug)]
@@ -457,8 +464,8 @@ impl LogMatcher {
     }
 
     /// Scan the source files looking for potential log statements.
-    pub fn extract_log_statements(&mut self, tracker: &ProgressTracker) -> ExtractLogSummary {
-        let mut retval = ExtractLogSummary::default();
+    pub fn extract_log_statements(&mut self, tracker: &ProgressTracker) -> ExtractLogResult {
+        let mut retval = ExtractLogResult::default();
         tracker.begin_step("Extracting log statements".to_string());
         self.roots.iter_mut().for_each(|(_path, coll)| {
             let guard = tracker.doing_work(coll.tree.stats().files as u64, "files".to_string());
@@ -466,19 +473,26 @@ impl LogMatcher {
                 let sources = event_chunk
                     .flat_map(|event| match event {
                         ScanEvent::NewFile(path, info) => {
-                            retval.new += 1;
+                            retval.summary.new += 1;
                             match File::open(&path) {
                                 Ok(file) => match CodeSource::new(&path, info, file) {
                                     Ok(cs) => Some(cs),
-                                    Err(_) => todo!(),
+                                    Err(err) => {
+                                        retval.errors.push(err);
+                                        None
+                                    }
                                 },
-                                Err(_) => {
-                                    todo!()
+                                Err(err) => {
+                                    retval.errors.push(LogError::CannotReadSourceFile {
+                                        path,
+                                        source: std::sync::Arc::new(err),
+                                    });
+                                    None
                                 }
                             }
                         }
                         ScanEvent::DeletedFile(_path, id) => {
-                            retval.deleted += 1;
+                            retval.summary.deleted += 1;
                             coll.files_with_statements.remove(&id);
                             coll.file_name_to_sources.values_mut().for_each(|ids| {
                                 ids.retain_mut(|elem| *elem != id);
@@ -1521,5 +1535,54 @@ ZeroDivisionError: division by zero
         let log_matcher = LogMatcher::new();
         let trace = stacktrace.to_exception_trace(&log_matcher);
         assert_yaml_snapshot!(trace);
+    }
+
+    #[test]
+    fn test_extract_log_statements_missing_file() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let root = temp_dir.path();
+
+        let source_path = root.join("main.rs");
+        std::fs::write(&source_path, r#"fn main() { debug!("hello"); }"#).unwrap();
+
+        let mut log_matcher = LogMatcher::new();
+        log_matcher.add_root(root).unwrap();
+
+        let tracker = ProgressTracker::new();
+        let _ = log_matcher.discover_sources(&tracker);
+
+        std::fs::remove_file(&source_path).unwrap();
+        let summary = log_matcher.extract_log_statements(&tracker);
+        assert_eq!(summary.errors.len(), 1);
+        assert!(matches!(
+            &summary.errors[0],
+            LogError::CannotReadSourceFile { path, source }
+            if path.file_name() == Some(std::ffi::OsStr::new("main.rs"))
+                && source.kind() == io::ErrorKind::NotFound
+        ));
+    }
+
+    #[test]
+    fn test_extract_log_statements_nonutf8() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let root = temp_dir.path();
+
+        let source_path = root.join("main.rs");
+        let invalid_utf8 = [0xff, 0xfe, 0xfd];
+        std::fs::write(&source_path, invalid_utf8).unwrap();
+
+        let mut log_matcher = LogMatcher::new();
+        log_matcher.add_root(root).unwrap();
+
+        let tracker = ProgressTracker::new();
+        let _ = log_matcher.discover_sources(&tracker);
+        let summary = log_matcher.extract_log_statements(&tracker);
+        assert_eq!(summary.errors.len(), 1);
+        assert!(matches!(
+            &summary.errors[0],
+            LogError::CannotReadSourceFile { path, source }
+            if path.file_name() == Some(std::ffi::OsStr::new("main.rs"))
+                && source.kind() == io::ErrorKind::InvalidData
+        ));
     }
 }
