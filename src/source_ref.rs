@@ -330,12 +330,8 @@ mod tests {
 
     #[test]
     fn test_build_matcher_raw() {
-        let MessageMatcher { matcher, .. } = build_matcher(
-            true,
-            "Hard-coded \\Windows\\Path",
-            SourceLanguage::Rust,
-        )
-            .unwrap();
+        let MessageMatcher { matcher, .. } =
+            build_matcher(true, "Hard-coded \\Windows\\Path", SourceLanguage::Rust).unwrap();
         assert_eq!(
             Regex::new(r#"(?s)^Hard-coded \\Windows\\Path$"#)
                 .unwrap()

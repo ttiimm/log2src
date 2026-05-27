@@ -1183,9 +1183,9 @@ mod tests {
     use insta::{assert_snapshot, assert_yaml_snapshot};
     use std::ptr;
 
-    fn from_log_format_and_line<'a>(buffer: &'a str, log_format: LogFormat) -> LogRef<'a> {
-        let captures = log_format.captures(&buffer).unwrap();
-        LogRefBuilder::new().build_from_captures(captures, &buffer)
+    fn from_log_format_and_line(buffer: &'_ str, log_format: LogFormat) -> LogRef<'_> {
+        let captures = log_format.captures(buffer).unwrap();
+        LogRefBuilder::new().build_from_captures(captures, buffer)
     }
 
     #[test]
@@ -1249,7 +1249,7 @@ fn namedarg2(salutation: &str, name: &str) {
 
     #[test]
     fn test_extract_logging() {
-        let code = CodeSource::from_string(&Path::new("in-mem.rs"), TEST_SOURCE);
+        let code = CodeSource::from_string(Path::new("in-mem.rs"), TEST_SOURCE);
         let src_refs = extract_logging(&[code], &ProgressTracker::new())
             .pop()
             .unwrap()
@@ -1266,7 +1266,7 @@ fn namedarg2(salutation: &str, name: &str) {
             "[2024-05-09T19:58:53Z DEBUG main] you're only as funky as your last cut",
             lf,
         );
-        let code = CodeSource::from_string(&Path::new("in-mem.rs"), TEST_SOURCE);
+        let code = CodeSource::from_string(Path::new("in-mem.rs"), TEST_SOURCE);
         let src_refs = extract_logging(&[code], &ProgressTracker::new())
             .pop()
             .unwrap()
@@ -1283,7 +1283,7 @@ fn namedarg2(salutation: &str, name: &str) {
             .unwrap();
         let log_ref =
             from_log_format_and_line("[2024-05-09T19:58:53Z DEBUG main] Hello, Leander!", lf);
-        let code = CodeSource::from_string(&Path::new("in-mem.rs"), TEST_SOURCE);
+        let code = CodeSource::from_string(Path::new("in-mem.rs"), TEST_SOURCE);
         let src_refs = extract_logging(&[code], &ProgressTracker::new())
             .pop()
             .unwrap()
@@ -1311,7 +1311,7 @@ fn main() {
             "[2024-05-09T19:58:53Z DEBUG main] you're only as funky\n as your last cut",
             lf,
         );
-        let code = CodeSource::from_string(&Path::new("in-mem.rs"), MULTILINE_SOURCE);
+        let code = CodeSource::from_string(Path::new("in-mem.rs"), MULTILINE_SOURCE);
         let src_refs = extract_logging(&[code], &ProgressTracker::new())
             .pop()
             .unwrap()
@@ -1332,7 +1332,7 @@ fn main() {
     #[test]
     fn test_link_to_source_no_matches() {
         let log_ref = LogRefBuilder::new().build("nope!");
-        let code = CodeSource::from_string(&Path::new("in-mem.rs"), TEST_SOURCE);
+        let code = CodeSource::from_string(Path::new("in-mem.rs"), TEST_SOURCE);
         let src_refs = extract_logging(&[code], &ProgressTracker::new())
             .pop()
             .unwrap()
@@ -1345,7 +1345,7 @@ fn main() {
     #[test]
     fn test_extract_variables() {
         let log_ref = LogRefBuilder::new().build("this won't match i=1; j=2");
-        let code = CodeSource::from_string(&Path::new("in-mem.rs"), TEST_SOURCE);
+        let code = CodeSource::from_string(Path::new("in-mem.rs"), TEST_SOURCE);
         let src_refs = extract_logging(&[code], &ProgressTracker::new())
             .pop()
             .unwrap()
@@ -1370,7 +1370,7 @@ fn main() {
     #[test]
     fn test_extract_named() {
         let log_ref = LogRefBuilder::new().build("Hello, Tim!");
-        let code = CodeSource::from_string(&Path::new("in-mem.rs"), TEST_SOURCE);
+        let code = CodeSource::from_string(Path::new("in-mem.rs"), TEST_SOURCE);
         let src_refs = extract_logging(&[code], &ProgressTracker::new())
             .pop()
             .unwrap()
@@ -1433,7 +1433,7 @@ fn main() {
     #[test]
     fn test_basic_cpp() {
         let log_ref = LogRefBuilder::new().build("Hello, Steve!");
-        let code = CodeSource::from_string(&Path::new("in-mem.cc"), CPP_SOURCE);
+        let code = CodeSource::from_string(Path::new("in-mem.cc"), CPP_SOURCE);
         let src_refs = extract_logging(&[code], &ProgressTracker::new())
             .pop()
             .unwrap()
@@ -1461,7 +1461,7 @@ processing \started -- {args[0]}""")
     #[test]
     fn test_basic_python() {
         let log_ref = LogRefBuilder::new().build("foo bar π");
-        let code = CodeSource::from_string(&Path::new("in-mem.py"), PYTHON_SOURCE);
+        let code = CodeSource::from_string(Path::new("in-mem.py"), PYTHON_SOURCE);
         let src_refs = extract_logging(&[code], &ProgressTracker::new())
             .pop()
             .unwrap()

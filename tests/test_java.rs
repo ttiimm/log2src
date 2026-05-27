@@ -1,5 +1,5 @@
-use std::fs;
 use insta_cmd::assert_cmd_snapshot;
+use std::fs;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;

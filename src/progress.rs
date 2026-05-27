@@ -73,8 +73,7 @@ impl ProgressTracker {
     }
 
     /// Notify subscribers of the beginning of a step in a process.
-    pub fn begin_step(&self, message: String)
-    {
+    pub fn begin_step(&self, message: String) {
         self.subscribers.iter().for_each(|sender| {
             let _ = sender.send(ProgressUpdate::BeginStep(message.clone()));
         });
