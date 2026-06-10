@@ -1,3 +1,34 @@
+//! log2src maps between generated logs and source code locations.
+//! 
+//! # Stability
+//! This crate is evolving. Prefer types and methods documented as part of the
+//! primary workflow. Other exposed types may become internal in future releases.
+//! 
+//! # Quick Start
+//! The typical flow is:
+//! 1. Create a LogMatcher
+//! 2. Add one or more source roots
+//! 3. Discover sources and extract the logging
+//! 4. Build a LogRef from log input and attempt to match it
+//! 
+//! # Example
+//! ```no_run
+//! use log2src::{LogMatcher, LogRefBuilder, ProgressTracker};
+//! use std::path::Path;
+//!
+//! let mut matcher = LogMatcher::new();
+//! matcher.add_root(Path::new("./src")).unwrap();
+//!
+//! let tracker = ProgressTracker::new();
+//! matcher.discover_sources(&tracker);
+//! let _summary = matcher.extract_log_statements(&tracker);
+//!
+//! let log_ref = LogRefBuilder::new()
+//!     .with_body(Some("hello from logs"))
+//!     .build("hello from logs");
+//! let _mapping = matcher.match_log_statement(&log_ref);
+//! ```
+
 use directories::ProjectDirs;
 use indicatif::HumanBytes;
 use itertools::Itertools;
@@ -224,8 +255,13 @@ pub struct SourceTree {
     pub file_name_to_sources: HashMap<String, Vec<SourceFileID>>,
 }
 
-/// Collection of root paths to their tree of source files
-/// that contain log statements.
+/// Maps log lines to source statements discovered from one or more source roots.
+/// 
+/// Typical lifecycle:
+/// - add_root
+/// - discover_sources
+/// - extract_log_statements
+/// - match_log_statement
 #[derive(Default)]
 pub struct LogMatcher {
     roots: HashMap<PathBuf, SourceTree>,
