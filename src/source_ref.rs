@@ -11,6 +11,7 @@ pub enum FormatArgument {
     Placeholder,
 }
 
+/// A resolved call site in the source tree, used in exception stack traces.
 #[derive(Clone, Debug, Serialize)]
 pub struct CallSite {
     pub name: String,
@@ -21,7 +22,7 @@ pub struct CallSite {
     pub line_no: usize,
 }
 
-// TODO: get rid of this clone?
+/// A log statement found in a source file, including its location and match pattern.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SourceRef {
     #[serde(rename(serialize = "sourcePath"))]

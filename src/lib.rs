@@ -161,6 +161,7 @@ impl Cache {
         Ok(Cache { location })
     }
 
+    /// The path to the cache directory.
     pub fn location(&self) -> &Path {
         &self.location
     }
@@ -470,6 +471,7 @@ impl LogMatcher {
             .find(|(existing_path, _coll)| path.starts_with(existing_path))
     }
 
+    /// Return the log statements extracted from the given source file path, if any.
     pub fn find_source_file_statements(&self, path: &Path) -> Vec<&StatementsInFile> {
         self.roots
             .values()
@@ -878,12 +880,14 @@ impl SourceLanguage {
     }
 }
 
+/// A variable expression and the value it held at the matched log call site.
 #[derive(PartialEq, Clone, Debug, Serialize)]
 pub struct VariablePair {
     pub expr: String,
     pub value: String,
 }
 
+/// The result of matching a log line to a source statement.
 #[derive(Serialize)]
 pub struct LogMapping<'a> {
     #[serde(rename(serialize = "logRef"))]
@@ -896,6 +900,7 @@ pub struct LogMapping<'a> {
     pub variables: Vec<VariablePair>,
 }
 
+/// A parsed log line, optionally with structured details extracted by a [`LogFormat`].
 #[derive(Copy, Clone, Debug, PartialEq, Serialize)]
 pub struct LogRef<'a> {
     #[serde(skip_serializing)]
@@ -937,6 +942,7 @@ static JAVA_CALLER_REGEX: LazyLock<Regex> = LazyLock::new(|| {
         .unwrap()
 });
 
+/// An exception stack trace embedded in a log message body.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize)]
 pub struct StackTrace<'a> {
     pub language: SourceLanguage,
@@ -1021,6 +1027,7 @@ impl LogDetails<'_> {
     }
 }
 
+/// Builder for [`LogRef`]. Use [`LogRefBuilder::build`] or [`LogRefBuilder::build_from_captures`] to construct one.
 pub struct LogRefBuilder<'a> {
     details: LogDetails<'a>,
 }
@@ -1112,6 +1119,7 @@ impl<'a> LogRef<'a> {
     }
 }
 
+/// Extract variable name/value pairs by matching the log line against the source statement's pattern.
 pub fn extract_variables<'a>(log_ref: &LogRef<'a>, src_ref: &'a SourceRef) -> Vec<VariablePair> {
     let mut variables = Vec::new();
     let line = match log_ref.details {
