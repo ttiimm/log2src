@@ -63,8 +63,7 @@ use crate::source_ref::{CallSite, FormatArgument};
 
 pub use code_source::CodeSource;
 pub use log_format::LogFormat;
-pub use progress::clear_global_progress_tracker;
-pub use progress::set_global_progress_tracker;
+pub use progress::set_tracker_once;
 pub use progress::ProgressTracker;
 pub use progress::ProgressUpdate;
 pub use progress::WorkInfo;
@@ -342,7 +341,7 @@ impl LogMatcher {
     /// Try to load SourceTrees from the cache for each root.
     #[must_use]
     pub fn load_from_cache(&mut self, cache: &Cache) -> Vec<LogError> {
-        let tracker = current_global_progress_tracker().unwrap_or_default();
+        let tracker = current_global_progress_tracker();
         tracker.begin_step(format!(
             "Loading cached log statements from: {}",
             cache.location.display()
@@ -386,7 +385,7 @@ impl LogMatcher {
 
     /// Save the log statements to the cache.
     pub fn cache_to(&self, cache: &Cache) -> Result<(), LogError> {
-        let tracker = current_global_progress_tracker().unwrap_or_default();
+        let tracker = current_global_progress_tracker();
         tracker.begin_step(format!(
             "Saving log statements to: {}",
             cache.location.display()
@@ -480,7 +479,7 @@ impl LogMatcher {
     /// Traverse the roots looking for supported source files.
     #[must_use]
     pub fn discover_sources(&mut self) -> Vec<LogError> {
-        let tracker = current_global_progress_tracker().unwrap_or_default();
+        let tracker = current_global_progress_tracker();
         tracker.begin_step("Finding source code".to_string());
         let pguard = tracker.doing_work(self.roots.len() as u64, "paths".to_string());
         self.roots.par_iter_mut().for_each(|(_path, coll)| {
@@ -505,7 +504,7 @@ impl LogMatcher {
 
     /// Scan the source files looking for potential log statements.
     pub fn extract_log_statements(&mut self) -> ExtractLogResult {
-        let tracker = current_global_progress_tracker().unwrap_or_default();
+        let tracker = current_global_progress_tracker();
         let mut retval = ExtractLogResult::default();
         tracker.begin_step("Extracting log statements".to_string());
         self.roots.iter_mut().for_each(|(_path, coll)| {
@@ -1226,7 +1225,7 @@ fn extract_logging_guarded(sources: &[CodeSource], guard: &WorkGuard) -> Vec<Sta
 }
 
 pub fn extract_logging(sources: &[CodeSource]) -> Vec<StatementsInFile> {
-    let tracker = current_global_progress_tracker().unwrap_or_default();
+    let tracker = current_global_progress_tracker();
     let guard = tracker.doing_work(sources.len() as u64, "files".to_string());
     extract_logging_guarded(sources, &guard)
 }

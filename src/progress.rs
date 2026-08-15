@@ -1,10 +1,9 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
-static GLOBAL_PROGRESS_TRACKER: LazyLock<Mutex<Option<Arc<ProgressTracker>>>> =
-    LazyLock::new(|| Mutex::new(None));
+static GLOBAL_PROGRESS_TRACKER: OnceLock<Arc<ProgressTracker>> = OnceLock::new();
 
 /// Sets the global progress tracker, replacing any previously registered one.
 ///
@@ -23,29 +22,20 @@ static GLOBAL_PROGRESS_TRACKER: LazyLock<Mutex<Option<Arc<ProgressTracker>>>> =
 /// # Example
 /// ```no_run
 /// use std::sync::Arc;
-/// use log2src::{ProgressTracker, set_global_progress_tracker};
+/// use log2src::{ProgressTracker, set_tracker_once};
 ///
 /// let tracker = Arc::new(ProgressTracker::new());
-/// set_global_progress_tracker(Arc::clone(&tracker));
+/// set_tracker_once(Arc::clone(&tracker));
 /// ```
-pub fn set_global_progress_tracker(tracker: Arc<ProgressTracker>) -> Option<Arc<ProgressTracker>> {
-    let mut global_tracker = GLOBAL_PROGRESS_TRACKER.lock().unwrap();
-    global_tracker.replace(tracker)
+pub fn set_tracker_once(tracker: Arc<ProgressTracker>) {
+    let _ = GLOBAL_PROGRESS_TRACKER.set(tracker);
 }
 
-/// Removes the global progress tracker.
-///
-/// Returns the tracker that was registered, or `None` if none was set.
-/// After this call, library operations will run silently until a new tracker
-/// is registered via [`set_global_progress_tracker`].
-pub fn clear_global_progress_tracker() -> Option<Arc<ProgressTracker>> {
-    let mut global_tracker = GLOBAL_PROGRESS_TRACKER.lock().unwrap();
-    global_tracker.take()
-}
-
-pub(crate) fn current_global_progress_tracker() -> Option<Arc<ProgressTracker>> {
-    let global_tracker = GLOBAL_PROGRESS_TRACKER.lock().unwrap();
-    global_tracker.as_ref().cloned()
+pub(crate) fn current_global_progress_tracker() -> Arc<ProgressTracker> {
+    GLOBAL_PROGRESS_TRACKER
+        .get()
+        .cloned()
+        .unwrap_or_default()
 }
 
 pub struct WorkInfo {
@@ -167,47 +157,5 @@ impl Iterator for ProgressListener {
 impl ProgressListener {
     pub fn try_next_for(&self, timeout: Duration) -> Option<ProgressUpdate> {
         self.receiver.recv_timeout(timeout).ok()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use serial_test::serial;
-    use std::sync::Arc;
-
-    use crate::{ProgressTracker, clear_global_progress_tracker, progress::current_global_progress_tracker, set_global_progress_tracker};
-
-    #[serial]
-    #[test]
-    fn test_set_global_tracker() {
-        clear_global_progress_tracker();
-        let tracker = Arc::new(ProgressTracker::new());
-        let result = set_global_progress_tracker(Arc::clone(&tracker));
-        assert!(result.is_none());
-        let another = Arc::new(ProgressTracker::new());
-        let result = set_global_progress_tracker(another);
-        assert!(result.is_some());
-        assert!(Arc::ptr_eq(&result.unwrap(), &tracker));
-    }
-
-    #[serial]
-    #[test]
-    fn test_clear_global_progress_tracker() {
-        clear_global_progress_tracker();
-        let tracker = Arc::new(ProgressTracker::new());
-        let result = set_global_progress_tracker(Arc::clone(&tracker));
-        assert!(result.is_none());
-        let result = clear_global_progress_tracker();
-        assert!(result.is_some());
-        assert!(Arc::ptr_eq(&result.unwrap(), &tracker));
-        assert!(current_global_progress_tracker().is_none());
-    }
-
-    #[serial]
-    #[test]
-    fn test_clear_when_empty() {
-        clear_global_progress_tracker();
-        let result = clear_global_progress_tracker();
-        assert!(result.is_none());
     }
 }
