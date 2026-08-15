@@ -2,7 +2,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::source_hier::SourceFileInfo;
-use crate::{LogError};
+use crate::LogError;
 
 pub(crate) struct CodeSource {
     pub(crate) filename: String,
@@ -11,7 +11,7 @@ pub(crate) struct CodeSource {
 }
 
 impl CodeSource {
-    pub fn new<I>(path: &Path, info: SourceFileInfo, mut input: I) -> Result<CodeSource, LogError>
+    pub(crate) fn new<I>(path: &Path, info: SourceFileInfo, mut input: I) -> Result<CodeSource, LogError>
     where
         I: io::Read,
     {

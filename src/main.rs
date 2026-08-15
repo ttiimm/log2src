@@ -20,7 +20,7 @@ fn get_footer() -> String {
         footer.push_str(
             format!(
                 "    Cache directory: {}\n",
-                cache.location.to_string_lossy()
+                cache.location().to_string_lossy()
             )
             .as_str(),
         );

@@ -61,7 +61,7 @@ use crate::code_source::CodeSource;
 use crate::progress::{current_global_progress_tracker, WorkGuard};
 use crate::source_hier::{ScanEvent, SourceFileID, SourceHierContent, SourceHierTree};
 use crate::source_query::SourceQuery;
-use crate::source_ref::{CallSite, FormatArgument};
+use crate::source_ref::FormatArgument;
 
 pub use log_format::LogFormat;
 pub use progress::set_tracker_once;
@@ -70,7 +70,8 @@ pub use progress::ProgressTracker;
 pub use progress::ProgressUpdate;
 pub use progress::WorkInfo;
 use source_query::QueryResult;
-pub use source_ref::SourceRef;
+pub use source_ref::{CallSite, SourceRef};
+
 
 #[derive(Error, Debug, Diagnostic, Clone, Default)]
 pub enum LogError {
@@ -147,7 +148,7 @@ pub enum LogError {
 
 /// Handle for the source tree cache
 pub struct Cache {
-    pub location: PathBuf,
+    location: PathBuf,
 }
 
 impl Cache {
@@ -158,6 +159,10 @@ impl Cache {
             ProjectDirs::from("org", "log2src", "log2src").ok_or(LogError::CannotFindCache {})?;
         let location = project_dirs.cache_dir().to_path_buf();
         Ok(Cache { location })
+    }
+
+    pub fn location(&self) -> &Path {
+        &self.location
     }
 }
 
@@ -212,7 +217,7 @@ pub struct StatementsInFile {
     /// will fail with CompiledTooBig. We should probably fall back to
     /// manually trying each one at that point...
     #[serde(skip)]
-    pub matcher: Option<RegexSet>,
+    pub(crate) matcher: Option<RegexSet>,
 }
 
 impl StatementsInFile {
@@ -247,7 +252,7 @@ impl StatementsInFile {
 
 /// Collection of individual source files under a root path
 #[derive(Serialize, Deserialize, Debug)]
-pub struct SourceTree {
+pub(crate) struct SourceTree {
     pub tree: SourceHierTree,
     pub files_with_statements: HashMap<SourceFileID, StatementsInFile>,
     /// Most log statements only have the file name, so we keep an extra map from the name
@@ -459,7 +464,7 @@ impl LogMatcher {
     }
 
     /// Check if the given path is covered by any of the roots in this matcher.
-    pub fn match_path(&self, path: &Path) -> Option<(&PathBuf, &SourceTree)> {
+    fn match_path(&self, path: &Path) -> Option<(&PathBuf, &SourceTree)> {
         self.roots
             .iter()
             .find(|(existing_path, _coll)| path.starts_with(existing_path))

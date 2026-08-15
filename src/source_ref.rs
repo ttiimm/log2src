@@ -34,11 +34,11 @@ pub struct SourceRef {
     pub column: usize,
     pub name: String,
     pub text: String,
-    pub quality: usize,
+    pub(crate) quality: usize,
     #[serde(with = "serde_regex")]
     pub(crate) pattern: Regex,
     #[serde(skip)]
-    pub pattern_str: String,
+    pub(crate) pattern_str: String,
     pub(crate) args: Vec<FormatArgument>,
     pub(crate) vars: Vec<String>,
 }
@@ -98,7 +98,7 @@ impl SourceRef {
         }
     }
 
-    pub fn captures<'a>(&self, line: &'a str) -> Option<Captures<'a>> {
+    pub(crate) fn captures<'a>(&self, line: &'a str) -> Option<Captures<'a>> {
         self.pattern.captures(line)
     }
 }
