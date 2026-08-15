@@ -214,9 +214,8 @@ pub struct StatementsInFile {
     id: SourceFileID,
     pub log_statements: Vec<SourceRef>,
     /// A single matcher for all log statements.
-    /// XXX If there are too many in the file, the RegexSet constructor
-    /// will fail with CompiledTooBig. We should probably fall back to
-    /// manually trying each one at that point...
+    /// If there are too many in the file, the `RegexSet`` construction
+    /// fails silently and this file is skipped during matching.
     #[serde(skip)]
     pub(crate) matcher: Option<RegexSet>,
 }
@@ -586,7 +585,7 @@ impl LogMatcher {
                         .flat_map(|path| coll.files_with_statements.get(path))
                         .flat_map(|stmts| {
                             let file_matches =
-                                stmts.matcher.as_ref().expect("have RegexSet").matches(body);
+                                stmts.matcher.as_ref()?.matches(body);
                             match file_matches.iter().next() {
                                 None => None,
                                 Some(index) => stmts.log_statements.get(index),
@@ -600,7 +599,7 @@ impl LogMatcher {
                         .filter(|stmts| stmts.path.contains(filename))
                         .flat_map(|stmts| {
                             let file_matches =
-                                stmts.matcher.as_ref().expect("have RegexSet").matches(body);
+                                stmts.matcher.as_ref()?.matches(body);
                             match file_matches.iter().next() {
                                 None => None,
                                 Some(index) => stmts.log_statements.get(index),
@@ -615,8 +614,7 @@ impl LogMatcher {
                         let file_matches = src_ref_coll
                             .1
                             .matcher
-                            .as_ref()
-                            .expect("have RegexSet")
+                            .as_ref()?
                             .matches(log_ref.body());
                         match file_matches.iter().next() {
                             None => None,
