@@ -43,7 +43,7 @@ pub fn clear_global_progress_tracker() -> Option<Arc<ProgressTracker>> {
     global_tracker.take()
 }
 
-fn current_global_progress_tracker() -> Option<Arc<ProgressTracker>> {
+pub(crate) fn current_global_progress_tracker() -> Option<Arc<ProgressTracker>> {
     let global_tracker = GLOBAL_PROGRESS_TRACKER.lock().unwrap();
     global_tracker.as_ref().cloned()
 }

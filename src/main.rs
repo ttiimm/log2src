@@ -2,12 +2,12 @@ use clap::Parser as ClapParser;
 use colored_json::{ColoredFormatter, CompactFormatter, Styler};
 use indicatif::{ProgressBar, ProgressStyle};
 use log2src::{
-    Cache, LogError, LogFormat, LogMapping, LogMatcher, LogRef, LogRefBuilder, ProgressTracker,
-    ProgressUpdate,
+    Cache, LogError, LogFormat, LogMapping, LogMatcher, LogRef, LogRefBuilder, ProgressTracker, ProgressUpdate, set_global_progress_tracker,
 };
 use miette::{IntoDiagnostic, MietteHandlerOpts, Report};
 use serde::Serialize;
 use std::io::{stdout, BufRead, BufReader};
+use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::thread::sleep;
 use std::time::Duration;
@@ -209,12 +209,14 @@ fn main() -> miette::Result<()> {
                 .build(),
         )
     }));
-    let mut tracker = ProgressTracker::new();
 
     let args = Cli::parse();
+    let mut tracker = ProgressTracker::new();
+    let listener = if args.verbose { Some(tracker.subscribe()) } else { None };
+    let tracker = Arc::new(tracker);
+    set_global_progress_tracker(Arc::clone(&tracker));
 
-    if args.verbose {
-        let listener = tracker.subscribe();
+    if let Some(listener) = listener {
         std::thread::spawn(move || {
             let mut prefix = String::new();
             for update in listener {
@@ -284,7 +286,7 @@ fn main() -> miette::Result<()> {
     }
 
     if let Ok(cache) = &cache_open_res {
-        let res = log_matcher.load_from_cache(cache, &tracker);
+        let res = log_matcher.load_from_cache(cache);
         for err in res {
             let report = Report::new(err);
             if args.verbose
@@ -296,10 +298,10 @@ fn main() -> miette::Result<()> {
     }
 
     log_matcher
-        .discover_sources(&tracker)
+        .discover_sources()
         .into_iter()
         .for_each(|err| eprintln!("{:?}", Report::new(err)));
-    let result = log_matcher.extract_log_statements(&tracker);
+    let result = log_matcher.extract_log_statements();
     if log_matcher.is_empty() {
         return Err(LogError::NoLogStatements.into());
     }
@@ -312,7 +314,7 @@ fn main() -> miette::Result<()> {
 
     if result.summary.changes() > 0 {
         if let Ok(cache) = &cache_open_res {
-            let res = log_matcher.cache_to(cache, &tracker);
+            let res = log_matcher.cache_to(cache);
             if let Err(err) = res {
                 eprintln!("{:?}", Report::new(err));
             }
