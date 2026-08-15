@@ -4,6 +4,10 @@ authors = ["Tim Likarish Ellis"]
 description = "log2src maps logs back to source code"
 version = "0.1.0"
 edition = "2021"
+readme = "README.md"
+keywords = ["logging", "debugging", "source-map"]
+license = "MIT"
+repository = "https://github.com/ttiimm/log2src"
 
 [dependencies]
 bincode = { version = "2.0.1", features = ["serde", "std"]}
