@@ -2,9 +2,9 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::source_hier::SourceFileInfo;
-use crate::{LogError, SourceLanguage};
+use crate::{LogError};
 
-pub struct CodeSource {
+pub(crate) struct CodeSource {
     pub(crate) filename: String,
     pub(crate) info: SourceFileInfo,
     pub(crate) buffer: String,
@@ -29,7 +29,10 @@ impl CodeSource {
         }
     }
 
-    pub fn from_string(path: &Path, input: &str) -> CodeSource {
+    #[cfg(test)]
+    pub(crate) fn from_string(path: &Path, input: &str) -> CodeSource {
+        use crate::SourceLanguage;
+
         CodeSource {
             filename: path.to_string_lossy().to_string(),
             info: SourceFileInfo::new(SourceLanguage::from_path(path).unwrap()),

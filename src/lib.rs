@@ -57,11 +57,12 @@ mod source_hier;
 mod source_query;
 mod source_ref;
 
+use crate::code_source::CodeSource;
 use crate::progress::{current_global_progress_tracker, WorkGuard};
 use crate::source_hier::{ScanEvent, SourceFileID, SourceHierContent, SourceHierTree};
+use crate::source_query::SourceQuery;
 use crate::source_ref::{CallSite, FormatArgument};
 
-pub use code_source::CodeSource;
 pub use log_format::LogFormat;
 pub use progress::set_tracker_once;
 pub use progress::ProgressListener;
@@ -69,7 +70,6 @@ pub use progress::ProgressTracker;
 pub use progress::ProgressUpdate;
 pub use progress::WorkInfo;
 use source_query::QueryResult;
-pub use source_query::SourceQuery;
 pub use source_ref::SourceRef;
 
 #[derive(Error, Debug, Diagnostic, Clone, Default)]
@@ -1107,34 +1107,6 @@ impl<'a> LogRef<'a> {
     }
 }
 
-pub fn link_to_source<'a>(log_ref: &LogRef, src_refs: &'a [SourceRef]) -> Option<&'a SourceRef> {
-    src_refs
-        .iter()
-        .sorted_by(|lhs, rhs| rhs.quality.cmp(&lhs.quality))
-        .find(|&source_ref| source_ref.captures(log_ref.body()).is_some())
-}
-
-pub fn lookup_source<'a>(
-    log_ref: &LogRef,
-    log_format: &LogFormat,
-    src_refs: &'a [SourceRef],
-) -> Option<&'a SourceRef> {
-    if let Some(captures) = log_format.captures(log_ref.body()) {
-        let file_name = captures.name("file").map_or("", |m| m.as_str());
-        let line_no: usize = captures
-            .name("line")
-            .map_or(0, |m| m.as_str().parse::<usize>().unwrap_or_default());
-        // println!("{:?} {:?}", file_name, line_no);
-
-        src_refs.iter().find(|&source_ref| {
-            // println!("source_ref.source_path = {} line_no = {}", source_ref.source_path, source_ref.line_no);
-            source_ref.source_path.contains(file_name) && source_ref.line_no == line_no
-        })
-    } else {
-        None
-    }
-}
-
 pub fn extract_variables<'a>(log_ref: &LogRef<'a>, src_ref: &'a SourceRef) -> Vec<VariablePair> {
     let mut variables = Vec::new();
     let line = match log_ref.details {
@@ -1225,17 +1197,16 @@ fn extract_logging_guarded(sources: &[CodeSource], guard: &WorkGuard) -> Vec<Sta
         .collect()
 }
 
-pub fn extract_logging(sources: &[CodeSource]) -> Vec<StatementsInFile> {
-    let tracker = current_global_progress_tracker();
-    let guard = tracker.doing_work(sources.len() as u64, "files".to_string());
-    extract_logging_guarded(sources, &guard)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use insta::{assert_snapshot, assert_yaml_snapshot};
-    use std::ptr;
+
+    fn extract_logging(sources: &[CodeSource]) -> Vec<StatementsInFile> {
+        let tracker = current_global_progress_tracker();
+        let guard = tracker.doing_work(sources.len() as u64, "files".to_string());
+        extract_logging_guarded(sources, &guard)
+    }
 
     fn from_log_format_and_line(buffer: &'_ str, log_format: LogFormat) -> LogRef<'_> {
         let captures = log_format.captures(buffer).unwrap();
@@ -1306,79 +1277,6 @@ fn namedarg2(salutation: &str, name: &str) {
         let code = CodeSource::from_string(Path::new("in-mem.rs"), TEST_SOURCE);
         let src_refs = extract_logging(&[code]).pop().unwrap().log_statements;
         assert_yaml_snapshot!(src_refs);
-    }
-
-    #[test]
-    fn test_link_to_source() {
-        let lf = r#"^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z \w+ \w+\]\s+(?<body>.*)"#
-            .try_into()
-            .unwrap();
-        let log_ref = from_log_format_and_line(
-            "[2024-05-09T19:58:53Z DEBUG main] you're only as funky as your last cut",
-            lf,
-        );
-        let code = CodeSource::from_string(Path::new("in-mem.rs"), TEST_SOURCE);
-        let src_refs = extract_logging(&[code]).pop().unwrap().log_statements;
-        assert_eq!(src_refs.len(), 5);
-        let result = link_to_source(&log_ref, &src_refs);
-        assert!(ptr::eq(result.unwrap(), &src_refs[0]));
-    }
-
-    #[test]
-    fn test_link_to_quality_source() {
-        let lf = r#"^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z \w+ \w+\]\s+(?<body>.*)"#
-            .try_into()
-            .unwrap();
-        let log_ref =
-            from_log_format_and_line("[2024-05-09T19:58:53Z DEBUG main] Hello, Leander!", lf);
-        let code = CodeSource::from_string(Path::new("in-mem.rs"), TEST_SOURCE);
-        let src_refs = extract_logging(&[code]).pop().unwrap().log_statements;
-        let result = link_to_source(&log_ref, &src_refs);
-        assert_yaml_snapshot!(result);
-    }
-
-    const MULTILINE_SOURCE: &str = r#"
-#[macro_use]
-extern crate log;
-
-fn main() {
-    env_logger::init();
-    let adjective = "funky";
-    debug!("you're only as {}\n as your last cut", adjective);
-}
-"#;
-    #[test]
-    fn test_link_multiline() {
-        let lf = r#"^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z \w+ \w+\]\s+(?<body>.*)"#
-            .try_into()
-            .unwrap();
-        let log_ref = from_log_format_and_line(
-            "[2024-05-09T19:58:53Z DEBUG main] you're only as funky\n as your last cut",
-            lf,
-        );
-        let code = CodeSource::from_string(Path::new("in-mem.rs"), MULTILINE_SOURCE);
-        let src_refs = extract_logging(&[code]).pop().unwrap().log_statements;
-        assert_eq!(src_refs.len(), 1);
-        let result = link_to_source(&log_ref, &src_refs);
-        assert!(ptr::eq(result.unwrap(), &src_refs[0]));
-        let vars = extract_variables(&log_ref, &src_refs[0]);
-        assert_eq!(
-            vars,
-            [VariablePair {
-                expr: "adjective".to_string(),
-                value: "funky".to_string()
-            }]
-        );
-    }
-
-    #[test]
-    fn test_link_to_source_no_matches() {
-        let log_ref = LogRefBuilder::new().build("nope!");
-        let code = CodeSource::from_string(Path::new("in-mem.rs"), TEST_SOURCE);
-        let src_refs = extract_logging(&[code]).pop().unwrap().log_statements;
-        assert_eq!(src_refs.len(), 5);
-        let result = link_to_source(&log_ref, &src_refs);
-        assert!(result.is_none());
     }
 
     #[test]

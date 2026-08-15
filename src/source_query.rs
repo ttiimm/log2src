@@ -6,7 +6,7 @@ use tree_sitter::{
 use crate::source_ref::FormatArgument;
 use crate::CodeSource;
 
-pub struct SourceQuery<'a> {
+pub(crate) struct SourceQuery<'a> {
     pub source: &'a str,
     tree: Tree,
     language: Language,
