@@ -5,19 +5,14 @@ use std::time::Duration;
 
 static GLOBAL_PROGRESS_TRACKER: OnceLock<Arc<ProgressTracker>> = OnceLock::new();
 
-/// Sets the global progress tracker, replacing any previously registered one.
-///
-/// Returns the previous tracker if one was registered, or `None` if none was set.
+/// Sets the global progress tracker for the lifetime of the program.
 ///
 /// The tracker is used by library operations (such as [`LogMatcher::discover_sources`]
 /// and [`LogMatcher::extract_log_statements`]) to report progress. If no tracker is
 /// registered, those operations run silently.
 ///
 /// Call this once at application startup, before invoking any library operations.
-/// The tracker remains active for the lifetime of the program unless replaced or
-/// cleared. Replacing a tracker while an operation is in progress is safe — the
-/// running operation captures the tracker at its start and will continue using
-/// the previous one to completion.
+/// A second call is silently ignored — the first registration wins.
 ///
 /// # Example
 /// ```no_run
@@ -73,7 +68,7 @@ pub struct ProgressTracker {
     subscribers: Vec<Sender<ProgressUpdate>>,
 }
 
-pub struct WorkGuard {
+pub(crate) struct WorkGuard {
     info: Arc<WorkInfo>,
 }
 
@@ -100,28 +95,21 @@ impl ProgressTracker {
         }
     }
 
-    /// Notify subscribers of a step in a process.
-    pub fn step(&self, message: String) {
-        self.subscribers.iter().for_each(|sender| {
-            let _ = sender.send(ProgressUpdate::Step(message.clone()));
-        });
-    }
-
     /// Notify subscribers of the beginning of a step in a process.
-    pub fn begin_step(&self, message: String) {
+    pub(crate) fn begin_step(&self, message: String) {
         self.subscribers.iter().for_each(|sender| {
             let _ = sender.send(ProgressUpdate::BeginStep(message.clone()));
         });
     }
 
-    pub fn end_step(&self, message: String) {
+    pub(crate) fn end_step(&self, message: String) {
         self.subscribers.iter().for_each(|sender| {
             let _ = sender.send(ProgressUpdate::EndStep(message.clone()));
         });
     }
 
     /// Notify subscribers that some deterministic amount of work is about to be done.
-    pub fn doing_work(&self, total: u64, units: String) -> WorkGuard {
+    pub(crate) fn doing_work(&self, total: u64, units: String) -> WorkGuard {
         let info = Arc::new(WorkInfo {
             completed: AtomicU64::new(0),
             total,

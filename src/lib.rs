@@ -64,6 +64,7 @@ use crate::source_ref::{CallSite, FormatArgument};
 pub use code_source::CodeSource;
 pub use log_format::LogFormat;
 pub use progress::set_tracker_once;
+pub use progress::ProgressListener;
 pub use progress::ProgressTracker;
 pub use progress::ProgressUpdate;
 pub use progress::WorkInfo;
