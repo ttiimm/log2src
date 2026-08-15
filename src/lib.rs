@@ -1003,6 +1003,7 @@ impl StackTrace<'_> {
     }
 }
 
+/// Structured fields parsed from a log line by a [`LogFormat`].
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Default)]
 pub struct LogDetails<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
