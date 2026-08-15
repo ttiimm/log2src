@@ -162,7 +162,7 @@ impl Cache {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub enum CacheEntrySchema {
+pub(crate) enum CacheEntrySchema {
     #[serde(
         rename = "https://raw.githubusercontent.com/ttiimm/log2src/refs/heads/main/schemas/cache-header-v1.json"
     )]
@@ -171,19 +171,19 @@ pub enum CacheEntrySchema {
 
 /// The revision value is a simple way to invalidate the cache entries by changing the number.
 #[derive(Serialize, Deserialize, Debug)]
-pub enum Revision {
+pub(crate) enum Revision {
     #[serde(rename = "1")]
     Current,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub enum CacheEntryFormat {
+pub(crate) enum CacheEntryFormat {
     Bincode,
 }
 
 /// Header for an entry in the cache.  Currently, this is more of interest to humans than machines.
 #[derive(Serialize, Deserialize, Debug)]
-pub struct CacheEntryHeader {
+pub(crate) struct CacheEntryHeader {
     #[serde(rename = "$schema")]
     pub schema: CacheEntrySchema,
     pub revision: Revision,
