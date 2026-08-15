@@ -97,6 +97,14 @@ let log_ref = LogRefBuilder::new()
     .with_body(Some("hello from logs"))
     .build("hello from logs");
 let mapping = matcher.match_log_statement(&log_ref);
+if let Some(mapping) = matcher.match_log_statement(&log_ref) {
+    if let Some(src_ref) = &mapping.src_ref {
+        println!("{}:{} - {}", src_ref.source_path, src_ref.line_no, src_ref.text);
+    }
+    for var in &mapping.variables {
+        println!("  {} = {}", var.expr, var.value);
+    }
+}
 ```
 
 ## Contributing
