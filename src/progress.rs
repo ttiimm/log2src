@@ -7,8 +7,8 @@ static GLOBAL_PROGRESS_TRACKER: OnceLock<Arc<ProgressTracker>> = OnceLock::new()
 
 /// Sets the global progress tracker for the lifetime of the program.
 ///
-/// The tracker is used by library operations (such as [`LogMatcher::discover_sources`]
-/// and [`LogMatcher::extract_log_statements`]) to report progress. If no tracker is
+/// The tracker is used by library operations (such as [`crate::LogMatcher::discover_sources`]
+/// and [`crate::LogMatcher::extract_log_statements`]) to report progress. If no tracker is
 /// registered, those operations run silently.
 ///
 /// Call this once at application startup, before invoking any library operations.
