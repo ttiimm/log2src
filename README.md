@@ -84,28 +84,45 @@ The vsix package can be installed within the VS Code extensions.
 
 The `log2src` crate can be used as a library. Full API documentation is available at [docs.rs/log2src](https://docs.rs/log2src).
 
-```rust
-use log2src::{LogMatcher, LogRefBuilder};
-use std::path::Path;
+Start by creating a `LogMatcher` and adding the directories containing the source files that produced the logs. After discovering the source, read the log file one line at a time and turn each line into a `LogRef`.
 
+The log format must contain a named `body` capture. The simple format below treats the entire line as the message body; replace it with a regular expression that matches your application's log format when needed. Each matching log statement returns its source location and any values that can be reconstructed from the logged arguments.
+
+```rust
+use log2src::{LogFormat, LogMatcher, LogRefBuilder};
+use std::{
+    fs::File,
+    io::{BufRead, BufReader},
+    path::Path,
+};
+
+// set up the matcher
 let mut matcher = LogMatcher::new();
 matcher.add_root(Path::new("./src")).unwrap();
 matcher.discover_sources();
 matcher.extract_log_statements();
 
-let log_ref = LogRefBuilder::new()
-    .with_body(Some("hello from logs"))
-    .build("hello from logs");
-let mapping = matcher.match_log_statement(&log_ref);
-if let Some(mapping) = matcher.match_log_statement(&log_ref) {
-    if let Some(src_ref) = &mapping.src_ref {
-        println!("{}:{} - {}", src_ref.source_path, src_ref.line_no, src_ref.text);
-    }
-    for var in &mapping.variables {
-        println!("  {} = {}", var.expr, var.value);
+// pass log lines to try and match
+let format = LogFormat::try_from(r"^(?<body>.*)$")?;
+let log = BufReader::new(File::open("application.log")?);
+
+for line in log.lines() {
+    let line = line?;
+    let Some(captures) = format.captures(&line) else {
+        continue;
+    };
+
+    let log_ref = LogRefBuilder::new().build_from_captures(captures, &line);
+
+    if let Some(mapping) = matcher.match_log_statement(&log_ref) {
+        if let Some(source) = mapping.src_ref {
+            println!("{}:{} - {}", source.source_path, source.line_no, source.text);
+        }
     }
 }
 ```
+
+For multiline log messages or logs that include source hints such as a file and line number, define additional named captures in the format. Supported captures include `timestamp`, `thread`, `file`, `line`, `method`, `level`, and `body`.
 
 ## Contributing
 This is mostly a hobby project worked on during nights and weekends, so to minimize project management I'm not looking for pull requests at the moment. Feel free to file an issue to discuss bugs, ideas, or other interest in the project.
