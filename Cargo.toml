@@ -43,7 +43,7 @@ tree-sitter-java = "0.23.5"
 tree-sitter-python = "0.25.0"
 
 [build-dependencies]
-cc="*"
+cc="1.2.19"
 
 [dev-dependencies]
 assert_cmd = "2.0.16"
