@@ -1,7 +1,6 @@
 #[macro_use]
 extern crate log;
 
-use rand::Rng;
 
 #[derive(Debug)]
 enum Animal {
@@ -28,10 +27,9 @@ impl Animal {
 
 fn main() {
     env_logger::init();
-    let mut rng = rand::rng();
     let barn = init();
     for _ in 0..10 {
-        let i = rng.random_range(0..barn.len());
+        let i = rand::random_range(0..barn.len());
         debug!("Animal is going to make a noise");
         let animal = &barn[i];
         make_noise(animal);
