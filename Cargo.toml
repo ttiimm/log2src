@@ -9,14 +9,14 @@ keywords = ["logging", "debugging", "source-map"]
 license = "MIT"
 repository = "https://github.com/ttiimm/log2src"
 include = [
-    "Cargo.toml",
-    "LICENSE",
-    "README.md",
-    "examples/**",
-    "schemas/**",
-    "src/**",
-    "tests/**",
-    "docs/debugger-demo.gif",
+    "/Cargo.toml",
+    "/LICENSE",
+    "/README.md",
+    "/examples/**",
+    "/schemas/**",
+    "/src/**",
+    "/tests/**",
+    "/docs/debugger-demo.gif",
 ]
 
 [dependencies]
