@@ -10,10 +10,12 @@ info:
     - "-f"
     - "^(?<timestamp>\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}) (?<thread>\\d+) (?<body>.*)$"
   env:
+    APPDATA: /var/folders/hq/4yhdz_bx6ygfyxl54gnpygc80000gn/T/.tmpF9O5Dv
     COLS: "1000"
-    HOME: /var/folders/gq/s3t7n95d19g3w41nsw0m0n240000gn/T/.tmpzzq9Js
-    USERPROFILE: /var/folders/gq/s3t7n95d19g3w41nsw0m0n240000gn/T/.tmpzzq9Js
-    XDG_CONFIG_HOME: /var/folders/gq/s3t7n95d19g3w41nsw0m0n240000gn/T/.tmpzzq9Js
+    HOME: /var/folders/hq/4yhdz_bx6ygfyxl54gnpygc80000gn/T/.tmpF9O5Dv
+    LOCALAPPDATA: /var/folders/hq/4yhdz_bx6ygfyxl54gnpygc80000gn/T/.tmpF9O5Dv
+    USERPROFILE: /var/folders/hq/4yhdz_bx6ygfyxl54gnpygc80000gn/T/.tmpF9O5Dv
+    XDG_CONFIG_HOME: /var/folders/hq/4yhdz_bx6ygfyxl54gnpygc80000gn/T/.tmpF9O5Dv
 ---
 success: true
 exit_code: 0
@@ -23,4 +25,4 @@ exit_code: 0
 
 ----- stderr -----
   ⚠ failed to read cache file "cache.XXX"
-  ╰─▶ Io { inner: Error { kind: UnexpectedEof, message: "failed to fill whole buffer" }, additional: 39 }
+  ╰─▶ Hit the end of buffer, expected more data

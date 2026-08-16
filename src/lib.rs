@@ -72,7 +72,6 @@ pub use progress::WorkInfo;
 use source_query::QueryResult;
 pub use source_ref::{CallSite, SourceRef};
 
-
 #[derive(Error, Debug, Diagnostic, Clone, Default)]
 pub enum LogError {
     #[default]
@@ -184,7 +183,7 @@ pub(crate) enum Revision {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) enum CacheEntryFormat {
-    Bincode,
+    Postcard,
 }
 
 /// Header for an entry in the cache.  Currently, this is more of interest to humans than machines.
@@ -325,12 +324,12 @@ impl LogMatcher {
             }
         })?;
         // XXX check that the path matches?
-        let mut decoded_root: SourceTree =
-            bincode::serde::decode_from_std_read(&mut reader, bincode::config::standard())
-                .map_err(|err| LogError::FailedToReadCache {
-                    path: path.to_owned(),
-                    source: Arc::new(err),
-                })?;
+        let mut scratch = [0u8; 1024];
+        let (mut decoded_root, _) = postcard::from_io::<SourceTree, _>((&mut reader, &mut scratch))
+            .map_err(|err| LogError::FailedToReadCache {
+                path: path.to_owned(),
+                source: Arc::new(err),
+            })?;
         for sif in decoded_root.files_with_statements.values_mut() {
             sif.try_creating_matcher();
             sif.to_lookup_pair().into_iter().for_each(|(name, sid)| {
@@ -413,7 +412,7 @@ impl LogMatcher {
                 let header = CacheEntryHeader {
                     schema: CacheEntrySchema::V1,
                     revision: Revision::Current,
-                    format: CacheEntryFormat::Bincode,
+                    format: CacheEntryFormat::Postcard,
                     path: root_path.to_string_lossy().to_string(),
                     timestamp: SystemTime::now()
                         .duration_since(UNIX_EPOCH)
@@ -423,8 +422,7 @@ impl LogMatcher {
                 serde_json::to_writer(&file, &header).map_err(to_write_cache_error)?;
                 file.write_all("\n".as_bytes())
                     .map_err(to_write_cache_error)?;
-                bincode::serde::encode_into_std_write(root, &mut file, bincode::config::standard())
-                    .map_err(to_write_cache_error)?;
+                postcard::to_io(root, &mut file).map_err(to_write_cache_error)?;
                 total_size = total_size.saturating_add(file.stream_position().unwrap_or(0));
                 file.into_temp_path()
             };
@@ -584,8 +582,7 @@ impl LogMatcher {
                         .iter()
                         .flat_map(|path| coll.files_with_statements.get(path))
                         .flat_map(|stmts| {
-                            let file_matches =
-                                stmts.matcher.as_ref()?.matches(body);
+                            let file_matches = stmts.matcher.as_ref()?.matches(body);
                             match file_matches.iter().next() {
                                 None => None,
                                 Some(index) => stmts.log_statements.get(index),
@@ -598,8 +595,7 @@ impl LogMatcher {
                         .values()
                         .filter(|stmts| stmts.path.contains(filename))
                         .flat_map(|stmts| {
-                            let file_matches =
-                                stmts.matcher.as_ref()?.matches(body);
+                            let file_matches = stmts.matcher.as_ref()?.matches(body);
                             match file_matches.iter().next() {
                                 None => None,
                                 Some(index) => stmts.log_statements.get(index),
@@ -611,11 +607,7 @@ impl LogMatcher {
                 coll.files_with_statements
                     .par_iter()
                     .flat_map(|src_ref_coll| {
-                        let file_matches = src_ref_coll
-                            .1
-                            .matcher
-                            .as_ref()?
-                            .matches(log_ref.body());
+                        let file_matches = src_ref_coll.1.matcher.as_ref()?.matches(log_ref.body());
                         match file_matches.iter().next() {
                             None => None,
                             Some(index) => src_ref_coll.1.log_statements.get(index),

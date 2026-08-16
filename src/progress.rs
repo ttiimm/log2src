@@ -27,10 +27,7 @@ pub fn set_tracker_once(tracker: Arc<ProgressTracker>) {
 }
 
 pub(crate) fn current_global_progress_tracker() -> Arc<ProgressTracker> {
-    GLOBAL_PROGRESS_TRACKER
-        .get()
-        .cloned()
-        .unwrap_or_default()
+    GLOBAL_PROGRESS_TRACKER.get().cloned().unwrap_or_default()
 }
 
 pub struct WorkInfo {

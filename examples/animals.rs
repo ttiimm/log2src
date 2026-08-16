@@ -1,7 +1,6 @@
 #[macro_use]
 extern crate log;
 
-
 #[derive(Debug)]
 enum Animal {
     Sheep,

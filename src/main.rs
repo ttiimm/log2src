@@ -2,13 +2,14 @@ use clap::Parser as ClapParser;
 use colored_json::{ColoredFormatter, CompactFormatter, Styler};
 use indicatif::{ProgressBar, ProgressStyle};
 use log2src::{
-    Cache, LogError, LogFormat, LogMapping, LogMatcher, LogRef, LogRefBuilder, ProgressTracker, ProgressUpdate, set_tracker_once,
+    set_tracker_once, Cache, LogError, LogFormat, LogMapping, LogMatcher, LogRef, LogRefBuilder,
+    ProgressTracker, ProgressUpdate,
 };
 use miette::{IntoDiagnostic, MietteHandlerOpts, Report};
 use serde::Serialize;
 use std::io::{stdout, BufRead, BufReader};
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 use std::thread::sleep;
 use std::time::Duration;
 use std::{env, fs, io, path::PathBuf};
@@ -212,7 +213,11 @@ fn main() -> miette::Result<()> {
 
     let args = Cli::parse();
     let mut tracker = ProgressTracker::new();
-    let listener = if args.verbose { Some(tracker.subscribe()) } else { None };
+    let listener = if args.verbose {
+        Some(tracker.subscribe())
+    } else {
+        None
+    };
     let tracker = Arc::new(tracker);
     set_tracker_once(Arc::clone(&tracker));
 

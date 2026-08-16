@@ -11,7 +11,11 @@ pub(crate) struct CodeSource {
 }
 
 impl CodeSource {
-    pub(crate) fn new<I>(path: &Path, info: SourceFileInfo, mut input: I) -> Result<CodeSource, LogError>
+    pub(crate) fn new<I>(
+        path: &Path,
+        info: SourceFileInfo,
+        mut input: I,
+    ) -> Result<CodeSource, LogError>
     where
         I: io::Read,
     {

@@ -20,12 +20,15 @@ include = [
 ]
 
 [dependencies]
-bincode = { version = "2.0.1", features = ["serde", "std"]}
 clap = { version = "4.5.36", features = ["std", "derive"] }
 colored_json = "5.0.0"
 directories = "6.0.0"
+ignore = "0.4"
 indicatif = "0.18.0"
 itertools = "0.14.0"
+miette = { version = "7.6.0", features = ["fancy", "serde"] }
+postcard = { version = "1.1.3", features = ["use-std"]}
+rayon = "1.11.0"
 regex = "1.11.1"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
@@ -38,9 +41,6 @@ tree-sitter-cpp = "0.23.4"
 tree-sitter-rust-orchard = "0.12.0"
 tree-sitter-java = "0.23.5"
 tree-sitter-python = "0.25.0"
-ignore = "0.4"
-rayon = "1.11.0"
-miette = { version = "7.6.0", features = ["fancy", "serde"] }
 
 [build-dependencies]
 cc="*"
