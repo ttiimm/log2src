@@ -8,6 +8,16 @@ readme = "README.md"
 keywords = ["logging", "debugging", "source-map"]
 license = "MIT"
 repository = "https://github.com/ttiimm/log2src"
+include = [
+    "Cargo.toml",
+    "LICENSE",
+    "README.md",
+    "examples/**",
+    "schemas/**",
+    "src/**",
+    "tests/**",
+    "docs/debugger-demo.gif",
+]
 
 [dependencies]
 bincode = { version = "2.0.1", features = ["serde", "std"]}
