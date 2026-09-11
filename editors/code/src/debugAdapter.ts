@@ -189,6 +189,7 @@ export class DebugSession extends LoggingDebugSession {
         };
 
         if (breakpoints.length > 0) {
+            this._logDebugger.gotoBreakpoint();
             this.sendEvent(new StoppedEvent('breakpoint', DebugSession._threadID));
         }
         return this.sendResponse(response);

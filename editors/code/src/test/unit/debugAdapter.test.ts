@@ -174,14 +174,15 @@ suite('DebugAdapter Test Suite', () => {
     });
 
     suite('Breakpoint Tests', () => {
+        const logPath = "path-to-log";
         setup(() => {
             debugSession = createSession(logDebugger);
+            logDebugger.setToLog(logPath, 5);
         });
 
         test('Should set breakpoints correctly', () => {
-            const sourcePath = '/test/source/file.log';
             const args: DebugProtocol.SetBreakpointsArguments = {
-                source: { path: sourcePath },
+                source: { path: logPath },
                 breakpoints: [{ line: 10 }, { line: 20 }, { line: 30 }]
             };
             const response: DebugProtocol.SetBreakpointsResponse = {
@@ -202,6 +203,7 @@ suite('DebugAdapter Test Suite', () => {
                 assert.strictEqual(bp.line, args.breakpoints![index].line, `Breakpoint ${index} should have correct line`);
             });
             assert.strictEqual(eventCount, 1, 'Should send stopped event');
+            assert.strictEqual(logDebugger.linenum(), 10, 'Should set logDebugger to first breakpoint');
         });
 
         test('Should handle empty breakpoints array', () => {
