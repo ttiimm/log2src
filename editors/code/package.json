@@ -1,13 +1,22 @@
 {
   "name": "log2src-ext",
   "displayName": "log2src",
+  "icon": "images/icon.png",
   "description": "A debugger driven by logs",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "publisher": "ttiimm",
   "author": {
     "name": "Tim Likarish Ellis"
   },
   "license": "MIT",
+  "keywords": [
+    "debugger",
+    "log",
+    "logs",
+    "dap",
+    "source-mapping",
+    "developer-tools"
+  ],
   "engines": {
     "vscode": "^1.83.0",
     "node": ">=22.0.0",
@@ -18,7 +27,8 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/ttiimm/log2src.git"
+    "url": "https://github.com/ttiimm/log2src.git",
+    "directory": "editors/code"
   },
   "bugs": {
     "url": "https://github.com/ttiimm/log2src/issues"
@@ -132,7 +142,7 @@
   "devDependencies": {
     "@types/mocha": "^10.0.10",
     "@types/node": "22.14.1",
-    "@types/vscode": "^1.134.0",
+    "@types/vscode": "^1.83.0",
     "@typescript-eslint/eslint-plugin": "^8.67.0",
     "@typescript-eslint/parser": "^8.67.0",
     "@vscode/debugadapter-testsupport": "^1.68.0",
