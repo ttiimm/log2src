@@ -1,10 +1,11 @@
 {
-  "name": "log2src-ext",
+  "name": "log2src",
   "displayName": "log2src",
   "icon": "images/icon.png",
-  "description": "A debugger driven by logs",
+  "description": "Map runtime logs to source code for analysis and exploration.",
+  "preview": true,
   "version": "0.1.0",
-  "publisher": "ttiimm",
+  "publisher": "log2src",
   "author": {
     "name": "Tim Likarish Ellis"
   },
@@ -18,7 +19,7 @@
     "developer-tools"
   ],
   "engines": {
-    "vscode": "^1.83.0",
+    "vscode": "^1.97.0",
     "node": ">=22.0.0",
     "pnpm": ">=10.8.0"
   },
@@ -142,7 +143,7 @@
   "devDependencies": {
     "@types/mocha": "^10.0.10",
     "@types/node": "22.14.1",
-    "@types/vscode": "^1.83.0",
+    "@types/vscode": "^1.97.0",
     "@typescript-eslint/eslint-plugin": "^8.67.0",
     "@typescript-eslint/parser": "^8.67.0",
     "@vscode/debugadapter-testsupport": "^1.68.0",

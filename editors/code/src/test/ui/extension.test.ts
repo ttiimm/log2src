@@ -6,11 +6,11 @@ suite('Extension Test Suite', () => {
 	vscode.window.showInformationMessage('Start all tests.');
 
 	test('Extension should be present', () => {
-		assert.ok(vscode.extensions.getExtension('ttiimm.log2src-ext'));
+		assert.ok(vscode.extensions.getExtension('log2src.log2src'));
 	});
 
 	test('Extension should activate', async () => {
-		const ext = vscode.extensions.getExtension('ttiimm.log2src-ext');
+		const ext = vscode.extensions.getExtension('log2src.log2src');
 		assert.ok(ext);
 		await ext!.activate();
 		assert.strictEqual(ext!.isActive, true);
@@ -18,7 +18,7 @@ suite('Extension Test Suite', () => {
 
 	test('Should register log2src debug type', async () => {
 		// Ensure extension is activated
-		const ext = vscode.extensions.getExtension('ttiimm.log2src-ext');
+		const ext = vscode.extensions.getExtension('log2src.log2src');
 		await ext?.activate();
 
 		// Verify the extension activated successfully

@@ -23,6 +23,7 @@ async function main() {
 		await runTests({ 
 			extensionDevelopmentPath, 
 			extensionTestsPath,
+			version: '1.97.0',
 			launchArgs
 		 });
 	} catch (err) {
