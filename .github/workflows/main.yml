@@ -5,6 +5,7 @@ on:
     branches: [ "main" ]
     tags:
       - 'v*'
+      - 'vscode-v*'
   pull_request:
     branches: [ "main" ]
 
@@ -180,7 +181,7 @@ jobs:
   vscode-extension:
     name: Build VS Code Extensions
     needs: [build-release]
-    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/vscode-v')
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -259,27 +260,27 @@ jobs:
         run: pnpm run test
 
       - name: Build VS Code extension
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/vscode-v')
         working-directory: editors/code
         run: |
           REF_NAME="${{ github.ref_name }}"
-          VERSION=${REF_NAME#v}
+          VERSION=${REF_NAME#vscode-v}
           jq '.version = "'$VERSION'"' package.json > package.json.new
           mv package.json.new package.json
           pnpm vsce package --no-dependencies --target ${{ matrix.vsce-target }}
       
       - name: Upload VS Code extension
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/vscode-v')
         uses: actions/upload-artifact@v4
         with:
-          name: log2src-ext-${{ github.ref_name }}-${{ matrix.target }}.vsix
+          name: log2src-${{ github.ref_name }}-${{ matrix.target }}.vsix
           path: editors/code/*.vsix
           if-no-files-found: error
 
   release:
-    name: Create Release
-    needs: [build-release, vscode-extension]
-    if: startsWith(github.ref, 'refs/tags/')
+    name: Create Rust Release
+    needs: [build-release]
+    if: startsWith(github.ref, 'refs/tags/v') && !startsWith(github.ref, 'refs/tags/vscode-v')
     runs-on: ubuntu-latest
 
     steps:
@@ -301,3 +302,29 @@ jobs:
           files: release/**/*
           draft: true
           prerelease: ${{ contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') }}
+
+  vscode-release:
+    name: Create VS Code Release
+    needs: [build-release, vscode-extension]
+    if: startsWith(github.ref, 'refs/tags/vscode-v')
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download VSIX artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: log2src-${{ github.ref_name }}-*.vsix
+          path: release
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: log2src VS Code ${{ github.ref_name }}
+          token: ${{ secrets.L2S_RELEASE }}
+          files: release/*.vsix
+          draft: true
+          prerelease: true
+

@@ -80,6 +80,13 @@ $ pnpm vsce package --no-dependencies
 
 The vsix package can be installed within the VS Code extensions.
 
+## Releases
+
+The GitHub Actions release workflow uses separate tags for the Rust crate and VS Code extension:
+
+- `vx.y.z` builds the Rust release, creates a draft GitHub release, and is manually released to crates.io (using `cargo publish`).
+- `vscode-vx.y.z` builds platform-specific VSIX packages, creates a draft GitHub release, and is manually released to the VS Code Marketplace (Using `pnpm exec vsce login log2src && pnpm exec vsce publish --packagePath /path/to/xxx.vsix`).
+
 ## Library Usage
 
 The `log2src` crate can be used as a library. Full API documentation is available at [docs.rs/log2src](https://docs.rs/log2src).

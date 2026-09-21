@@ -29,7 +29,7 @@ This is an early prototype that only works with simple programs, demonstrated in
 3. Production issues: Trying to debug on prod is risky and requires access to the infrastructure where the application is running. With log2src, as long as the logs are accessible to you, you can debug the problem offline without impacting production servers.
 
 ## Requirements
-- VS Code (version 1.83.0 or later)
+- VS Code (version 1.97.0 or later)
 
 ## Use
 
