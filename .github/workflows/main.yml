@@ -289,7 +289,9 @@ jobs:
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
+          pattern: log2src-${{ github.ref_name }}-*
           path: release
+          merge-multiple: true
 
       - name: List files
         run: ls -R release
