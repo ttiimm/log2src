@@ -58,18 +58,6 @@ jobs:
     - name: Run tests
       run: cargo test --verbose
     
-    - name: Build release binary for extension tests (macOS ARM64 only)
-      if: matrix.target == 'aarch64-apple-darwin'
-      run: cargo build --release --target ${{ matrix.target }}
-    
-    - name: Upload release binary for extension tests (macOS ARM64 only)
-      if: matrix.target == 'aarch64-apple-darwin'
-      uses: actions/upload-artifact@v4
-      with:
-        name: log2src-test-binary
-        path: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
-        if-no-files-found: error
-
   vscode-extension-test:
     name: Test VS Code Extension
     needs: [lib-build-and-test]
@@ -80,16 +68,20 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Download log2src binary
-        uses: actions/download-artifact@v4
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
         with:
-          name: log2src-test-binary
-          path: downloaded-binary
+          toolchain: stable
+          target: aarch64-apple-darwin
+          override: true
+
+      - name: Build log2src binary for extension tests
+        run: cargo build --release --target aarch64-apple-darwin
 
       - name: Setup binary for VS Code extension
         run: |
           mkdir -p editors/code/bin/darwin-arm64
-          cp downloaded-binary/log2src editors/code/bin/darwin-arm64/
+          cp target/aarch64-apple-darwin/release/log2src editors/code/bin/darwin-arm64/
           chmod +x editors/code/bin/darwin-arm64/log2src
 
       - name: Install pnpm
