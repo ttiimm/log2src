@@ -4,7 +4,7 @@
   "icon": "images/icon.png",
   "description": "Map runtime logs to source code for analysis and exploration.",
   "preview": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "log2src",
   "author": {
     "name": "Tim Likarish Ellis"
@@ -35,7 +35,8 @@
     "url": "https://github.com/ttiimm/log2src/issues"
   },
   "activationEvents": [
-    "onDebugResolve:log2src"
+    "onDebugResolve:log2src",
+    "onLanguage:log2src"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -63,6 +64,42 @@
         "language": "log2src"
       }
     ],
+    "commands": [
+      {
+        "command": "log2src.configure",
+        "title": "Log2Src: Configure Source Roots and Log Format"
+      },
+      {
+        "command": "log2src.goToSourceAtCursor",
+        "title": "Log2Src: Go to Source at Cursor"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "log2src.goToSourceAtCursor",
+        "key": "ctrl+alt+g",
+        "mac": "cmd+alt+g",
+        "when": "editorTextFocus && editorLangId == log2src"
+      }
+    ],
+    "configuration": {
+      "title": "Log2Src",
+      "properties": {
+        "log2src.sourceRoots": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Absolute paths to source directories used to resolve log lines to source."
+        },
+        "log2src.logFormat": {
+          "type": "string",
+          "default": "",
+          "description": "A regex with named captures (at least (?<body>...)) describing the log format."
+        }
+      }
+    },
     "debuggers": [
       {
         "type": "log2src",
