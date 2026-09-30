@@ -10,6 +10,7 @@ import { Log2srcClient, SourceRef } from './log2srcClient';
 import { OutputSink } from './debugAdapter';
 
 export const LOG_LANGUAGE_ID = 'log2src';
+const CONFIGURE_EXTENSION = 'log2src.configure';
 const OPEN_SOURCE_LOCATION_COMMAND = 'log2src.openSourceLocation';
 const GO_TO_SOURCE_AT_CURSOR_COMMAND = 'log2src.goToSourceAtCursor';
 
@@ -85,7 +86,7 @@ class GoToSourceCodeLensProvider implements vscode.CodeLensProvider, vscode.Disp
 
         const line = editor.selection.active.line;
         const matches = this._index.getMatchesForRange(
-            document.uri.toString(), document.uri.fsPath, config.sourceDirs, config.logFormat, line, line
+            document.uri.fsPath, config.sourceDirs, config.logFormat, line, line
         );
         const mapping = matches.get(line);
         if (!mapping?.srcRef) {
@@ -142,7 +143,7 @@ async function goToSourceAtCursor(index: LogMatchIndex): Promise<void> {
     }
     const line = editor.selection.active.line;
     const matches = index.getMatchesForRange(
-        editor.document.uri.toString(), editor.document.uri.fsPath, config.sourceDirs, config.logFormat, line, line
+        editor.document.uri.fsPath, config.sourceDirs, config.logFormat, line, line
     );
     const mapping = matches.get(line);
     if (mapping?.srcRef) {
@@ -159,10 +160,10 @@ export function registerLogNavigation(context: vscode.ExtensionContext, client: 
     context.subscriptions.push(
         vscode.languages.registerCodeLensProvider({ language: LOG_LANGUAGE_ID }, codeLensProvider),
         codeLensProvider,
-        vscode.commands.registerCommand('log2src.configure', () => configureSourceRootsAndFormat(output)),
+        vscode.commands.registerCommand(CONFIGURE_EXTENSION, () => configureSourceRootsAndFormat(output)),
         vscode.commands.registerCommand(OPEN_SOURCE_LOCATION_COMMAND, (srcRef: SourceRef) => openSourceLocation(srcRef)),
         vscode.commands.registerCommand(GO_TO_SOURCE_AT_CURSOR_COMMAND, () => goToSourceAtCursor(index)),
-        vscode.workspace.onDidCloseTextDocument((doc) => index.invalidate(doc.uri.toString())),
-        vscode.workspace.onDidChangeTextDocument((event) => index.invalidate(event.document.uri.toString())),
+        vscode.workspace.onDidCloseTextDocument((doc) => index.invalidate(doc.uri.fsPath)),
+        vscode.workspace.onDidChangeTextDocument((event) => index.invalidate(event.document.uri.fsPath)),
     );
 }

@@ -7,7 +7,7 @@ import { Log2srcClient, LogMapping } from './log2srcClient';
 
 export class LogMatchIndex {
     private readonly _client: Log2srcClient;
-    // docUri -> (0-based log line -> mapping)
+    // logFile (fsPath) -> (0-based log line -> mapping)
     private readonly _cache = new Map<string, Map<number, LogMapping>>();
 
     public constructor(client: Log2srcClient) {
@@ -16,20 +16,19 @@ export class LogMatchIndex {
 
     /**
      * Returns matches (lines with a resolved srcRef) for [startLine, endLine], querying the
-     * binary only if any line in the range hasn't been queried yet for this document.
+     * binary only if any line in the range hasn't been queried yet for this log file.
      */
     public getMatchesForRange(
-        docUri: string,
         logFile: string,
         sourceDirs: string[],
         logFormat: string | undefined,
         startLine: number,
         endLine: number
     ): Map<number, LogMapping> {
-        let cacheForDoc = this._cache.get(docUri);
+        let cacheForDoc = this._cache.get(logFile);
         if (!cacheForDoc) {
             cacheForDoc = new Map();
-            this._cache.set(docUri, cacheForDoc);
+            this._cache.set(logFile, cacheForDoc);
         }
 
         let needsQuery = false;
@@ -61,8 +60,8 @@ export class LogMatchIndex {
         return result;
     }
 
-    /** Drop cached results for a document, e.g. after it changes on disk. */
-    public invalidate(docUri: string): void {
-        this._cache.delete(docUri);
+    /** Drop cached results for a log file, e.g. after it changes on disk. */
+    public invalidate(logFile: string): void {
+        this._cache.delete(logFile);
     }
 }

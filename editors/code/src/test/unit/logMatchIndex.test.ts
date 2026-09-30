@@ -22,8 +22,8 @@ suite('LogMatchIndex Test Suite', () => {
         } as unknown as Log2srcClient;
         const index = new LogMatchIndex(client);
 
-        const first = index.getMatchesForRange('doc://a', '/log.log', ['/src'], undefined, 0, 1);
-        const second = index.getMatchesForRange('doc://a', '/log.log', ['/src'], undefined, 0, 1);
+        const first = index.getMatchesForRange('/log.log', ['/src'], undefined, 0, 1);
+        const second = index.getMatchesForRange('/log.log', ['/src'], undefined, 0, 1);
 
         assert.strictEqual(queryCount, 1, 'should only query the binary once for the same range');
         assert.strictEqual(first.get(0)?.srcRef?.lineNumber, 1);
@@ -39,7 +39,7 @@ suite('LogMatchIndex Test Suite', () => {
         } as unknown as Log2srcClient;
         const index = new LogMatchIndex(client);
 
-        const matches = index.getMatchesForRange('doc://b', '/log.log', ['/src'], undefined, 0, 1);
+        const matches = index.getMatchesForRange('/log.log', ['/src'], undefined, 0, 1);
 
         assert.strictEqual(matches.has(0), false);
         assert.strictEqual(matches.get(1)?.srcRef?.lineNumber, 2);
@@ -55,9 +55,9 @@ suite('LogMatchIndex Test Suite', () => {
         } as unknown as Log2srcClient;
         const index = new LogMatchIndex(client);
 
-        index.getMatchesForRange('doc://c', '/log.log', ['/src'], undefined, 0, 0);
-        index.invalidate('doc://c');
-        index.getMatchesForRange('doc://c', '/log.log', ['/src'], undefined, 0, 0);
+        index.getMatchesForRange('/log.log', ['/src'], undefined, 0, 0);
+        index.invalidate('/log.log');
+        index.getMatchesForRange('/log.log', ['/src'], undefined, 0, 0);
 
         assert.strictEqual(queryCount, 2, 'should re-query after invalidation');
     });
@@ -70,7 +70,7 @@ suite('LogMatchIndex Test Suite', () => {
         } as unknown as Log2srcClient;
         const index = new LogMatchIndex(client);
 
-        const matches = index.getMatchesForRange('doc://d', '/log.log', ['/src'], undefined, 0, 0);
+        const matches = index.getMatchesForRange('/log.log', ['/src'], undefined, 0, 0);
 
         assert.strictEqual(matches.size, 0);
     });
