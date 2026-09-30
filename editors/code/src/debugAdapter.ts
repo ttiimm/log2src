@@ -11,23 +11,19 @@ import {
     Handles,
 } from '@vscode/debugadapter';
 import { DebugProtocol } from '@vscode/debugprotocol';
-import { execFileSync as nodeExecFileSync } from 'child_process';
-import * as fs from 'fs';
 import * as path from 'path';
 
 import { LogDebugger } from './logDebugger';
+import {
+    defaultProcessRunner,
+    Log2srcClient,
+    LogMapping,
+    ProcessRunner,
+    SourceRef,
+} from './log2srcClient';
 
-export interface ProcessRunner {
-    execFileSync(file: string, args: string[]): Buffer;
-    readFile(path: string): Buffer;
-}
-
-const defaultProcessRunner: ProcessRunner = {
-    execFileSync: (file: string, args: string[]): Buffer =>
-        nodeExecFileSync(file, args) as Buffer,
-    readFile: (path: string): Buffer =>
-        fs.readFileSync(path)
-};
+export type { ProcessRunner } from './log2srcClient';
+export { BinaryNotFoundError } from './log2srcClient';
 
 export interface EditorEffects {
     openAndFocus(log: string, line: number): void;
@@ -49,30 +45,6 @@ const noopOutput: OutputSink = {
     appendLine: () => {}
 };
 
-interface CallSite {
-    name: string,
-    sourcePath: string,
-    lineNumber: number
-}
-
-interface LogMapping {
-    srcRef: SourceRef,
-    exceptionTrace: Array<CallSite>,
-    variables: Array<VariablePair>
-}
-
-interface VariablePair {
-    expr: string,
-    value: string,
-}
-
-interface SourceRef {
-    sourcePath: string,
-    lineNumber: number,
-    column: number,
-    name: string,
-}
-
 export interface ILaunchRequestArguments extends DebugProtocol.LaunchRequestArguments {
     // the source to debug, currently a single file
     source: string;
@@ -88,25 +60,6 @@ export interface ILaunchRequestArguments extends DebugProtocol.LaunchRequestArgu
 
 interface IAttachRequestArguments extends ILaunchRequestArguments { }
 
-
-const PLATFORM_TO_BINARY = new Map<string, string>([
-    ["darwin-arm64", "../bin/darwin-arm64/log2src"],
-    ["darwin-x64", "../bin/darwin-x64/log2src"],
-    ["linux-x64", "../bin/linux-x64/log2src"],
-    ["win32-x64", "../bin/win-x64/log2src.exe"],
-]);
-
-
-export class BinaryNotFoundError extends Error {
-    constructor(message: string) {
-        super(message);
-        this.name = "BinaryNotFoundError";
-        if (Error.captureStackTrace) {
-            Error.captureStackTrace(this, BinaryNotFoundError);
-        }
-    }
-}
-
 export class DebugSession extends LoggingDebugSession {
 
     // prefer constant to be all caps
@@ -114,7 +67,7 @@ export class DebugSession extends LoggingDebugSession {
     private static readonly NEWLINE = '\n'.charCodeAt(0);
 
     private static readonly _threadID = 1;
-    private _binaryPath: string;
+    private readonly _client: Log2srcClient;
     private readonly _variableHandles = new Handles<'locals'>();
     private _launchArgs: ILaunchRequestArguments = { source: "", log: "", log_format: "" };
     private _mapping?: LogMapping = undefined;
@@ -134,13 +87,7 @@ export class DebugSession extends LoggingDebugSession {
     ) {
         super("log2src-dap.txt");
         this._editorEffects = editorEffects;
-        this._binaryPath = PLATFORM_TO_BINARY.get(`${process.platform}-${process.arch}`)!;
-
-        if (!this._binaryPath) {
-            throw new BinaryNotFoundError(
-                `No binary available for platform: ${process.platform} and architecture: ${process.arch}`
-            );
-        }
+        this._client = new Log2srcClient(processRunner, __dirname);
 
         this._logDebugger = logDebugger;
         this._output = outputSink;
@@ -265,22 +212,14 @@ export class DebugSession extends LoggingDebugSession {
     protected stackTraceRequest(response: DebugProtocol.StackTraceResponse, args: DebugProtocol.StackTraceArguments): void {
         console.log(`stackTraceRequest ${JSON.stringify(args)}`);
 
-        const log2srcPath = path.resolve(__dirname, this._binaryPath);
         const start = this._logDebugger.linenum() - 1;
 
         this._editorEffects.openAndFocus(this._launchArgs.log, this._logDebugger.linenum());
 
-        const l2sArgs: string[] = ['-d', this._launchArgs.source,
-            '--log', this._launchArgs.log,
-            '--start', String(start),
-            '--count', '1'];
-        if (this._launchArgs.log_format !== undefined && this._launchArgs.log_format !== "") {
-            l2sArgs.push("-f");
-            l2sArgs.push(this._launchArgs.log_format);
-        }
-        this._output.appendLine(`args ${l2sArgs.join(" ")}`);
-        const stdout = this._processRunner.execFileSync(log2srcPath, l2sArgs);
-        this._mapping = JSON.parse(stdout.toString('utf8'));
+        const logFormat = this._launchArgs.log_format !== undefined && this._launchArgs.log_format !== ""
+            ? this._launchArgs.log_format
+            : undefined;
+        this._mapping = this._client.queryMapping([this._launchArgs.source], this._launchArgs.log, logFormat, start);
         this._output.appendLine(`mapped ${JSON.stringify(this._mapping)}`);
 
         let index = 0;
