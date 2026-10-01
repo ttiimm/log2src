@@ -50,6 +50,29 @@ suite('Log2srcClient Test Suite', () => {
         assert.strictEqual(mappings[2].srcRef?.lineNumber, 2);
     });
 
+    test('querySourceUsages requests a compact summary asynchronously', async () => {
+        let capturedArgs: string[] = [];
+        const runner: ProcessRunner = {
+            execFileSync: (): Buffer => Buffer.alloc(0),
+            execFileAsync: (_file: string, args: string[]): Promise<Buffer> => {
+                capturedArgs = args;
+                return Promise.resolve(Buffer.from('[{"sourcePath":"/src/main.rs","lineNumber":12,"column":4,"name":"info","count":2,"samples":[]}]'));
+            },
+            readFile: (): Buffer => Buffer.alloc(0),
+        };
+        const client = new Log2srcClient(runner, __dirname);
+
+        const usages = await client.querySourceUsages(['/src'], '/logs/current app.log', '(?<body>.*)');
+
+        assert.deepStrictEqual(usages.map(usage => usage.count), [2]);
+        assert.deepStrictEqual(capturedArgs, [
+            '-d', '/src',
+            '--log', '/logs/current app.log',
+            '-f', '(?<body>.*)',
+            '--summary'
+        ]);
+    });
+
     test('passes multiple source dirs and log format as separate -d flags', () => {
         let capturedArgs: string[] = [];
         const runner: ProcessRunner = {

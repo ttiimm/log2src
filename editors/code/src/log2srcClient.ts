@@ -4,18 +4,40 @@
  * adapter and the non-debug (CodeLens/DocumentLink/command) navigation providers.
  */
 
-import { execFileSync as nodeExecFileSync } from 'child_process';
+import { execFile as nodeExecFile, execFileSync as nodeExecFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 
 export interface ProcessRunner {
     execFileSync(file: string, args: string[]): Buffer;
+    execFileAsync?(file: string, args: string[], signal?: AbortSignal): Promise<Buffer>;
     readFile(path: string): Buffer;
 }
 
 export const defaultProcessRunner: ProcessRunner = {
     execFileSync: (file: string, args: string[]): Buffer =>
         nodeExecFileSync(file, args) as Buffer,
+    execFileAsync: (file: string, args: string[], signal?: AbortSignal): Promise<Buffer> =>
+        new Promise((resolve, reject) => {
+            if (signal?.aborted) {
+                reject(new Error('Log2Src source usage scan cancelled'));
+                return;
+            }
+            const child = nodeExecFile(file, args, { encoding: 'buffer', maxBuffer: 16 * 1024 * 1024 }, (error, stdout, stderr) => {
+                signal?.removeEventListener('abort', abort);
+                if (signal?.aborted) {
+                    reject(new Error('Log2Src source usage scan cancelled'));
+                } else if (error) {
+                    reject(new Error(stderr.toString('utf8') || error.message));
+                } else {
+                    resolve(stdout);
+                }
+            });
+            const abort = (): void => {
+                child.kill();
+            };
+            signal?.addEventListener('abort', abort, { once: true });
+        }),
     readFile: (path: string): Buffer =>
         fs.readFileSync(path)
 };
@@ -72,6 +94,21 @@ export interface LogMapping {
     variables: Array<VariablePair>
 }
 
+export interface SourceUsage {
+    sourcePath: string;
+    lineNumber: number;
+    column: number;
+    name: string;
+    count: number;
+    samples: LogSample[];
+}
+
+export interface LogSample {
+    lineNumber: number;
+    text: string;
+}
+
+
 /**
  * Thin wrapper around invoking the log2src binary and parsing its JSON output.
  */
@@ -104,15 +141,34 @@ export class Log2srcClient {
             .map(line => JSON.parse(line) as LogMapping);
     }
 
-    private run(sourceDirs: string[], logFile: string, logFormat: string | undefined, start: number, count: number): string {
-        const args: string[] = [];
-        for (const dir of sourceDirs) {
-            args.push('-d', dir);
+    /** Scan the full log and return compact, source-grouped match counts and samples. */
+    public async querySourceUsages(sourceDirs: string[], logFile: string, logFormat: string | undefined, signal?: AbortSignal): Promise<SourceUsage[]> {
+        const args = this.buildArgs(sourceDirs, logFile);
+        if (logFormat) {
+            args.push('-f', logFormat);
         }
-        args.push('--log', logFile, '--start', String(start), '--count', String(count));
+        args.push('--summary');
+        const stdout = this._processRunner.execFileAsync
+            ? await this._processRunner.execFileAsync(this._binaryPath, args, signal)
+            : this._processRunner.execFileSync(this._binaryPath, args);
+        return JSON.parse(stdout.toString('utf8')) as SourceUsage[];
+    }
+
+    private run(sourceDirs: string[], logFile: string, logFormat: string | undefined, start: number, count: number): string {
+        const args = this.buildArgs(sourceDirs, logFile);
+        args.push('--start', String(start), '--count', String(count));
         if (logFormat) {
             args.push('-f', logFormat);
         }
         return this._processRunner.execFileSync(this._binaryPath, args).toString('utf8');
+    }
+
+    private buildArgs(sourceDirs: string[], logFile: string): string[] {
+        const args: string[] = [];
+        for (const dir of sourceDirs) {
+            args.push('-d', dir);
+        }
+        args.push('--log', logFile);
+        return args;
     }
 }
