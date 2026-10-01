@@ -7,6 +7,7 @@ use log2src::{
 };
 use miette::{IntoDiagnostic, MietteHandlerOpts, Report};
 use serde::Serialize;
+use std::collections::BTreeMap;
 use std::io::{stdout, BufRead, BufReader};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -55,6 +56,10 @@ struct Cli {
     #[arg(short, long, value_name = "COUNT")]
     count: Option<usize>,
 
+    /// Aggregate matching messages by source statement
+    #[arg(long)]
+    summary: bool,
+
     /// Print progress information to standard error
     #[arg(short, long)]
     verbose: bool,
@@ -73,16 +78,45 @@ struct MessageAccumulator {
     content: String,
     message_count: usize,
     limit: usize,
+    summary: bool,
+    message_start_line: usize,
+    source_usage: BTreeMap<(String, usize, usize, String), SourceUsage>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SourceUsage {
+    source_path: String,
+    line_number: usize,
+    column: usize,
+    name: String,
+    count: usize,
+    samples: Vec<LogSample>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LogSample {
+    line_number: usize,
+    text: String,
 }
 
 impl MessageAccumulator {
-    fn new(log_matcher: LogMatcher, log_format: Option<LogFormat>, limit: usize) -> Self {
+    fn new(
+        log_matcher: LogMatcher,
+        log_format: Option<LogFormat>,
+        limit: usize,
+        summary: bool,
+    ) -> Self {
         Self {
             log_matcher,
             log_format,
             content: String::new(),
             message_count: 0,
             limit,
+            summary,
+            message_start_line: 0,
+            source_usage: BTreeMap::new(),
         }
     }
 
@@ -102,17 +136,41 @@ impl MessageAccumulator {
             self.message_count += 1;
             let log_ref = LogRefBuilder::new().build_from_captures(captures, &self.content);
             let log_mapping = self.get_log_mapping(log_ref);
-            let serialized = get_colored_formatter().to_colored_json_auto(&log_mapping);
-            println!("{}", serialized.unwrap());
+            if self.summary {
+                if let Some((source_path, source_line, column, name)) =
+                    log_mapping.src_ref.map(|src_ref| {
+                        (
+                            src_ref.source_path.clone(),
+                            src_ref.line_no,
+                            src_ref.column,
+                            src_ref.name.clone(),
+                        )
+                    })
+                {
+                    Self::record_source_usage(
+                        &mut self.source_usage,
+                        &source_path,
+                        source_line,
+                        column,
+                        &name,
+                        &self.content,
+                        self.message_start_line,
+                    );
+                }
+            } else {
+                let serialized = get_colored_formatter().to_colored_json_auto(&log_mapping);
+                println!("{}", serialized.unwrap());
+            }
         }
         self.content.clear();
     }
 
-    fn new_msg(&mut self, line: &str) {
+    fn new_msg(&mut self, line: &str, line_number: usize) {
         if !self.content.is_empty() {
             self.process_msg();
         }
 
+        self.message_start_line = line_number;
         self.content.push_str(line);
     }
 
@@ -124,28 +182,83 @@ impl MessageAccumulator {
         self.content.push_str(line);
     }
 
-    fn process_bare_msg(&self, line: &str) {
+    fn process_bare_msg(&mut self, line: &str, line_number: usize) {
         let log_ref = LogRefBuilder::new().with_body(Some(line)).build(line);
         let log_mapping = self.get_log_mapping(log_ref);
-        println!(
-            "{}",
-            get_colored_formatter()
-                .to_colored_json_auto(&log_mapping)
-                .unwrap()
-        );
+        if self.summary {
+            if let Some((source_path, source_line, column, name)) =
+                log_mapping.src_ref.map(|src_ref| {
+                    (
+                        src_ref.source_path.clone(),
+                        src_ref.line_no,
+                        src_ref.column,
+                        src_ref.name.clone(),
+                    )
+                })
+            {
+                Self::record_source_usage(
+                    &mut self.source_usage,
+                    &source_path,
+                    source_line,
+                    column,
+                    &name,
+                    line,
+                    line_number,
+                );
+            }
+        } else {
+            println!(
+                "{}",
+                get_colored_formatter()
+                    .to_colored_json_auto(&log_mapping)
+                    .unwrap()
+            );
+        }
     }
 
-    fn consume_line(&mut self, line: &str) {
+    fn record_source_usage(
+        source_usage: &mut BTreeMap<(String, usize, usize, String), SourceUsage>,
+        source_path: &str,
+        source_line: usize,
+        column: usize,
+        name: &str,
+        message: &str,
+        log_line: usize,
+    ) {
+        let key = (
+            source_path.to_string(),
+            source_line,
+            column,
+            name.to_string(),
+        );
+        let usage = source_usage.entry(key).or_insert_with(|| SourceUsage {
+            source_path: source_path.to_string(),
+            line_number: source_line,
+            column,
+            name: name.to_string(),
+            count: 0,
+            samples: Vec::new(),
+        });
+        usage.count += 1;
+        if usage.samples.len() < 3 {
+            usage.samples.push(LogSample {
+                line_number: log_line + 1,
+                text: message.chars().take(240).collect(),
+            });
+        }
+    }
+
+    fn consume_line(&mut self, line: &str, line_number: usize) {
         match &self.log_format {
             Some(format) => {
                 if format.is_match(line) {
-                    self.new_msg(line);
+                    self.new_msg(line, line_number);
                 } else {
                     self.continued_line(line);
                 }
             }
             None => {
-                self.process_bare_msg(line);
+                self.process_bare_msg(line, line_number);
             }
         }
     }
@@ -162,6 +275,17 @@ impl MessageAccumulator {
 
     fn eof(mut self) -> miette::Result<()> {
         self.flush();
+
+        if self.summary {
+            let usages = self.source_usage.values().collect::<Vec<_>>();
+            println!(
+                "{}",
+                get_colored_formatter()
+                    .to_colored_json_auto(&usages)
+                    .unwrap()
+            );
+            return Ok(());
+        }
 
         if self.log_format.is_some() && self.message_count == 0 {
             Err(LogError::NoLogMessages.into())
@@ -328,7 +452,7 @@ fn main() -> miette::Result<()> {
 
     let start = args.start.unwrap_or(0);
     let count = args.count.unwrap_or(usize::MAX);
-    let mut accumulator = MessageAccumulator::new(log_matcher, log_format, count);
+    let mut accumulator = MessageAccumulator::new(log_matcher, log_format, count, args.summary);
 
     let reader = BufReader::new(reader);
     for (lineno, line_res) in reader.lines().skip(start).enumerate() {
@@ -336,7 +460,7 @@ fn main() -> miette::Result<()> {
             break;
         }
         match line_res {
-            Ok(line) => accumulator.consume_line(&line),
+            Ok(line) => accumulator.consume_line(&line, start + lineno),
             Err(err) => {
                 accumulator.flush();
                 let report: Report = LogError::UnableToReadLine {
@@ -347,15 +471,45 @@ fn main() -> miette::Result<()> {
                 let wrapper = ErrorWrapper {
                     error: SerializableDiagnostic::from(report),
                 };
-                println!(
-                    "{}",
-                    get_colored_formatter()
-                        .to_colored_json_auto(&wrapper)
-                        .unwrap()
-                );
+                let serialized = get_colored_formatter()
+                    .to_colored_json_auto(&wrapper)
+                    .unwrap();
+                if args.summary {
+                    eprintln!("{}", serialized);
+                } else {
+                    println!("{}", serialized);
+                }
             }
         }
     }
 
     accumulator.eof()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::MessageAccumulator;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn source_usage_counts_matches_and_keeps_only_three_samples() {
+        let mut source_usage = BTreeMap::new();
+        for line_number in 0..5 {
+            MessageAccumulator::record_source_usage(
+                &mut source_usage,
+                "src/main.rs",
+                12,
+                4,
+                "log::info",
+                &format!("request {line_number}"),
+                line_number,
+            );
+        }
+
+        let usage = source_usage.values().next().unwrap();
+        assert_eq!(usage.count, 5);
+        assert_eq!(usage.samples.len(), 3);
+        assert_eq!(usage.samples[0].line_number, 1);
+        assert_eq!(usage.samples[2].text, "request 2");
+    }
 }
