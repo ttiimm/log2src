@@ -36,7 +36,8 @@
   },
   "activationEvents": [
     "onDebugResolve:log2src",
-    "onLanguage:log2src"
+    "onLanguage:log2src",
+    "onStartupFinished"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -67,7 +68,7 @@
     "commands": [
       {
         "command": "log2src.configure",
-        "title": "Log2Src: Configure Source Roots and Log Format"
+        "title": "Log2Src: Configure"
       },
       {
         "command": "log2src.goToSourceAtCursor",
@@ -92,6 +93,11 @@
           },
           "default": [],
           "description": "Absolute paths to source directories used to resolve log lines to source."
+        },
+        "log2src.logFile": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute or workspace-relative log file to scan for source CodeLens matches."
         },
         "log2src.logFormat": {
           "type": "string",

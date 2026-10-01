@@ -18,7 +18,7 @@ import { DebugSession } from './debugAdapter';
 import { LogDebugger } from './logDebugger';
 import { VscodeEditorEffects } from './vscodeEditorEffects';
 import { BinaryNotFoundError, Log2srcClient } from './log2srcClient';
-import { registerLogNavigation } from './logNavigation';
+import { registerLog2srcFeatures } from './log2srcFeatures';
 
 const runMode: 'external' | 'server' | 'namedPipeServer' | 'inline' = 'inline';
 const outputChannel = vscode.window.createOutputChannel("Log2Src");
@@ -40,7 +40,7 @@ export function activate(context: vscode.ExtensionContext) {
 	}
 
 	try {
-		registerLogNavigation(context, new Log2srcClient(undefined, __dirname), outputChannel);
+		registerLog2srcFeatures(context, new Log2srcClient(undefined, __dirname), outputChannel);
 	} catch (error) {
 		if (error instanceof BinaryNotFoundError) {
 			outputChannel.appendLine(`Error: ${error.message}`);
