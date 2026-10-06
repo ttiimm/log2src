@@ -1,4 +1,5 @@
 /target
+/bench-data
 .vscode
 .DS_Store
 out/

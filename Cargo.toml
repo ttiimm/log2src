@@ -16,6 +16,7 @@ include = [
     "/schemas/**",
     "/src/**",
     "/tests/**",
+    "!/tests/resources/java/kafka-hint-10k.log",
     "/docs/debugger-demo.gif",
 ]
 
@@ -55,3 +56,12 @@ rand = "0.10.2"
 tempfile = "3.22.0"
 fs_extra = "1.3"
 walkdir = "2.5.0"
+criterion = "0.8.2"
+
+[[bench]]
+name = "source_extraction"
+harness = false
+
+[[bench]]
+name = "log_matching"
+harness = false
