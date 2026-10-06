@@ -1,6 +1,7 @@
 import * as assert from 'assert';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { Log2srcClient } from '../../log2srcClient';
 
 suite('Extension Test Suite', () => {
 	vscode.window.showInformationMessage('Start all tests.');
@@ -57,9 +58,19 @@ suite('Extension Test Suite', () => {
 				}
 			}
 
+			let diagnostic = '';
+			if (!fooLens) {
+				// The provider swallows scan errors, so run the scan directly to expose them.
+				try {
+					const usages = await new Log2srcClient().querySourceUsages([sourceRoot], logFile, undefined);
+					diagnostic = `direct scan: ${JSON.stringify(usages)}`;
+				} catch (error) {
+					diagnostic = `direct scan failed: ${String(error)}`;
+				}
+			}
 			assert.ok(
 				fooLens,
-				`should show the three matching foo log messages; got ${JSON.stringify(lenses?.map(l => l.command?.title))}`
+				`should show the three matching foo log messages; got ${JSON.stringify(lenses?.map(l => l.command?.title))}; ${diagnostic}`
 			);
 			assert.strictEqual(fooLens.range.start.line, 14);
 			assert.strictEqual(
