@@ -59,10 +59,33 @@ jobs:
       run: cargo test --verbose
     
   vscode-extension-test:
-    name: Test VS Code Extension
+    name: Test VS Code Extension (${{ matrix.bin_dir }})
     needs: [lib-build-and-test]
-    runs-on: macos-latest
-    timeout-minutes: 15
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            bin_dir: linux-x64
+            binary: log2src
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            bin_dir: darwin-x64
+            binary: log2src
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            bin_dir: darwin-arm64
+            binary: log2src
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bin_dir: win-x64
+            binary: log2src.exe
 
     steps:
       - name: Checkout repository
@@ -72,17 +95,17 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
-          target: aarch64-apple-darwin
+          target: ${{ matrix.target }}
           override: true
 
       - name: Build log2src binary for extension tests
-        run: cargo build --release --target aarch64-apple-darwin
+        run: cargo build --release --target ${{ matrix.target }}
 
       - name: Setup binary for VS Code extension
         run: |
-          mkdir -p editors/code/bin/darwin-arm64
-          cp target/aarch64-apple-darwin/release/log2src editors/code/bin/darwin-arm64/
-          chmod +x editors/code/bin/darwin-arm64/log2src
+          mkdir -p editors/code/bin/${{ matrix.bin_dir }}
+          cp target/${{ matrix.target }}/release/${{ matrix.binary }} editors/code/bin/${{ matrix.bin_dir }}/
+          chmod +x editors/code/bin/${{ matrix.bin_dir }}/${{ matrix.binary }}
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -100,7 +123,21 @@ jobs:
         working-directory: editors/code
         run: pnpm install
 
-      - name: Run tests
+      - name: Cache VS Code test runtime
+        uses: actions/cache@v4
+        with:
+          path: editors/code/.vscode-test
+          key: ${{ runner.os }}-${{ runner.arch }}-vscode-test-${{ hashFiles('editors/code/pnpm-lock.yaml') }}
+
+      - name: Run tests (Linux)
+        if: runner.os == 'Linux'
+        working-directory: editors/code
+        run: |
+          sudo apt-get install -y xvfb
+          pnpm run test:ci
+
+      - name: Run tests (macOS/Windows)
+        if: runner.os != 'Linux'
         working-directory: editors/code
         run: pnpm run test
 
@@ -189,6 +226,7 @@ jobs:
             artifact: log2src-${{ github.ref_name }}-macos-arm64
             vsce-target: darwin-arm64
           - target: win32-x64
+            bin_dir: win-x64
             artifact: log2src-${{ github.ref_name }}-windows-x64
             vsce-target: win32-x64
 
@@ -216,41 +254,17 @@ jobs:
       - name: Extract binary for VS Code extension target
         run: |
           rm -rf editors/code/bin
-          mkdir -p "editors/code/bin/${{ matrix.target }}"
+          BIN_DIR="${{ matrix.bin_dir || matrix.target }}"
+          mkdir -p "editors/code/bin/$BIN_DIR"
           if [[ "${{ matrix.target }}" == "win32-x64" ]]; then
-            unzip -o "artifacts/${{ matrix.artifact }}/${{ matrix.artifact }}.zip" -d "editors/code/bin/${{ matrix.target }}"
+            unzip -o "artifacts/${{ matrix.artifact }}/${{ matrix.artifact }}.zip" -d "editors/code/bin/$BIN_DIR"
           else
-            tar -xzf "artifacts/${{ matrix.artifact }}/${{ matrix.artifact }}.tar.gz" -C "editors/code/bin/${{ matrix.target }}"
+            tar -xzf "artifacts/${{ matrix.artifact }}/${{ matrix.artifact }}.tar.gz" -C "editors/code/bin/$BIN_DIR"
           fi
-          ls -laR artifacts editors/code/bin
-
-      - name: Cache VS Code test runtime
-        uses: actions/cache@v4
-        with:
-          path: editors/code/.vscode-test
-          key: ${{ runner.os }}-vscode-test-${{ hashFiles('editors/code/pnpm-lock.yaml') }}
 
       - name: Install Dependencies
         working-directory: editors/code
         run: pnpm install
-
-      - name: Run tests (Linux)
-        working-directory: editors/code
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get install -y xvfb
-          for attempt in 1 2 3; do
-            pnpm run test:ci && exit 0
-            if [ "$attempt" -eq 3 ]; then
-              exit 1
-            fi
-            sleep $((attempt * 30))
-          done
-
-      - name: Run Tests (Osx/Windows)
-        working-directory: editors/code
-        if: runner.os != 'Linux'
-        run: pnpm run test
 
       - name: Build VS Code extension
         if: startsWith(github.ref, 'refs/tags/vscode-v')
