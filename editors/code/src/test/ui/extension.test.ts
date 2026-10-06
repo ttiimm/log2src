@@ -25,7 +25,8 @@ suite('Extension Test Suite', () => {
 		assert.ok(ext?.isActive, 'Extension should be active');
 	});
 
-	test('Source CodeLens shows matches without opening the log document', async () => {
+	test('Source CodeLens shows matches without opening the log document', async function () {
+		this.timeout(30000);
 		const sourceFile = path.resolve(__dirname, '../../../../../examples/basic.rs');
 		const logFile = path.resolve(__dirname, '../../../../../tests/resources/rust/basic.log');
 		const sourceRoot = path.dirname(sourceFile);
@@ -42,13 +43,24 @@ suite('Extension Test Suite', () => {
 
 		try {
 			const document = await vscode.workspace.openTextDocument(vscode.Uri.file(sourceFile));
-			const lenses = await vscode.commands.executeCommand<vscode.CodeLens[]>(
-				'vscode.executeCodeLensProvider',
-				document.uri
-			);
+			// Provider registration and config propagation are async, so retry until the lens appears.
+			let lenses: vscode.CodeLens[] | undefined;
+			let fooLens: vscode.CodeLens | undefined;
+			for (let attempt = 0; attempt < 20 && !fooLens; attempt++) {
+				lenses = await vscode.commands.executeCommand<vscode.CodeLens[]>(
+					'vscode.executeCodeLensProvider',
+					document.uri
+				);
+				fooLens = lenses?.find(lens => lens.command?.title === '3 matching log messages');
+				if (!fooLens) {
+					await new Promise(resolve => setTimeout(resolve, 500));
+				}
+			}
 
-			const fooLens = lenses?.find(lens => lens.command?.title === '3 matching log messages');
-			assert.ok(fooLens, 'should show the three matching foo log messages');
+			assert.ok(
+				fooLens,
+				`should show the three matching foo log messages; got ${JSON.stringify(lenses?.map(l => l.command?.title))}`
+			);
 			assert.strictEqual(fooLens.range.start.line, 14);
 			assert.strictEqual(
 				vscode.workspace.textDocuments.some(openDocument => openDocument.uri.fsPath === logFile),
