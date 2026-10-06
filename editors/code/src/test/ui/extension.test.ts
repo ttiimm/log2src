@@ -1,7 +1,8 @@
 import * as assert from 'assert';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { Log2srcClient } from '../../log2srcClient';
+import { spawnSync } from 'child_process';
+import { resolveRelativeBinaryPath } from '../../log2srcClient';
 
 suite('Extension Test Suite', () => {
 	vscode.window.showInformationMessage('Start all tests.');
@@ -62,8 +63,10 @@ suite('Extension Test Suite', () => {
 			if (!fooLens) {
 				// The provider swallows scan errors, so run the scan directly to expose them.
 				try {
-					const usages = await new Log2srcClient().querySourceUsages([sourceRoot], logFile, undefined);
-					diagnostic = `direct scan: ${JSON.stringify(usages)}`;
+					// The client discards stderr, so run the binary directly with -v to expose it.
+					const binary = path.resolve(__dirname, '../..', resolveRelativeBinaryPath());
+					const run = spawnSync(binary, ['-d', sourceRoot, '--log', logFile, '--summary', '-v'], { encoding: 'utf8' });
+					diagnostic = `exit=${run.status} error=${run.error} stdout=${run.stdout?.slice(0, 500)} stderr=${run.stderr?.slice(0, 2000)}`;
 				} catch (error) {
 					diagnostic = `direct scan failed: ${String(error)}`;
 				}
