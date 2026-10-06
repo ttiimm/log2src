@@ -177,9 +177,9 @@ class GoToLogsCodeLensProvider implements vscode.CodeLensProvider, vscode.Dispos
                 return [];
             }
 
-            const documentPath = path.resolve(document.uri.fsPath);
+            const documentPath = _normalizeFsPath(document.uri.fsPath);
             return usages
-                .filter(usage => path.resolve(usage.sourcePath) === documentPath)
+                .filter(usage => _normalizeFsPath(usage.sourcePath) === documentPath)
                 .map(usage => new vscode.CodeLens(
                     new vscode.Range(Math.max(0, usage.lineNumber - 1), 0, Math.max(0, usage.lineNumber - 1), 0),
                     {
@@ -196,6 +196,13 @@ class GoToLogsCodeLensProvider implements vscode.CodeLensProvider, vscode.Dispos
             return [];
         }
     }
+}
+
+function _normalizeFsPath(p: string): string {
+    // canonical paths on windows can contain a \\?\ in the path, for example `\\?\D:\a\log2src\log2src\examples\basic.rs`,
+    // that tell Windows it's a "verbatim" path. This should probably be normalized in log2src, but this fixes it for now.
+    const resolved = path.resolve(p.replace(/^\\\\\?\\/, ''));
+    return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
 }
 
 async function showSourceLogs(logFile: string, usage: SourceUsage): Promise<void> {
