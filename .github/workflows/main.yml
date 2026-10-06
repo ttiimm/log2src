@@ -222,6 +222,7 @@ jobs:
           else
             tar -xzf "artifacts/${{ matrix.artifact }}/${{ matrix.artifact }}.tar.gz" -C "editors/code/bin/${{ matrix.target }}"
           fi
+          ls -laR artifacts editors/code/bin
 
       - name: Cache VS Code test runtime
         uses: actions/cache@v4
