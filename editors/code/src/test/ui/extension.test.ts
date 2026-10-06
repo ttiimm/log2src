@@ -34,12 +34,13 @@ suite('Extension Test Suite', () => {
 		const sourceRoot = path.dirname(sourceFile);
 		const config = vscode.workspace.getConfiguration('log2src');
 		const ext = vscode.extensions.getExtension('log2src.log2src');
+		const logFormat = String.raw`\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z \w+ \w+\]\s+(?<body>.*)`;
 		await ext?.activate();
 		await config.update('sourceRoots', [sourceRoot], vscode.ConfigurationTarget.Global);
 		await config.update('logFile', logFile, vscode.ConfigurationTarget.Global);
 		await config.update(
 			'logFormat',
-			String.raw`\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z \w+ \w+\]\s+(?<body>.*)`,
+			logFormat,
 			vscode.ConfigurationTarget.Global
 		);
 
@@ -65,7 +66,7 @@ suite('Extension Test Suite', () => {
 				try {
 					// The client discards stderr, so run the binary directly with -v to expose it.
 					const binary = path.resolve(__dirname, '../..', resolveRelativeBinaryPath());
-					const run = spawnSync(binary, ['-d', sourceRoot, '--log', logFile, '--summary', '-v'], { encoding: 'utf8' });
+					const run = spawnSync(binary, ['-d', sourceRoot, '--log', logFile, '-f', logFormat, '--summary', '-v'], { encoding: 'utf8' });
 					diagnostic = `exit=${run.status} error=${run.error} stdout=${run.stdout?.slice(0, 500)} stderr=${run.stderr?.slice(0, 2000)}`;
 				} catch (error) {
 					diagnostic = `direct scan failed: ${String(error)}`;
