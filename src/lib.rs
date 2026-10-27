@@ -568,6 +568,16 @@ impl LogMatcher {
         retval
     }
 
+    #[doc(hidden)]
+    /// Number of extracted log statements in each source file (for diagnostics and benchmarks).
+    pub fn statement_counts(&self) -> Vec<usize> {
+        self.roots
+            .values()
+            .flat_map(|coll| coll.files_with_statements.values())
+            .map(|stmts| stmts.log_statements.len())
+            .collect()
+    }
+
     /// Attempt to match the given log message.
     pub fn match_log_statement<'a>(&self, log_ref: &LogRef<'a>) -> Option<LogMapping<'a>> {
         for coll in self.roots.values() {

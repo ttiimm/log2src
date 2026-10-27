@@ -20,6 +20,8 @@ fn log_matching(c: &mut Criterion) {
     let _ = matcher.discover_sources();
     matcher.extract_log_statements();
 
+    report_distribution(matcher.statement_counts());
+
     let mut group = c.benchmark_group("log_matching");
     group.sample_size(10);
     for (variant, regex) in [
@@ -56,6 +58,35 @@ fn log_matching(c: &mut Criterion) {
         });
     }
     group.finish();
+}
+
+fn report_distribution(mut counts: Vec<usize>) {
+    if counts.is_empty() {
+        return;
+    }
+    counts.sort_unstable();
+    let total: usize = counts.iter().sum();
+    let pct = |p: usize| counts[(counts.len() - 1) * p / 100];
+    eprintln!(
+        "statements/file: files={} total={} mean={:.1} p50={} p90={} p99={} max={}",
+        counts.len(),
+        total,
+        total as f64 / counts.len() as f64,
+        pct(50),
+        pct(90),
+        pct(99),
+        counts[counts.len() - 1]
+    );
+    for (label, lo, hi) in [
+        ("1", 1, 1),
+        ("2-5", 2, 5),
+        ("6-20", 6, 20),
+        ("21-100", 21, 100),
+        (">100", 101, usize::MAX),
+    ] {
+        let n = counts.iter().filter(|&&c| c >= lo && c <= hi).count();
+        eprintln!("  {label:>7}: {n}");
+    }
 }
 
 criterion_group!(benches, log_matching);
