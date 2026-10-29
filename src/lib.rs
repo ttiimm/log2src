@@ -53,6 +53,7 @@ use tree_sitter::Language;
 mod code_source;
 mod log_format;
 mod progress;
+mod root_matcher;
 mod source_hier;
 mod source_query;
 mod source_ref;
@@ -62,6 +63,7 @@ use crate::progress::{current_global_progress_tracker, WorkGuard};
 use crate::source_hier::{ScanEvent, SourceFileID, SourceHierContent, SourceHierTree};
 use crate::source_query::SourceQuery;
 use crate::source_ref::FormatArgument;
+use crate::root_matcher::RootMatcher;
 
 pub use log_format::LogFormat;
 pub use progress::set_tracker_once;
@@ -258,6 +260,8 @@ pub(crate) struct SourceTree {
     /// to the source file IDs to speed up matches.
     #[serde(skip)]
     pub file_name_to_sources: HashMap<String, Vec<SourceFileID>>,
+    #[serde(skip)]
+    global_matcher: Option<RootMatcher>,
 }
 
 /// Maps log lines to source statements discovered from one or more source roots.
@@ -456,6 +460,7 @@ impl LogMatcher {
                     tree: SourceHierTree::from(&path),
                     files_with_statements: HashMap::new(),
                     file_name_to_sources: HashMap::new(),
+                    global_matcher: None,
                 });
         }
         Ok(())
@@ -507,6 +512,15 @@ impl LogMatcher {
         retval
     }
 
+    #[doc(hidden)]
+    pub fn build_root_matchers(&mut self) {
+        self.roots.iter_mut().for_each(|(_path, coll)| {
+            // TODO: handle this unwrap
+            let global_matcher = RootMatcher::new(coll.files_with_statements.values()).unwrap();
+            coll.global_matcher = Some(global_matcher);
+        });
+    }
+
     /// Scan the source files looking for potential log statements.
     pub fn extract_log_statements(&mut self) -> ExtractLogResult {
         let tracker = current_global_progress_tracker();
@@ -556,6 +570,7 @@ impl LogMatcher {
                     });
             }
         });
+
         tracker.end_step(format!(
             "{} found",
             self.roots
@@ -613,6 +628,17 @@ impl LogMatcher {
                         })
                         .collect::<Vec<&SourceRef>>()
                 }
+            } else if let Some(root_matcher) = coll.global_matcher.as_ref() {
+                // TODO: need to handle stale cache, but this should work for the benchmarking
+                root_matcher
+                    .candidates(log_ref.body())
+                    .flat_map(|(file_id, idx)| {
+                        coll.files_with_statements
+                            .get(&file_id)?
+                            .log_statements
+                            .get(idx)
+                    })
+                    .collect::<Vec<&SourceRef>>()
             } else {
                 coll.files_with_statements
                     .par_iter()

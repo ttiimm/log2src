@@ -5,6 +5,34 @@ use std::io::{BufRead, BufReader};
 
 mod common;
 
+fn log_matching_build(c: &mut Criterion) {
+    let src = common::kafka_src();
+    if !src.is_dir() {
+        eprintln!(
+            "skipping: {} missing, see docs/benchmarking.md",
+            src.display()
+        );
+        return;
+    }
+
+    let mut matcher = init_matcher(src);
+    report_distribution(matcher.statement_counts());
+
+    let mut group = c.benchmark_group("log_matching_build");
+    group.sample_size(10);
+
+    for variant in [
+        "per_root",
+        // "aho"
+    ] {
+        group.bench_function(variant, |b| {
+            b.iter(|| {
+                matcher.build_root_matchers()
+            })
+        });
+    }
+}
+
 fn log_matching(c: &mut Criterion) {
     let src = common::kafka_src();
     if !src.is_dir() {
@@ -15,12 +43,9 @@ fn log_matching(c: &mut Criterion) {
         return;
     }
 
-    let mut matcher = LogMatcher::new();
-    matcher.add_root(&src).unwrap();
-    let _ = matcher.discover_sources();
-    matcher.extract_log_statements();
-
-    report_distribution(matcher.statement_counts());
+    let baseline = init_matcher(src.clone());
+    let mut global = init_matcher(src);
+    global.build_root_matchers();
 
     let mut group = c.benchmark_group("log_matching");
     group.sample_size(10);
@@ -43,21 +68,37 @@ fn log_matching(c: &mut Criterion) {
             .collect();
         let format = LogFormat::try_from(regex).unwrap();
 
-        group.throughput(Throughput::Elements(lines.len() as u64));
-        group.bench_function(variant, |b| {
-            b.iter(|| {
-                let mut mapped = 0usize;
-                for line in &lines {
-                    if let Some(captures) = format.captures(line) {
-                        let log_ref = LogRefBuilder::new().build_from_captures(captures, line);
-                        mapped += matcher.match_log_statement(&log_ref).is_some() as usize;
+        let strategies: Vec<(&str, &LogMatcher)> = if variant == "nohint" {
+            vec![("per_file", &baseline), ("root_set", &global)]
+        } else {
+            vec![("default", &baseline)]
+        };
+
+        for (strategy, m) in strategies {
+            group.throughput(Throughput::Elements(lines.len() as u64));
+            group.bench_function(format!("{variant}/{strategy}"), |b| {
+                b.iter(|| {
+                    let mut mapped = 0usize;
+                    for line in &lines {
+                        if let Some(captures) = format.captures(line) {
+                            let log_ref = LogRefBuilder::new().build_from_captures(captures, line);
+                            mapped += m.match_log_statement(&log_ref).is_some() as usize;
+                        }
                     }
-                }
-                mapped
-            })
-        });
+                    mapped
+                })
+            });
+        }
     }
     group.finish();
+}
+
+fn init_matcher(src: std::path::PathBuf) -> LogMatcher {
+    let mut matcher = LogMatcher::new();
+    matcher.add_root(&src).unwrap();
+    let _ = matcher.discover_sources();
+    matcher.extract_log_statements();
+    matcher
 }
 
 fn report_distribution(mut counts: Vec<usize>) {
@@ -89,5 +130,5 @@ fn report_distribution(mut counts: Vec<usize>) {
     }
 }
 
-criterion_group!(benches, log_matching);
+criterion_group!(benches, log_matching_build, log_matching);
 criterion_main!(benches);
