@@ -26,9 +26,9 @@ impl RootMatcher {
         }
 
         let set = RegexSetBuilder::new(&patterns)
-            // 256 MB
-            .size_limit(256 << 20)
-            .dfa_size_limit(256 << 20)
+            // 64 MB
+            .size_limit(64 << 20)
+            .dfa_size_limit(64 << 20)
             .build()?;
         Ok(RootMatcher { set, ids })
     }

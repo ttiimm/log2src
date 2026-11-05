@@ -52,6 +52,7 @@ env_logger = "0.11.8"
 insta = { version = "1.43.1", features = ["yaml", "filters"] }
 insta-cmd = "0.6.0"
 log = "0.4.27"
+memory-stats = "1.2.0"
 rand = "0.10.2"
 tempfile = "3.22.0"
 fs_extra = "1.3"

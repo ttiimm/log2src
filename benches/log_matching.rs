@@ -1,5 +1,6 @@
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use log2src::{LogFormat, LogMatcher, LogRefBuilder};
+use std::cell::OnceCell;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 
@@ -25,11 +26,7 @@ fn log_matching_build(c: &mut Criterion) {
         "per_root",
         // "aho"
     ] {
-        group.bench_function(variant, |b| {
-            b.iter(|| {
-                matcher.build_root_matchers()
-            })
-        });
+        group.bench_function(variant, |b| b.iter(|| matcher.build_root_matchers()));
     }
 }
 
@@ -42,10 +39,6 @@ fn log_matching(c: &mut Criterion) {
         );
         return;
     }
-
-    let baseline = init_matcher(src.clone());
-    let mut global = init_matcher(src);
-    global.build_root_matchers();
 
     let mut group = c.benchmark_group("log_matching");
     group.sample_size(10);
@@ -68,29 +61,63 @@ fn log_matching(c: &mut Criterion) {
             .collect();
         let format = LogFormat::try_from(regex).unwrap();
 
-        let strategies: Vec<(&str, &LogMatcher)> = if variant == "nohint" {
-            vec![("per_file", &baseline), ("root_set", &global)]
+        let strategies = if variant == "nohint" {
+            vec!["per_file", "per_root"]
         } else {
-            vec![("default", &baseline)]
+            vec!["default"]
         };
 
-        for (strategy, m) in strategies {
+        for strategy in strategies {
+            let matcher = OnceCell::new();
             group.throughput(Throughput::Elements(lines.len() as u64));
             group.bench_function(format!("{variant}/{strategy}"), |b| {
-                b.iter(|| {
-                    let mut mapped = 0usize;
-                    for line in &lines {
-                        if let Some(captures) = format.captures(line) {
-                            let log_ref = LogRefBuilder::new().build_from_captures(captures, line);
-                            mapped += m.match_log_statement(&log_ref).is_some() as usize;
-                        }
+                let matcher = matcher.get_or_init(|| {
+                    let mut matcher = init_matcher(src.clone());
+                    if strategy == "per_root" {
+                        let before = rss();
+                        matcher.build_root_matchers();
+                        eprintln!(
+                            "build_root_matchers: +{} MB",
+                            (rss().saturating_sub(before)) >> 20
+                        );
                     }
-                    mapped
-                })
+                    warm_up(&matcher, variant, &lines, &format, strategy);
+                    matcher
+                });
+                b.iter(|| match_log_statements(&lines, &format, matcher))
             });
         }
     }
     group.finish();
+}
+
+fn warm_up(
+    matcher: &LogMatcher,
+    variant: &str,
+    lines: &[String],
+    format: &LogFormat,
+    strategy: &str,
+) {
+    let before = rss();
+    let mapped = match_log_statements(lines, format, matcher);
+    let after = rss();
+    eprintln!(
+        "{variant}/{strategy}: rss {} MB -> {} MB, +{} MB mapped={mapped}",
+        before >> 20,
+        after >> 20,
+        (after.saturating_sub(before)) >> 20
+    );
+}
+
+fn match_log_statements(lines: &[String], format: &LogFormat, matcher: &LogMatcher) -> usize {
+    let mut mapped = 0usize;
+    for line in lines {
+        if let Some(captures) = format.captures(line) {
+            let log_ref = LogRefBuilder::new().build_from_captures(captures, line);
+            mapped += matcher.match_log_statement(&log_ref).is_some() as usize;
+        }
+    }
+    mapped
 }
 
 fn init_matcher(src: std::path::PathBuf) -> LogMatcher {
@@ -128,6 +155,12 @@ fn report_distribution(mut counts: Vec<usize>) {
         let n = counts.iter().filter(|&&c| c >= lo && c <= hi).count();
         eprintln!("  {label:>7}: {n}");
     }
+}
+
+fn rss() -> usize {
+    memory_stats::memory_stats()
+        .map(|m| m.physical_mem)
+        .unwrap_or(0)
 }
 
 criterion_group!(benches, log_matching_build, log_matching);
