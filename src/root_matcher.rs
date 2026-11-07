@@ -34,7 +34,6 @@ impl RootMatcher {
     }
 
     pub(crate) fn candidates<'a>(&'a self, body: &str) -> impl Iterator<Item = StatementID> + 'a {
-        // self.set.matches(body).iter().map(|i| self.ids[i])
         let matches = self.set.matches(body);
         matches.into_iter().map(move |i| self.ids[i])
     }

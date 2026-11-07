@@ -21,6 +21,7 @@ include = [
 ]
 
 [dependencies]
+aho-corasick = "1.1.5"
 clap = { version = "4.5.36", features = ["std", "derive"] }
 colored_json = "5.0.0"
 directories = "6.0.0"

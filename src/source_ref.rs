@@ -42,6 +42,7 @@ pub struct SourceRef {
     pub(crate) pattern_str: String,
     pub(crate) args: Vec<FormatArgument>,
     pub(crate) vars: Vec<String>,
+    pub(crate) literals: Vec<String>,
 }
 
 struct MessageMatcher {
@@ -49,6 +50,7 @@ struct MessageMatcher {
     quality: usize,
     pattern: String,
     args: Vec<FormatArgument>,
+    literals: Vec<String>,
 }
 
 impl SourceRef {
@@ -74,6 +76,7 @@ impl SourceRef {
             pattern,
             mut args,
             quality,
+            literals,
         }) = build_matcher(result.raw, &unquoted, code.info.language)
         {
             let name = source[result.name_range].to_string();
@@ -93,6 +96,7 @@ impl SourceRef {
                 pattern_str: pattern,
                 args,
                 vars: vec![],
+                literals,
             })
         } else {
             None
@@ -126,17 +130,26 @@ impl PartialEq for SourceRef {
 
 fn build_matcher(raw: bool, text: &str, language: SourceLanguage) -> Option<MessageMatcher> {
     let mut args = Vec::new();
+    let mut literals = Vec::new();
     let mut last_end = 0;
     let mut pattern = "(?s)^".to_string();
     let mut quality = 0;
     for cap in language.get_placeholder_regex().captures_iter(text) {
         let placeholder = cap.get(0).unwrap();
+        let literal = &text[last_end..placeholder.start()];
+        if literal.chars().any(|c| !c.is_whitespace()) {
+            literals.push(literal.to_owned());
+        }
         let subtext = escape_ignore_newlines(raw, &text[last_end..placeholder.start()]);
         quality += subtext.chars().filter(|c| !c.is_whitespace()).count();
         pattern.push_str(subtext.as_str());
         last_end = placeholder.end();
         pattern.push_str("(.+)");
         args.push(language.captures_to_format_arg(&cap));
+    }
+    let literal = &text[last_end..];
+    if literal.chars().any(|c| !c.is_whitespace()) {
+        literals.push(literal.to_owned());
     }
     let subtext = escape_ignore_newlines(raw, &text[last_end..]);
     quality += subtext.chars().filter(|c| !c.is_whitespace()).count();
@@ -150,6 +163,8 @@ fn build_matcher(raw: bool, text: &str, language: SourceLanguage) -> Option<Mess
             quality,
             pattern,
             args,
+            // TODO: handle case where literals might be empty
+            literals,
         })
     }
 }

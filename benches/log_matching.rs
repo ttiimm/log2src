@@ -16,18 +16,26 @@ fn log_matching_build(c: &mut Criterion) {
         return;
     }
 
-    let mut matcher = init_matcher(src);
+    let matcher = init_matcher(src.clone());
     report_distribution(matcher.statement_counts());
 
     let mut group = c.benchmark_group("log_matching_build");
     group.sample_size(10);
 
-    for variant in [
-        "per_root",
-        // "aho"
-    ] {
-        group.bench_function(variant, |b| b.iter(|| matcher.build_root_matchers()));
+    for variant in ["per_root", "aho"] {
+        group.bench_function(variant, |b| {
+            let mut matcher = init_matcher(src.clone());
+            b.iter(|| {
+                match variant {
+                    "per_root" => matcher.build_root_matchers(),
+                    "aho" => matcher.build_aho_matchers(),
+                    _ => unreachable!(),
+                }
+                std::hint::black_box(&matcher);
+            });
+        });
     }
+    group.finish();
 }
 
 fn log_matching(c: &mut Criterion) {
@@ -62,7 +70,7 @@ fn log_matching(c: &mut Criterion) {
         let format = LogFormat::try_from(regex).unwrap();
 
         let strategies = if variant == "nohint" {
-            vec!["per_file", "per_root"]
+            vec!["per_file", "per_root", "aho"]
         } else {
             vec!["default"]
         };
@@ -70,16 +78,19 @@ fn log_matching(c: &mut Criterion) {
         for strategy in strategies {
             let matcher = OnceCell::new();
             group.throughput(Throughput::Elements(lines.len() as u64));
-            group.bench_function(format!("{variant}/{strategy}"), |b| {
+            let id = format!("{variant}/{strategy}");
+            group.bench_function(&id, |b| {
                 let matcher = matcher.get_or_init(|| {
                     let mut matcher = init_matcher(src.clone());
-                    if strategy == "per_root" {
+                    if strategy == "per_root" || strategy == "aho" {
                         let before = rss();
-                        matcher.build_root_matchers();
-                        eprintln!(
-                            "build_root_matchers: +{} MB",
-                            (rss().saturating_sub(before)) >> 20
-                        );
+                        match strategy {
+                            "per_root" => matcher.build_root_matchers(),
+                            "aho" => matcher.build_aho_matchers(),
+                            _ => {} // noop,
+                        }
+
+                        eprintln!("{} build: +{} MB", id, (rss().saturating_sub(before)) >> 20);
                     }
                     warm_up(&matcher, variant, &lines, &format, strategy);
                     matcher

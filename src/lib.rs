@@ -50,6 +50,7 @@ use tempfile::NamedTempFile;
 use thiserror::Error;
 use tree_sitter::Language;
 
+mod aho_matcher;
 mod code_source;
 mod log_format;
 mod progress;
@@ -58,12 +59,13 @@ mod source_hier;
 mod source_query;
 mod source_ref;
 
+use crate::aho_matcher::AhoMatcher;
 use crate::code_source::CodeSource;
 use crate::progress::{current_global_progress_tracker, WorkGuard};
+use crate::root_matcher::RootMatcher;
 use crate::source_hier::{ScanEvent, SourceFileID, SourceHierContent, SourceHierTree};
 use crate::source_query::SourceQuery;
 use crate::source_ref::FormatArgument;
-use crate::root_matcher::RootMatcher;
 
 pub use log_format::LogFormat;
 pub use progress::set_tracker_once;
@@ -262,6 +264,8 @@ pub(crate) struct SourceTree {
     pub file_name_to_sources: HashMap<String, Vec<SourceFileID>>,
     #[serde(skip)]
     global_matcher: Option<RootMatcher>,
+    #[serde(skip)]
+    aho_corasick: Option<AhoMatcher>,
 }
 
 /// Maps log lines to source statements discovered from one or more source roots.
@@ -461,6 +465,7 @@ impl LogMatcher {
                     files_with_statements: HashMap::new(),
                     file_name_to_sources: HashMap::new(),
                     global_matcher: None,
+                    aho_corasick: None,
                 });
         }
         Ok(())
@@ -518,6 +523,15 @@ impl LogMatcher {
             // TODO: handle this unwrap
             let global_matcher = RootMatcher::new(coll.files_with_statements.values()).unwrap();
             coll.global_matcher = Some(global_matcher);
+        });
+    }
+
+    #[doc(hidden)]
+    pub fn build_aho_matchers(&mut self) {
+        self.roots.iter_mut().for_each(|(_path, coll)| {
+            // TODO: handle this unwrap
+            let ac = AhoMatcher::new(coll.files_with_statements.values()).unwrap();
+            coll.aho_corasick = Some(ac);
         });
     }
 
@@ -628,6 +642,17 @@ impl LogMatcher {
                         })
                         .collect::<Vec<&SourceRef>>()
                 }
+            } else if let Some(aho) = coll.aho_corasick.as_ref() {
+                aho.candidates(log_ref.body())
+                    .filter_map(|(file_id, idx)| {
+                        let stmt = coll
+                            .files_with_statements
+                            .get(&file_id)?
+                            .log_statements
+                            .get(idx)?;
+                        stmt.pattern.is_match(log_ref.body()).then_some(stmt)
+                    })
+                    .collect::<Vec<&SourceRef>>()
             } else if let Some(root_matcher) = coll.global_matcher.as_ref() {
                 // TODO: need to handle stale cache, but this should work for the benchmarking
                 root_matcher
