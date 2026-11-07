@@ -6,6 +6,8 @@ use std::io::{BufRead, BufReader};
 
 mod common;
 
+type SourceMatch = (String, usize);
+
 fn log_matching_build(c: &mut Criterion) {
     let src = common::kafka_src();
     if !src.is_dir() {
@@ -75,6 +77,7 @@ fn log_matching(c: &mut Criterion) {
             vec!["default"]
         };
 
+        let baseline = OnceCell::new();
         for strategy in strategies {
             let matcher = OnceCell::new();
             group.throughput(Throughput::Elements(lines.len() as u64));
@@ -90,9 +93,17 @@ fn log_matching(c: &mut Criterion) {
                             _ => {} // noop,
                         }
 
+                        eprintln!();
                         eprintln!("{} build: +{} MB", id, (rss().saturating_sub(before)) >> 20);
+                        let baseline = baseline.get_or_init(|| {
+                            let basematcher = init_matcher(src.clone());
+                            warm_up(&basematcher, variant, &lines, &format, "per_file")
+                        });
+                        let results = warm_up(&matcher, variant, &lines, &format, strategy);
+                        check_correctness(strategy, baseline, results);
+                    } else {
+                        warm_up(&matcher, variant, &lines, &format, strategy);
                     }
-                    warm_up(&matcher, variant, &lines, &format, strategy);
                     matcher
                 });
                 b.iter(|| match_log_statements(&lines, &format, matcher))
@@ -108,16 +119,51 @@ fn warm_up(
     lines: &[String],
     format: &LogFormat,
     strategy: &str,
-) {
+) -> Vec<Option<SourceMatch>> {
+    let mut matches = Vec::with_capacity(lines.len());
+    let mut parse_failures = 0;
     let before = rss();
-    let mapped = match_log_statements(lines, format, matcher);
+    for line in lines {
+        let matched_source = if let Some(captures) = format.captures(line) {
+            let log_ref = LogRefBuilder::new().build_from_captures(captures, line);
+            matcher
+                .match_log_statement(&log_ref)
+                .and_then(|mapping| mapping.src_ref)
+                .map(|src_ref| (src_ref.source_path, src_ref.line_no))
+        } else {
+            parse_failures += 1;
+            None
+        };
+        matches.push(matched_source)
+    }
     let after = rss();
     eprintln!(
-        "{variant}/{strategy}: rss {} MB -> {} MB, +{} MB mapped={mapped}",
+        "{variant}/{strategy}: rss {} MB -> {} MB, +{} MB mapped={} parse failures={parse_failures}",
         before >> 20,
         after >> 20,
-        (after.saturating_sub(before)) >> 20
+        (after.saturating_sub(before)) >> 20,
+        matches.iter().flatten().count()
     );
+    matches
+}
+
+fn check_correctness(
+    strategy: &str,
+    baseline: &[Option<SourceMatch>],
+    results: Vec<Option<SourceMatch>>) {
+    assert_eq!(baseline.len(), results.len(), "results lengths differ");
+    let mut differ = 0;
+    for (index, (expected, actual)) in baseline.iter().zip(&results).enumerate() {
+        assert_eq!(
+            expected.is_some(),
+            actual.is_some(),
+            "mapping mismatch with strategy {strategy} at result index {index}"
+        );
+        if expected != actual {
+            differ += 1;
+        }
+    }
+    eprintln!("{strategy} differs {differ} times");
 }
 
 fn match_log_statements(lines: &[String], format: &LogFormat, matcher: &LogMatcher) -> usize {
