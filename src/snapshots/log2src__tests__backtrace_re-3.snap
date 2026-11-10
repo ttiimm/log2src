@@ -15,6 +15,8 @@ expression: src_refs
     - Placeholder
   vars:
     - this
+  literals:
+    - ": Started"
 - sourcePath: in-mem.java
   language: Java
   lineNumber: 9
@@ -28,3 +30,5 @@ expression: src_refs
     - Placeholder
   vars:
     - this
+  literals:
+    - ": Stopped"

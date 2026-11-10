@@ -24,19 +24,14 @@ fn log_matching_build(c: &mut Criterion) {
     let mut group = c.benchmark_group("log_matching_build");
     group.sample_size(10);
 
-    for variant in ["per_root", "aho"] {
-        group.bench_function(variant, |b| {
-            let mut matcher = init_matcher(src.clone());
-            b.iter(|| {
-                match variant {
-                    "per_root" => matcher.build_root_matchers(),
-                    "aho" => matcher.build_aho_matchers(),
-                    _ => unreachable!(),
-                }
-                std::hint::black_box(&matcher);
-            });
+    group.bench_function("aho", |b| {
+        let mut matcher = init_matcher(src.clone());
+        b.iter(|| {
+            matcher.build_aho_prefilters();
+            std::hint::black_box(&matcher);
         });
-    }
+    });
+
     group.finish();
 }
 
@@ -72,7 +67,7 @@ fn log_matching(c: &mut Criterion) {
         let format = LogFormat::try_from(regex).unwrap();
 
         let strategies = if variant == "nohint" {
-            vec!["per_file", "per_root", "aho"]
+            vec!["per_file", "aho"]
         } else {
             vec!["default"]
         };
@@ -87,12 +82,9 @@ fn log_matching(c: &mut Criterion) {
                     let mut matcher = init_matcher(src.clone());
                     if strategy == "per_root" || strategy == "aho" {
                         let before = rss();
-                        match strategy {
-                            "per_root" => matcher.build_root_matchers(),
-                            "aho" => matcher.build_aho_matchers(),
-                            _ => {} // noop,
+                        if strategy == "aho" {
+                            matcher.build_aho_prefilters()
                         }
-
                         eprintln!();
                         eprintln!("{} build: +{} MB", id, (rss().saturating_sub(before)) >> 20);
                         let baseline = baseline.get_or_init(|| {
@@ -150,7 +142,8 @@ fn warm_up(
 fn check_correctness(
     strategy: &str,
     baseline: &[Option<SourceMatch>],
-    results: Vec<Option<SourceMatch>>) {
+    results: Vec<Option<SourceMatch>>,
+) {
     assert_eq!(baseline.len(), results.len(), "results lengths differ");
     let mut differ = 0;
     for (index, (expected, actual)) in baseline.iter().zip(&results).enumerate() {

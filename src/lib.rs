@@ -50,19 +50,17 @@ use tempfile::NamedTempFile;
 use thiserror::Error;
 use tree_sitter::Language;
 
-mod aho_matcher;
 mod code_source;
 mod log_format;
+mod prefilter;
 mod progress;
-mod root_matcher;
 mod source_hier;
 mod source_query;
 mod source_ref;
 
-use crate::aho_matcher::AhoMatcher;
 use crate::code_source::CodeSource;
+use crate::prefilter::AhoPrefilter;
 use crate::progress::{current_global_progress_tracker, WorkGuard};
-use crate::root_matcher::RootMatcher;
 use crate::source_hier::{ScanEvent, SourceFileID, SourceHierContent, SourceHierTree};
 use crate::source_query::SourceQuery;
 use crate::source_ref::FormatArgument;
@@ -176,6 +174,7 @@ pub(crate) enum CacheEntrySchema {
         rename = "https://raw.githubusercontent.com/ttiimm/log2src/refs/heads/main/schemas/cache-header-v1.json"
     )]
     V1,
+    V2,
 }
 
 /// The revision value is a simple way to invalidate the cache entries by changing the number.
@@ -263,9 +262,7 @@ pub(crate) struct SourceTree {
     #[serde(skip)]
     pub file_name_to_sources: HashMap<String, Vec<SourceFileID>>,
     #[serde(skip)]
-    global_matcher: Option<RootMatcher>,
-    #[serde(skip)]
-    aho_corasick: Option<AhoMatcher>,
+    aho_prefilter: Option<AhoPrefilter>,
 }
 
 /// Maps log lines to source statements discovered from one or more source roots.
@@ -418,7 +415,7 @@ impl LogMatcher {
                 // Write a JSON header as the first line so that a user can figure out what this
                 // file is.  It can also be used in the future if the file format needs to change.
                 let header = CacheEntryHeader {
-                    schema: CacheEntrySchema::V1,
+                    schema: CacheEntrySchema::V2,
                     revision: Revision::Current,
                     format: CacheEntryFormat::Postcard,
                     path: root_path.to_string_lossy().to_string(),
@@ -464,8 +461,7 @@ impl LogMatcher {
                     tree: SourceHierTree::from(&path),
                     files_with_statements: HashMap::new(),
                     file_name_to_sources: HashMap::new(),
-                    global_matcher: None,
-                    aho_corasick: None,
+                    aho_prefilter: None,
                 });
         }
         Ok(())
@@ -518,20 +514,11 @@ impl LogMatcher {
     }
 
     #[doc(hidden)]
-    pub fn build_root_matchers(&mut self) {
+    pub fn build_aho_prefilters(&mut self) {
         self.roots.iter_mut().for_each(|(_path, coll)| {
             // TODO: handle this unwrap
-            let global_matcher = RootMatcher::new(coll.files_with_statements.values()).unwrap();
-            coll.global_matcher = Some(global_matcher);
-        });
-    }
-
-    #[doc(hidden)]
-    pub fn build_aho_matchers(&mut self) {
-        self.roots.iter_mut().for_each(|(_path, coll)| {
-            // TODO: handle this unwrap
-            let ac = AhoMatcher::new(coll.files_with_statements.values()).unwrap();
-            coll.aho_corasick = Some(ac);
+            let ac = AhoPrefilter::new(coll.files_with_statements.values()).unwrap();
+            coll.aho_prefilter = Some(ac);
         });
     }
 
@@ -642,7 +629,7 @@ impl LogMatcher {
                         })
                         .collect::<Vec<&SourceRef>>()
                 }
-            } else if let Some(aho) = coll.aho_corasick.as_ref() {
+            } else if let Some(aho) = coll.aho_prefilter.as_ref() {
                 aho.candidates(log_ref.body())
                     .filter_map(|(file_id, idx)| {
                         let stmt = coll
@@ -651,17 +638,6 @@ impl LogMatcher {
                             .log_statements
                             .get(idx)?;
                         stmt.pattern.is_match(log_ref.body()).then_some(stmt)
-                    })
-                    .collect::<Vec<&SourceRef>>()
-            } else if let Some(root_matcher) = coll.global_matcher.as_ref() {
-                // TODO: need to handle stale cache, but this should work for the benchmarking
-                root_matcher
-                    .candidates(log_ref.body())
-                    .flat_map(|(file_id, idx)| {
-                        coll.files_with_statements
-                            .get(&file_id)?
-                            .log_statements
-                            .get(idx)
                     })
                     .collect::<Vec<&SourceRef>>()
             } else {

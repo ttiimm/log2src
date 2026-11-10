@@ -20,6 +20,11 @@ struct Input {
     label: Option<Label>,
 }
 
+struct Evaluation {
+    report: Report,
+    outcomes: Vec<Option<Outcome>>,
+}
+
 #[derive(Default, Debug)]
 struct Report {
     /// Input lines processed, including excluded lines.
@@ -117,7 +122,7 @@ fn evaluate(
     inputs: &[Input],
     files: &HashMap<String, Vec<PathBuf>>,
     matcher: &LogMatcher,
-) -> Result<(Report, Vec<Option<Outcome>>), Box<dyn Error>> {
+) -> Result<Evaluation, Box<dyn Error>> {
     let format = LogFormat::try_from(common::FORMAT_NOHINT)?;
     let mut report = Report::default();
     let mut outcomes = Vec::with_capacity(inputs.len());
@@ -172,7 +177,7 @@ fn evaluate(
         };
         outcomes.push(Some(outcome));
     }
-    Ok((report, outcomes))
+    Ok(Evaluation { report, outcomes })
 }
 
 fn print_report(strategy: &str, report: &Report) {
@@ -298,13 +303,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     println!("Source root: {}", root.display());
     println!("Hint log: {}", input_path.display());
-    let (baseline, baseline_outcomes) = evaluate(&inputs, &files, &matcher)?;
-    print_report("per_file", &baseline);
-    matcher.build_aho_matchers();
-    let (aho, aho_outcomes) = evaluate(&inputs, &files, &matcher)?;
-    print_report("aho", &aho);
-    print_comparison(&baseline_outcomes, &aho_outcomes);
-    if baseline.evaluated == 0 {
+    let baseline_eval = evaluate(&inputs, &files, &matcher)?;
+    print_report("per_file", &baseline_eval.report);
+    matcher.build_aho_prefilters();
+    let aho_eval = evaluate(&inputs, &files, &matcher)?;
+    print_report("aho", &aho_eval.report);
+    print_comparison(&baseline_eval.outcomes, &aho_eval.outcomes);
+    if baseline_eval.report.evaluated == 0 {
         return Err("no uniquely labeled Java lines in source root".into());
     }
     Ok(())

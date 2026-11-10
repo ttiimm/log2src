@@ -17,7 +17,7 @@ info:
 success: true
 exit_code: 0
 ----- stdout -----
-{"logRef":{},"srcRef":{"sourcePath":"{java_dir}/Basic.java","language":"Java","lineNumber":25,"endLineNumber":25,"column":20,"name":"foo","text":"\"Hello from foo i=\\{i}\"","quality":14,"pattern":"(?s)^Hello from foo i=(.+)$","args":[{"Named":"i"}],"vars":[]},"variables":[{"expr":"i","value":"0"}]}
-{"logRef":{},"srcRef":{"sourcePath":"{java_dir}/Basic.java","language":"Java","lineNumber":25,"endLineNumber":25,"column":20,"name":"foo","text":"\"Hello from foo i=\\{i}\"","quality":14,"pattern":"(?s)^Hello from foo i=(.+)$","args":[{"Named":"i"}],"vars":[]},"variables":[{"expr":"i","value":"1"}]}
+{"logRef":{},"srcRef":{"sourcePath":"{java_dir}/Basic.java","language":"Java","lineNumber":25,"endLineNumber":25,"column":20,"name":"foo","text":"\"Hello from foo i=\\{i}\"","quality":14,"pattern":"(?s)^Hello from foo i=(.+)$","args":[{"Named":"i"}],"vars":[],"literals":["Hello from foo i="]},"variables":[{"expr":"i","value":"0"}]}
+{"logRef":{},"srcRef":{"sourcePath":"{java_dir}/Basic.java","language":"Java","lineNumber":25,"endLineNumber":25,"column":20,"name":"foo","text":"\"Hello from foo i=\\{i}\"","quality":14,"pattern":"(?s)^Hello from foo i=(.+)$","args":[{"Named":"i"}],"vars":[],"literals":["Hello from foo i="]},"variables":[{"expr":"i","value":"1"}]}
 
 ----- stderr -----
