@@ -145,6 +145,12 @@ pub enum LogError {
         path: PathBuf,
         source: Arc<dyn Error + Send + Sync>,
     },
+    #[error("failed to build log prefilter for \"{path}\"")]
+    #[diagnostic(severity(warning))]
+    FailedToBuildPrefilter {
+        path: PathBuf,
+        source: Arc<aho_corasick::BuildError>,
+    },
 }
 
 /// Handle for the source tree cache
@@ -285,7 +291,7 @@ fn to_cached_name(path: &Path) -> String {
 }
 
 /// The result of calling extract_log_statements() with the summary and errors.
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct ExtractLogResult {
     pub summary: ExtractLogSummary,
     pub errors: Vec<LogError>,
@@ -569,6 +575,16 @@ impl LogMatcher {
                         });
                         coll.files_with_statements.insert(sif.id, sif);
                     });
+            }
+            match AhoPrefilter::new(coll.files_with_statements.values()) {
+                Ok(ac) => coll.aho_prefilter = Some(ac),
+                Err(err) => {
+                    coll.aho_prefilter = None;
+                    retval.errors.push(LogError::FailedToBuildPrefilter {
+                        path: coll.tree.root_path.clone(),
+                        source: Arc::new(err),
+                    });
+                }
             }
         });
 
@@ -1528,5 +1544,191 @@ ZeroDivisionError: division by zero
             if path.file_name() == Some(std::ffi::OsStr::new("main.rs"))
                 && source.kind() == io::ErrorKind::InvalidData
         ));
+    }
+
+    #[test]
+    fn test_matching_when_new_source_added() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let root = temp_dir.path();
+        let main_path = root.join("main.rs");
+        std::fs::write(&main_path, r#"fn main() { debug!("hello"); }"#).unwrap();
+        let mut log_matcher = LogMatcher::new();
+        log_matcher.add_root(root).unwrap();
+
+        let errors = log_matcher.discover_sources();
+        assert!(errors.is_empty());
+        let result = log_matcher.extract_log_statements();
+        assert!(result.errors.is_empty());
+        let line = "[2026-11-10T11:44:33Z DEBUG main] hello";
+        let log_ref = LogRefBuilder::new().with_body(Some("hello")).build(line);
+        let mapping = log_matcher
+            .match_log_statement(&log_ref)
+            .expect("expected the log message to match");
+        let source = mapping.src_ref.expect("expected a source reference");
+        assert_eq!(
+            std::path::Path::new(&source.source_path),
+            main_path.canonicalize().unwrap()
+        );
+        assert_eq!(source.line_no, 1);
+        assert!(mapping.variables.is_empty());
+
+        let mod_path = root.join("mod.rs");
+        std::fs::write(&mod_path, r#"fn bye() { debug!("byebye"); }"#).unwrap();
+        let errors = log_matcher.discover_sources();
+        assert!(errors.is_empty());
+        let result = log_matcher.extract_log_statements();
+        assert!(result.errors.is_empty());
+
+        let line = "[2026-11-10T11:44:34Z DEBUG bye] byebye";
+        let log_ref = LogRefBuilder::new().with_body(Some("byebye")).build(line);
+        let mapping = log_matcher
+            .match_log_statement(&log_ref)
+            .expect("expected the log message to match");
+        let source = mapping.src_ref.expect("expected a source reference");
+        assert_eq!(
+            std::path::Path::new(&source.source_path),
+            mod_path.canonicalize().unwrap()
+        );
+        assert_eq!(source.line_no, 1);
+        assert!(mapping.variables.is_empty());
+    }
+
+    #[test]
+    fn test_matching_when_source_deleted() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let root = temp_dir.path();
+        let main_path = root.join("main.rs");
+        std::fs::write(&main_path, r#"fn main() { debug!("hello"); }"#).unwrap();
+        let mut log_matcher = LogMatcher::new();
+        log_matcher.add_root(root).unwrap();
+
+        let errors = log_matcher.discover_sources();
+        assert!(errors.is_empty());
+        let result = log_matcher.extract_log_statements();
+        assert!(result.errors.is_empty());
+        let line = "[2026-11-10T11:44:33Z DEBUG main] hello";
+        let log_ref = LogRefBuilder::new().with_body(Some("hello")).build(line);
+        let mapping = log_matcher
+            .match_log_statement(&log_ref)
+            .expect("expected the log message to match");
+        let source = mapping.src_ref.expect("expected a source reference");
+        assert_eq!(
+            std::path::Path::new(&source.source_path),
+            main_path.canonicalize().unwrap()
+        );
+        assert_eq!(source.line_no, 1);
+        assert!(mapping.variables.is_empty());
+
+        std::fs::remove_file(&main_path).unwrap();
+        let errors = log_matcher.discover_sources();
+        assert!(errors.is_empty());
+        let result = log_matcher.extract_log_statements();
+        assert!(result.errors.is_empty());
+
+        let root_tree = log_matcher
+            .roots
+            .get(&root.canonicalize().unwrap())
+            .expect("has a source root");
+        let prefilter = root_tree.aho_prefilter.as_ref().expect("has a prefilter");
+        assert_eq!(prefilter.candidates("hello").count(), 0);
+        let mapping = log_matcher.match_log_statement(&log_ref);
+        assert!(mapping.is_none());
+    }
+
+    #[test]
+    fn test_matching_when_source_changes() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let root = temp_dir.path();
+        let main_path = root.join("main.rs");
+        std::fs::write(&main_path, r#"fn main() { debug!("hello"); }"#).unwrap();
+        let mut log_matcher = LogMatcher::new();
+        log_matcher.add_root(root).unwrap();
+
+        let errors = log_matcher.discover_sources();
+        assert!(errors.is_empty());
+        let result = log_matcher.extract_log_statements();
+        assert!(result.errors.is_empty());
+        let line = "[2026-11-10T11:44:33Z DEBUG main] hello";
+        let hello_log_ref = LogRefBuilder::new().with_body(Some("hello")).build(line);
+        let mapping = log_matcher
+            .match_log_statement(&hello_log_ref)
+            .expect("expected the log message to match");
+        let source = mapping.src_ref.expect("expected a source reference");
+        assert_eq!(
+            std::path::Path::new(&source.source_path),
+            main_path.canonicalize().unwrap()
+        );
+        assert_eq!(source.line_no, 1);
+        assert!(mapping.variables.is_empty());
+
+        std::fs::write(&main_path, r#"fn bye() { debug!("byebye"); }"#).unwrap();
+        let errors = log_matcher.discover_sources();
+        assert!(errors.is_empty());
+        let result = log_matcher.extract_log_statements();
+        assert!(result.errors.is_empty());
+
+        let line = "[2026-11-10T11:44:34Z DEBUG bye] byebye";
+        let bye_log_ref = LogRefBuilder::new().with_body(Some("byebye")).build(line);
+        let mapping = log_matcher
+            .match_log_statement(&bye_log_ref)
+            .expect("expected the log message to match");
+        let source = mapping.src_ref.expect("expected a source reference");
+        assert_eq!(
+            std::path::Path::new(&source.source_path),
+            main_path.canonicalize().unwrap()
+        );
+        assert_eq!(source.line_no, 1);
+        assert!(mapping.variables.is_empty());
+
+        let mapping = log_matcher.match_log_statement(&hello_log_ref);
+        assert!(mapping.is_none());
+    }
+
+    #[test]
+    fn test_matching_when_using_cache() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let root = temp_dir.path();
+        let main_path = root.join("main.rs");
+        std::fs::write(&main_path, r#"fn main() { debug!("hello"); }"#).unwrap();
+        let mut log_matcher = LogMatcher::new();
+        log_matcher.add_root(root).unwrap();
+        let errors = log_matcher.discover_sources();
+        assert!(errors.is_empty());
+        let result = log_matcher.extract_log_statements();
+        assert!(result.errors.is_empty());
+
+        let cache_dir = tempfile::tempdir().unwrap();
+        let cache = Cache {
+            location: cache_dir.path().to_path_buf(),
+        };
+        log_matcher.cache_to(&cache).unwrap();
+
+        let mut cache_matcher = LogMatcher::new();
+        cache_matcher.add_root(root).unwrap();
+        let errors = cache_matcher.load_from_cache(&cache);
+        assert!(errors.is_empty());
+        let errors = cache_matcher.discover_sources();
+        assert!(errors.is_empty());
+        let result = cache_matcher.extract_log_statements();
+        assert!(result.errors.is_empty());
+        assert!(result.summary.changes() == 0);
+        assert!(cache_matcher
+            .roots
+            .get(&root.canonicalize().unwrap())
+            .expect("has a source root")
+            .aho_prefilter
+            .is_some());
+        let line = "[2026-11-10T11:44:33Z DEBUG main] hello";
+        let log_ref = LogRefBuilder::new().with_body(Some("hello")).build(line);
+        let mapping = cache_matcher
+            .match_log_statement(&log_ref)
+            .expect("expected the log message to match");
+        let source = mapping.src_ref.expect("expected a source reference");
+        assert_eq!(
+            std::path::Path::new(&source.source_path),
+            main_path.canonicalize().unwrap()
+        );
+        assert_eq!(source.line_no, 1);
+        assert!(mapping.variables.is_empty());
     }
 }
