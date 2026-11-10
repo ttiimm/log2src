@@ -17,6 +17,25 @@ pub fn kafka_src() -> PathBuf {
     env_path("LOG2SRC_BENCH_SRC", "bench-data/kafka-src")
 }
 
+pub fn accuracy_log_path() -> PathBuf {
+    env_path("LOG2SRC_ACCURACY_LOG", COMMITTED_SAMPLE)
+}
+
+pub fn accuracy_sample_lines() -> Result<Option<usize>, String> {
+    match std::env::var("LOG2SRC_ACCURACY_LINES") {
+        Ok(value) => match value.parse::<usize>() {
+            Ok(lines) if lines > 0 => Ok(Some(lines)),
+            _ => Err(format!(
+                "LOG2SRC_ACCURACY_LINES must be a positive integer, got {value:?}"
+            )),
+        },
+        Err(std::env::VarError::NotPresent) => Ok(None),
+        Err(std::env::VarError::NotUnicode(_)) => {
+            Err("LOG2SRC_ACCURACY_LINES must be a positive integer".to_string())
+        }
+    }
+}
+
 pub fn log_path(variant: &str) -> PathBuf {
     let dir = env_path("LOG2SRC_BENCH_LOGS", "bench-data/logs");
     let path = dir.join(format!("kafka-{variant}.log"));

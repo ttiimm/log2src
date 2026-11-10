@@ -67,3 +67,7 @@ harness = false
 [[bench]]
 name = "log_matching"
 harness = false
+
+[[bench]]
+name = "kafka_accuracy"
+harness = false
